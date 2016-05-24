@@ -5,13 +5,13 @@
 #include <iostream>
 
 Connection::Connection(boost::asio::io_service& io_service, std::string host,
-                       std::string uri)
+                       std::string uri, std::function<void(std::string)> cb)
     : io_service_(io_service),
       socket_(io_service),
       resolver_(io_service),
       host_(std::move(host)),
-      uri_(std::move(uri)) {}
-
+      uri_(std::move(uri)),
+      callback_(std::move(cb)) {}
 
 void Connection::start() {
     boost::asio::ip::tcp::resolver::query query(host_, "http"); // protocol
@@ -83,6 +83,7 @@ void Connection::read_handle(const boost::system::error_code& e,
         std::experimental::optional<std::string> opt =
             title_parser_.parse(iter, buffer_.data() + bytes_transferred);
         if (opt) {
+            callback_(opt.value());
             std::cout << "Found! " << opt.value() << std::endl;
         } else {
             // not found, read content and parse it
@@ -113,6 +114,7 @@ void Connection::read_content_handle(const boost::system::error_code& e,
     std::experimental::optional<std::string> opt =
         title_parser_.parse(buffer_.data(), buffer_.data() + bytes_transferred);
     if (opt) {
+        callback_(opt.value());
         std::cout << "Found! " << opt.value() << std::endl;
     } else {
         // not found, read content and parse it

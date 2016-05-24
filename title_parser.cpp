@@ -60,7 +60,8 @@ bool TitleParser::consume(char input) {
 
     case TOKEN_RP:
         if (input != '<') {
-            content_.push_back(input);
+            if (!isspace(input))
+                content_.push_back(input);
             state_ = TOKEN_CONTENT_NO_LP;
         } else {
             return true;
@@ -69,7 +70,8 @@ bool TitleParser::consume(char input) {
 
     case TOKEN_CONTENT_NO_LP:
         if (input != '<') {
-            content_.push_back(input);
+            if (!isspace(input))
+                content_.push_back(input);
         } else {
             return true;
         }

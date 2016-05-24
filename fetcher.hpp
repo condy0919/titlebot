@@ -10,11 +10,12 @@ class Fetcher {
 public:
     Fetcher();
 
-    void start(std::string host, std::string uri /*, callback*/);
+    void start(std::string host, std::string uti,
+               std::function<void(std::string)> cb);
 
     void run();
 
 private:
     boost::asio::io_service io_service_;
-    std::unordered_set<std::shared_ptr<Connection>> conns_;
+    //std::unordered_set<std::shared_ptr<Connection>> conns_;
 };

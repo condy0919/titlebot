@@ -9,7 +9,7 @@
 class Connection : public std::enable_shared_from_this<Connection> {
 public:
     Connection(boost::asio::io_service& io_service, std::string host,
-               std::string uri);
+               std::string uri, std::function<void(std::string)> cb);
 
     void start();
 
@@ -32,6 +32,8 @@ private:
     boost::asio::ip::tcp::socket socket_;
     boost::asio::ip::tcp::resolver resolver_;
     std::string host_, uri_;
+    std::function<void(std::string)> callback_;
+
     std::array<char, 2048> buffer_;
     Http::Response::Parser parser_;
     Http::Response resp_;
