@@ -76,7 +76,7 @@ void Connection::write_handle(const boost::system::error_code& e) {
 void Connection::read_handle(const boost::system::error_code& e,
                              std::size_t bytes_transferred) {
     DEBUG(__func__);
-    if (e) {
+    if (e && bytes_transferred == 0) {
         ERROR("async_read error " + e.message());
         return;
     }
@@ -127,7 +127,7 @@ void Connection::read_handle(const boost::system::error_code& e,
 void Connection::read_content_handle(const boost::system::error_code& e,
                                      std::size_t bytes_transferred) {
     DEBUG(__func__);
-    if (e) {
+    if (e && bytes_transferred == 0) {
         ERROR("read content handle error " + e.message());
         return;
     }

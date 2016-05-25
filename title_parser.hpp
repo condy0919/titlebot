@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/algorithm/string.hpp>
 #include <experimental/optional>
 #include <string>
 
@@ -24,7 +25,7 @@ public:
         while (beg != end) {
             if (consume(*beg++)) {
                 // ok
-                return content_;
+                return boost::trim_right_copy(boost::trim_left_copy(content_));
             }
         }
         return {};

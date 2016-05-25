@@ -148,7 +148,7 @@ public:
 
     void mainloop(std::function<void(std::string)> callback) {
         auto fn = [=](std::string s) {
-            std::regex pattern(".* PRIVMSG (\\S+) :.*(http://\\S+)");
+            std::regex pattern(".* PRIVMSG (\\S+) :.*(http://\\S+).*");
             std::smatch match;
             if (std::regex_match(s, match, pattern)) {
                 if (match.ready()) {
