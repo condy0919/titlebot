@@ -49,7 +49,7 @@ std::string Request::get(const std::string& host, const std::string& uri) {
 
     req += "GET " + uri + " HTTP/1.1\r\n";
     req += "Accept: */*\r\n";
-    req += "Accept-Encoding: */*\r\n";
+    req += "Accept-Encoding: identity\r\n";
     //req += "Accept-Encoding: gzip, deflate\r\n";
     req += "Host: " + host + "\r\n";
     req += "User-Agent: titlebot\r\n";
