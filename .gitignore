@@ -2,3 +2,5 @@
 *.o
 titlebot
 *.swp
+perf.data
+perf.data.old
