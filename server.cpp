@@ -1,4 +1,5 @@
 #include "server.hpp"
+#include "utils/log.hpp"
 #include <vector>
 #include <thread>
 
@@ -6,14 +7,15 @@ Server::Server() = default;
 
 void Server::start() {
     std::function<void(std::string)> send_callback(
-        std::bind(&MoBot::privmsg, &bot_, std::placeholders::_1, "#LiuYanBot"));
+        std::bind(&MoBot::privmsg, &bot_, std::placeholders::_1, "#linuxba"));
     std::function<void(std::string, std::string,
                        std::function<void(std::string)>)>
         callback(std::bind(&Fetcher::start, &fetcher_, std::placeholders::_1,
                            std::placeholders::_2, std::placeholders::_3));
 
+    std::thread fetcher_thread(&Fetcher::run, &fetcher_);
     std::thread mobot_thread([&]() {
-        bot_.nick("BruceSucksBot").user("BruceSucksBot").join({"#LiuYanBot"});
+        bot_.nick("BruceSucksBot").user("BruceSucksBot").join({"#linuxba"});
         try {
             bot_.mainloop([=](std::string url) {
                 std::string tmp = url.substr(7);
@@ -23,17 +25,12 @@ void Server::start() {
                     host = std::string(tmp.begin(), iter);
                     uri = std::string(iter, tmp.end());
                 }
-                //DEBUG
-                std::cout << "host = " << host << ", uri = " << uri << '\n';
                 callback(host, uri, send_callback);
             });
         } catch (const char* err) {
             std::cerr << err << '\n';
             std::exit(-1);
         }
-    });
-    std::thread fetcher_thread([&]() {
-        fetcher_.run();
     });
 
     if (mobot_thread.joinable()) {

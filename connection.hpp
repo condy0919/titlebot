@@ -14,6 +14,8 @@ public:
     void start();
 
 private:
+    void do_start();
+
     void resolve_handle(const boost::system::error_code& e,
                         boost::asio::ip::tcp::resolver::iterator ep_iter);
 
@@ -34,7 +36,7 @@ private:
     std::string host_, uri_;
     std::function<void(std::string)> callback_;
 
-    std::array<char, 2048> buffer_;
+    std::array<char, 4096> buffer_;
     Http::Response::Parser parser_;
     Http::Response resp_;
     TitleParser title_parser_;

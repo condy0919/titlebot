@@ -56,7 +56,7 @@ protected:
     void async_read(std::function<void(std::string)> callback) {
         boost::asio::async_read_until(
             sock_, buf_, "\r\n",
-            [this, callback](boost::system::error_code ec, size_t sent) {
+            [this, callback](boost::system::error_code ec, size_t sent __attribute__((unused))) {
                 if (!ec) {
                     std::istream is(&buf_);
                     std::string line;
@@ -68,14 +68,17 @@ protected:
                                 boost::posix_time::minutes(9));
                             beat_.async_wait(&IRCBot::timeout);
                         } else {
-                            line.pop_back();
+                            if (line.back() == '\r') {
+                                line.pop_back();
+                            }
                             callback(line);
                         }
                         std::cout << "[info] " << line << '\n';
                     }
                 } else {
-                    std::string s(std::istreambuf_iterator<char>(buf_),
-                                  std::istreambuf_iterator<char>());
+                    boost::asio::streambuf::const_buffers_type bufs = buf_.data();
+                    std::string s(boost::asio::buffers_begin(bufs),
+                                  boost::asio::buffers_end(bufs));
                     std::cerr << "[error] "
                               << "read " << s << '\n';
                     throw "[error] exit";
@@ -145,7 +148,7 @@ public:
 
     void mainloop(std::function<void(std::string)> callback) {
         auto fn = [=](std::string s) {
-            std::regex pattern(".* PRIVMSG (\\S+) :(http://\\S+)");
+            std::regex pattern(".* PRIVMSG (\\S+) :.*(http://\\S+)");
             std::smatch match;
             if (std::regex_match(s, match, pattern)) {
                 if (match.ready()) {

@@ -59,6 +59,15 @@ std::string Request::get(const std::string& host, const std::string& uri) {
     return req;
 }
 
+std::string Response::getHeader(std::string key) const {
+    for (auto&& pair_ : headers) {
+        if (pair_.first == key) {
+            return pair_.second;
+        }
+    }
+    return {};
+}
+
 Response::Parser::Parser() : state_(http_version_h) {}
 
 void Response::Parser::reset() {

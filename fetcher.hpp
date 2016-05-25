@@ -1,8 +1,8 @@
 #pragma once
 
 #include "connection.hpp"
-
 #include <boost/asio.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <unordered_set>
 #include <functional>
 
@@ -15,7 +15,12 @@ public:
 
     void run();
 
+    void poll();
+
+private:
+    void keepalive(const boost::system::error_code& e);
+
 private:
     boost::asio::io_service io_service_;
-    //std::unordered_set<std::shared_ptr<Connection>> conns_;
+    boost::asio::steady_timer timer_;
 };

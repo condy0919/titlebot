@@ -14,6 +14,13 @@ Connection::Connection(boost::asio::io_service& io_service, std::string host,
       callback_(std::move(cb)) {}
 
 void Connection::start() {
+    DEBUG(__func__);
+    auto self = shared_from_this();
+    io_service_.post(boost::bind(&Connection::do_start, self));
+}
+
+void Connection::do_start() {
+    DEBUG(__func__);
     boost::asio::ip::tcp::resolver::query query(host_, "http"); // protocol
     auto self = shared_from_this();
     resolver_.async_resolve(query,
@@ -25,6 +32,7 @@ void Connection::start() {
 void Connection::resolve_handle(
     const boost::system::error_code& e,
     boost::asio::ip::tcp::resolver::iterator ep_iter) {
+    DEBUG(__func__);
     if (e) {
         ERROR("resolve error " + e.message());
         return;
@@ -37,6 +45,7 @@ void Connection::resolve_handle(
 }
 
 void Connection::connect_handle(const boost::system::error_code& e) {
+    DEBUG(__func__);
     if (e) {
         ERROR("connect error " + e.message());
         return;
@@ -50,6 +59,7 @@ void Connection::connect_handle(const boost::system::error_code& e) {
 }
 
 void Connection::write_handle(const boost::system::error_code& e) {
+    DEBUG(__func__);
     if (e) {
         ERROR("async_write error " + e.message());
         return;
@@ -65,6 +75,7 @@ void Connection::write_handle(const boost::system::error_code& e) {
 
 void Connection::read_handle(const boost::system::error_code& e,
                              std::size_t bytes_transferred) {
+    DEBUG(__func__);
     if (e) {
         ERROR("async_read error " + e.message());
         return;
@@ -78,8 +89,18 @@ void Connection::read_handle(const boost::system::error_code& e,
     if (st == Http::Response::Parser::state::bad) {
         // close socket
     } else if (st == Http::Response::Parser::state::good) {
-        // start parsing&reading http content body
-        // [iter, buffer_.data() + bytes_transferred)
+        // non-text/html
+        std::string content_type = resp_.getHeader("Content-Type");
+        if (content_type.empty()) {
+            callback_("no title");
+            return;
+        } else if (content_type.compare(0, sizeof("text/html") - 1,
+                                        "text/html")) {
+            callback_(content_type);
+            return;
+        }
+
+        // text/html 
         std::experimental::optional<std::string> opt =
             title_parser_.parse(iter, buffer_.data() + bytes_transferred);
         if (opt) {
@@ -105,6 +126,7 @@ void Connection::read_handle(const boost::system::error_code& e,
 
 void Connection::read_content_handle(const boost::system::error_code& e,
                                      std::size_t bytes_transferred) {
+    DEBUG(__func__);
     if (e) {
         ERROR("read content handle error " + e.message());
         return;
