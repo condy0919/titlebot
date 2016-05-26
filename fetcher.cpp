@@ -10,7 +10,8 @@ Fetcher::Fetcher() : timer_(io_service_, std::chrono::hours(1)) {
 
 void Fetcher::start(std::string host, std::string uri,
                     std::function<void(std::string)> cb) {
-    auto conn = std::make_shared<Connection>(io_service_, host, uri, cb);
+    auto conn = std::make_shared<Connection>(io_service_, std::move(host),
+                                             std::move(uri), std::move(cb));
     conn->start();
 }
 

@@ -6,8 +6,6 @@
 Server::Server() = default;
 
 void Server::start() {
-    std::function<void(std::string)> send_callback(
-        std::bind(&MoBot::privmsg, &bot_, std::placeholders::_1, "#linuxba"));
     std::function<void(std::string, std::string,
                        std::function<void(std::string)>)>
         callback(std::bind(&Fetcher::start, &fetcher_, std::placeholders::_1,
@@ -17,7 +15,8 @@ void Server::start() {
     std::thread mobot_thread([&]() {
         bot_.nick("BruceSucksBot").user("BruceSucksBot").join({"#linuxba"});
         try {
-            bot_.mainloop([=](std::string url) {
+            // capture this pointer!
+            bot_.mainloop([=, &callback](std::string url, std::string target) {
                 std::string tmp = url.substr(7);
                 std::string host = tmp, uri = "/";
                 auto iter = std::find(tmp.begin(), tmp.end(), '/');
@@ -25,7 +24,9 @@ void Server::start() {
                     host = std::string(tmp.begin(), iter);
                     uri = std::string(iter, tmp.end());
                 }
-                callback(host, uri, send_callback);
+                callback(host, uri,
+                         std::bind(&MoBot::privmsg, &bot_,
+                                   std::placeholders::_1, std::move(target)));
             });
         } catch (const char* err) {
             std::cerr << err << '\n';

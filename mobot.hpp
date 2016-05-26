@@ -150,15 +150,21 @@ public:
         return *this;
     }
 
-    void mainloop(std::function<void(std::string)> callback) {
+    void mainloop(std::function<void(std::string, std::string)> callback) {
         auto fn = [=](std::string s) {
-            std::regex pattern(".* PRIVMSG (\\S+) :.*(http://\\S+).*");
-            std::smatch match;
-            if (std::regex_match(s, match, pattern)) {
-                if (match.ready()) {
-                    std::string target = match[1].str();
-                    std::string url = match[2].str();
-                    callback(std::move(url));
+            static std::regex pattern(":(\\S+)!.* PRIVMSG (\\S+) :.*(http://\\S+).*");
+            static std::smatch match;
+            if (std::regex_match(s, match, pattern) && match.ready()) {
+                std::string from(std::move(match[1].str()));
+                std::string target(std::move(match[2].str()));
+                std::string url(std::move(match[3].str()));
+
+                if (target.front() == '#') {
+                    // channel mode
+                    callback(std::move(url), std::move(target));
+                } else {
+                    // private mode
+                    callback(std::move(url), std::move(from));
                 }
             }
         };
