@@ -23,8 +23,8 @@ private:
 
     void write_handle(const boost::system::error_code& e);
 
-    void read_handle(const boost::system::error_code& e,
-                     std::size_t bytes_transferred);
+    void read_header_handle(const boost::system::error_code& e,
+                            std::size_t bytes_transferred);
 
     void read_content_handle(const boost::system::error_code& e,
                              std::size_t bytes_transferred);
@@ -38,6 +38,8 @@ private:
 
     std::array<char, 2048> buffer_;
     Http::Response::Parser parser_;
+    std::unique_ptr<Http::Response::ChunkDecoder> chunk_decoder_;
+    std::unique_ptr<ContentDecoder> content_decoder_;
     Http::Response resp_;
     TitleParser title_parser_;
 };

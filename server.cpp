@@ -13,7 +13,7 @@ void Server::start() {
 
     std::thread fetcher_thread(&Fetcher::run, &fetcher_);
     std::thread mobot_thread([&]() {
-        bot_.nick("BruceSucksBot").user("BruceSucksBot").join({"#linuxba"});
+        bot_.nick("BBruceSucksBot").user("BruceSucksBot").join({"#linuxba"});
         try {
             // capture this pointer!
             bot_.mainloop([=, &callback](std::string url, std::string target) {

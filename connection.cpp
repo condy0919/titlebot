@@ -68,13 +68,13 @@ void Connection::write_handle(const boost::system::error_code& e) {
     auto self = shared_from_this();
     boost::asio::async_read(
         socket_, boost::asio::buffer(buffer_, buffer_.size()),
-        boost::bind(&Connection::read_handle, self,
+        boost::bind(&Connection::read_header_handle, self,
                     boost::asio::placeholders::error,
                     boost::asio::placeholders::bytes_transferred));
 }
 
-void Connection::read_handle(const boost::system::error_code& e,
-                             std::size_t bytes_transferred) {
+void Connection::read_header_handle(const boost::system::error_code& e,
+                                    std::size_t bytes_transferred) {
     DEBUG(__func__);
     if (e && bytes_transferred == 0) {
         ERROR("async_read error " + e.message());
@@ -92,7 +92,6 @@ void Connection::read_handle(const boost::system::error_code& e,
         // non-text/html
         std::string content_type = resp_.getHeader("Content-Type");
         if (content_type.empty()) {
-            callback_("no title");
             return;
         } else if (content_type.compare(0, sizeof("text/html") - 1,
                                         "text/html")) {
@@ -100,7 +99,26 @@ void Connection::read_handle(const boost::system::error_code& e,
             return;
         }
 
-        // text/html 
+        // text/html
+        // process Transfer-Encoding and Content-Encoding
+        if (resp_.getHeader("Transfer-Encoding") == "chunked") {
+            chunk_decoder_ = std::make_unique<Http::Response::ChunkDecoder>();
+        }
+        {
+            std::string encoding = resp_.getHeader("Content-Encoding");
+            if (encoding.empty()) {
+                // no need to process
+            } else if (encoding == "gzip") {
+                content_decoder_ = std::make_unique<GzipDecoder>();
+            } else if (encoding == "deflate") {
+                content_decoder_ = std::make_unique<DeflateDecoder>();
+            } else {
+                ERROR("un-implement encoding = " + encoding);
+                return;
+            }
+        }
+
+        // Transfer-Encoding => None
         std::experimental::optional<std::string> opt =
             title_parser_.parse(iter, buffer_.data() + bytes_transferred);
         if (opt) {
@@ -118,7 +136,7 @@ void Connection::read_handle(const boost::system::error_code& e,
         // read again
         boost::asio::async_read(
             socket_, boost::asio::buffer(buffer_, buffer_.size()),
-            boost::bind(&Connection::read_handle, self,
+            boost::bind(&Connection::read_header_handle, self,
                         boost::asio::placeholders::error,
                         boost::asio::placeholders::bytes_transferred));
     }
