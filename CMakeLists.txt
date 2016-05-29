@@ -4,6 +4,7 @@ project(titlebot)
 
 enable_testing()
 set(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS ON)
+set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 add_definitions(-std=c++17)
 add_definitions(-O2)
