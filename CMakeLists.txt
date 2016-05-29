@@ -15,8 +15,13 @@ file(GLOB SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/utils/*.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/utils/*.cpp)
 
-add_library(titlebot STATIC ${SRC})
+find_package(Boost REQUIRED)
+find_package(Threads REQUIRED)
+find_package(ZLIB REQUIRED)
+
+add_executable(titlebot ${SRC})
 
 target_link_libraries(titlebot
-    /usr/lib/libboost_system.so
-    /usr/lib/libpthread.so)
+    boost_system
+    pthread
+    z)
