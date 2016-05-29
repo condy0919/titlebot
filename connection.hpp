@@ -38,8 +38,8 @@ private:
 
     std::array<char, 2048> buffer_;
     Http::Response::Parser parser_;
-    std::unique_ptr<Http::Response::ChunkDecoder> chunk_decoder_;
-    std::unique_ptr<ContentDecoder> content_decoder_;
+    //std::unique_ptr<Http::Response::ChunkDecoder> chunk_decoder_;
+    //std::unique_ptr<Decoder> content_decoder_;
     Http::Response resp_;
     TitleParser title_parser_;
 };

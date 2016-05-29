@@ -1,20 +1,26 @@
 #pragma once
 
 #include <zlib.h>
-#include <string>
+#include <vector>
 
-class ContentDecoder {
+class Decoder {
 public:
-    virtual std::string decode(const char* s, std::size_t size);
+    virtual std::vector<unsigned char> decode(const unsigned char* s,
+                                              std::size_t size);
+    virtual std::vector<unsigned char> decode(const unsigned char* beg,
+                                              const unsigned char* end);
 
-    virtual ~ContentDecoder() {}
+    virtual ~Decoder() {}
 };
 
-class GzipDecoder : public ContentDecoder {
+class GzipDecoder : public Decoder {
 public:
     GzipDecoder();
 
-    std::string decode(const char* s, std::size_t size) override;
+    std::vector<unsigned char> decode(const unsigned char* s,
+                                      std::size_t size) override;
+    std::vector<unsigned char> decode(const unsigned char* beg,
+                                      const unsigned char* end) override;
 
     ~GzipDecoder() override;
 
@@ -22,11 +28,14 @@ private:
     z_stream strm;
 };
 
-class DeflateDecoder : public ContentDecoder {
+class DeflateDecoder : public Decoder {
 public:
     DeflateDecoder();
 
-    std::string decode(const char* s, std::size_t size) override;
+    std::vector<unsigned char> decode(const unsigned char* s,
+                                      std::size_t size) override;
+    std::vector<unsigned char> decode(const unsigned char* beg,
+                                      const unsigned char* end) override;
 
     ~DeflateDecoder() override;
 

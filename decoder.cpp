@@ -1,8 +1,15 @@
 #include "decoder.hpp"
+#include <iterator>
 #include <cassert>
 
-std::string ContentDecoder::decode(const char* s, std::size_t size) {
-    return std::string(s, size);
+std::vector<unsigned char> Decoder::decode(const unsigned char* s,
+                                           std::size_t size) {
+    return {s, s + size};
+}
+
+std::vector<unsigned char> Decoder::decode(const unsigned char* beg,
+                                           const unsigned char* end) {
+    return {beg, end};
 }
 
 GzipDecoder::GzipDecoder() {
@@ -14,13 +21,14 @@ GzipDecoder::GzipDecoder() {
     inflateInit2(&strm, 16 + MAX_WBITS);
 }
 
-std::string GzipDecoder::decode(const char* s, std::size_t size) {
+std::vector<unsigned char> GzipDecoder::decode(const unsigned char* s,
+                                               std::size_t size) {
     int err = Z_OK;
     unsigned char out[2048];
-    std::string ret;
+    std::vector<unsigned char> ret;
     ret.reserve(512);
 
-    strm.next_in = (unsigned char*)s;
+    strm.next_in = const_cast<unsigned char*>(s);
     strm.avail_in = size;
     while (strm.avail_in > 0 && err != Z_STREAM_END) {
         strm.avail_out = sizeof(out);
@@ -34,9 +42,15 @@ std::string GzipDecoder::decode(const char* s, std::size_t size) {
         }
 
         int sz = sizeof(out) - strm.avail_out;
-        ret.append((char*)out, sz);
+        ret.insert(ret.end(), out, out + sz);
     }
     return ret;
+}
+
+std::vector<unsigned char> GzipDecoder::decode(const unsigned char* beg,
+                                               const unsigned char* end) {
+    std::size_t dis = std::distance(beg, end);
+    return decode(beg, dis);
 }
 
 GzipDecoder::~GzipDecoder() noexcept {
@@ -52,13 +66,14 @@ DeflateDecoder::DeflateDecoder() {
     inflateInit(&strm);
 }
 
-std::string DeflateDecoder::decode(const char* s, std::size_t size) {
+std::vector<unsigned char> DeflateDecoder::decode(const unsigned char* s,
+                                                  std::size_t size) {
     int err = Z_OK;
     unsigned char out[2048];
-    std::string ret;
+    std::vector<unsigned char> ret;
     ret.reserve(512);
 
-    strm.next_in = (unsigned char*)s;
+    strm.next_in = const_cast<unsigned char*>(s);
     strm.avail_in = size;
     while (strm.avail_in > 0 && err != Z_STREAM_END) {
         strm.avail_out = sizeof(out);
@@ -71,9 +86,15 @@ std::string DeflateDecoder::decode(const char* s, std::size_t size) {
             throw "data error";
         }
         int sz = sizeof(out) - strm.avail_out;
-        ret.append((char*)out, sz);
+        ret.insert(ret.end(), out, out + sz);
     }
     return ret;
+}
+
+std::vector<unsigned char> DeflateDecoder::decode(const unsigned char* beg,
+                                                  const unsigned char* end) {
+    std::size_t dis = std::distance(beg, end);
+    return decode(beg, dis);
 }
 
 DeflateDecoder::~DeflateDecoder() noexcept {

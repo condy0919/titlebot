@@ -1,6 +1,7 @@
 #include "connection.hpp"
 #include "utils/log.hpp"
 #include "utils/http.hpp"
+#include "decoder.hpp"
 #include <boost/bind.hpp>
 #include <iostream>
 
@@ -102,25 +103,30 @@ void Connection::read_header_handle(const boost::system::error_code& e,
         // text/html
         // process Transfer-Encoding and Content-Encoding
         if (resp_.getHeader("Transfer-Encoding") == "chunked") {
-            chunk_decoder_ = std::make_unique<Http::Response::ChunkDecoder>();
+            //chunk_decoder_ = std::make_unique<Http::Response::ChunkDecoder>();
         }
         {
             std::string encoding = resp_.getHeader("Content-Encoding");
             if (encoding.empty()) {
                 // no need to process
             } else if (encoding == "gzip") {
-                content_decoder_ = std::make_unique<GzipDecoder>();
+                //content_decoder_ = std::make_unique<GzipDecoder>();
             } else if (encoding == "deflate") {
-                content_decoder_ = std::make_unique<DeflateDecoder>();
+                //content_decoder_ = std::make_unique<DeflateDecoder>();
             } else {
                 ERROR("un-implement encoding = " + encoding);
                 return;
             }
         }
 
+        //if (chunk_decoder_) {
+
+        //}
+
         // Transfer-Encoding => None
         std::experimental::optional<std::string> opt =
             title_parser_.parse(iter, buffer_.data() + bytes_transferred);
+        std::cout << std::string(iter, buffer_.data() + bytes_transferred);
         if (opt) {
             callback_(opt.value());
             std::cout << "Found! " << opt.value() << std::endl;
@@ -149,6 +155,8 @@ void Connection::read_content_handle(const boost::system::error_code& e,
         ERROR("read content handle error " + e.message());
         return;
     }
+
+    std::cout << std::string(buffer_.data(), buffer_.data() + bytes_transferred);
 
     auto self = shared_from_this();
     std::experimental::optional<std::string> opt =

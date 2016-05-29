@@ -64,4 +64,45 @@ struct Response {
         } state_;
     };
 };
+
+struct Chunk {
+    std::size_t size_;
+    std::vector<unsigned char> data_;
+
+    void reset();
+
+    struct Parser {
+        enum state { good, bad, indeterminate };
+
+        Parser();
+
+        template <typename Iter>
+        std::tuple<state, Iter> parse(Chunk& chunk_, Iter beg, Iter end) {
+            while (beg != end) {
+                state st = consume(chunk_, *beg++);
+                if (st == good || st == bad) {
+                    return std::make_tuple(st, beg);
+                }
+            }
+            return std::make_tuple(indeterminate, beg);
+        }
+
+    private:
+        state consume(Chunk& chunk_, unsigned char c);
+
+        enum internal_state {
+            TOKEN_START,
+            TOKEN_SIZE,
+            TOKEN_EXTENSION,
+            TOKEN_CR1,
+            TOKEN_LF1,
+            TOKEN_DATA,
+            TOKEN_CR2,
+            TOKEN_TRAILER,
+            TOKEN_TRAILER_CR,
+            TOKEN_TRAILER_LF,
+            TOKEN_CR3
+        } state_;
+    };
+};
 }

@@ -1,4 +1,5 @@
 #include "http.hpp"
+#include <cctype>
 
 namespace {
 bool is_char(int c) {
@@ -38,6 +39,16 @@ bool is_tspecial(int c) {
 
 bool is_digit(int c) {
     return c >= '0' && c <= '9';
+}
+
+int tohex(int c) {
+    if (is_digit(c)) {
+        return c - '0';
+    } else if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    } else {
+        return c - 'A' + 10;
+    }
 }
 }
 
@@ -261,6 +272,120 @@ Response::Parser::state Response::Parser::consume(Response& resp, char input) {
 
     default:
         return bad;
+    }
+}
+
+void Chunk::reset() {
+    size_ = 0;
+    data_.clear();
+}
+
+Chunk::Parser::Parser() : state_(TOKEN_START) {}
+
+Chunk::Parser::state Chunk::Parser::consume(Chunk& chunk_, unsigned char c) {
+    switch (state_) {
+    case TOKEN_START:
+        chunk_.data_.clear();
+        if (std::isxdigit(c)) {
+            chunk_.size_ = tohex(c);
+            state_ = TOKEN_SIZE;
+            return indeterminate;
+        } else {
+            return bad;
+        }
+
+    case TOKEN_SIZE:
+        if (std::isxdigit(c)) {
+            chunk_.size_ = 16 * chunk_.size_ + tohex(c);
+            return indeterminate;
+        } else if (c == '\r') {
+            state_ = TOKEN_CR1;
+            return indeterminate;
+        } else {
+            state_ = TOKEN_EXTENSION;
+            return indeterminate;
+        }
+
+    case TOKEN_EXTENSION:
+        if (c == '\r') {
+            state_ = TOKEN_CR1;
+            return indeterminate;
+        } else {
+            return indeterminate;
+        }
+
+    case TOKEN_CR1:
+        if (c == '\n') {
+            state_ = TOKEN_LF1;
+            return indeterminate;
+        } else {
+            return bad;
+        }
+
+    case TOKEN_LF1:
+        if (chunk_.size_ == 0) {
+            if (c == '\r') {
+                state_ = TOKEN_CR3;
+            } else {
+                state_ = TOKEN_TRAILER;
+            }
+            return indeterminate;
+        } else {
+            chunk_.data_.push_back(c);
+            state_ = TOKEN_DATA;
+            return indeterminate;
+        } 
+
+    case TOKEN_DATA:
+        if (chunk_.data_.size() < chunk_.size_) {
+            chunk_.data_.push_back(c);
+            return indeterminate;
+        } else if (chunk_.data_.size() == chunk_.size_ && c == '\r') {
+            state_ = TOKEN_CR2;
+            return indeterminate;
+        } else {
+            return bad;
+        }
+
+    case TOKEN_CR2:
+        if (c == '\n') {
+            state_ = TOKEN_START;
+            return good;
+        } else {
+            return bad;
+        }
+
+    case TOKEN_TRAILER:
+        if (c == '\r') {
+            state_ = TOKEN_TRAILER_CR;
+            return indeterminate;
+        } else {
+            return indeterminate;
+        }
+
+    case TOKEN_TRAILER_CR:
+        if (c == '\n') {
+            state_ = TOKEN_TRAILER_LF;
+            return indeterminate;
+        } else {
+            return bad;
+        }
+
+    case TOKEN_TRAILER_LF:
+        if (c == '\r') {
+            state_ = TOKEN_CR3;
+            return indeterminate;
+        } else {
+            state_ = TOKEN_TRAILER;
+            return indeterminate;
+        }
+
+    case TOKEN_CR3:
+        if (c == '\n') {
+            return good;
+        } else {
+            return bad;
+        }
     }
 }
 }
