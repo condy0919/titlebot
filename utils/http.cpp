@@ -386,6 +386,9 @@ Chunk::Parser::state Chunk::Parser::consume(Chunk& chunk_, unsigned char c) {
         } else {
             return bad;
         }
+
+    default:
+        return bad;
     }
 }
 }
