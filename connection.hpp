@@ -1,7 +1,8 @@
 #pragma once
 
-#include "title_parser.hpp"
+#include "decoder.hpp"
 #include "utils/http.hpp"
+#include "title_parser.hpp"
 #include <boost/asio.hpp>
 #include <array>
 #include <memory>
@@ -38,8 +39,9 @@ private:
 
     std::array<char, 2048> buffer_;
     Http::Response::Parser parser_;
-    //std::unique_ptr<Http::Response::ChunkDecoder> chunk_decoder_;
-    //std::unique_ptr<Decoder> content_decoder_;
     Http::Response resp_;
+    // keep order
     TitleParser title_parser_;
+    std::shared_ptr<ContentDecoder> content_decoder_;
+    std::shared_ptr<ChunkDecoder> chunk_decoder_;
 };

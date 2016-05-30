@@ -67,9 +67,11 @@ struct Response {
 
 struct Chunk {
     std::size_t size_;
-    std::vector<unsigned char> data_;
+    std::vector<char> data_;
 
     void reset();
+
+    bool isLastChunk() const;
 
     struct Parser {
         enum state { good, bad, indeterminate };
@@ -88,7 +90,7 @@ struct Chunk {
         }
 
     private:
-        state consume(Chunk& chunk_, unsigned char c);
+        state consume(Chunk& chunk_, char c);
 
         enum internal_state {
             TOKEN_START,

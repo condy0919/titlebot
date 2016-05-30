@@ -1,8 +1,8 @@
 #define CATCH_CONFIG_MAIN
 #include "../utils/http.hpp"
+#include <catch.hpp>
 #include <string>
 #include <tuple>
-#include <catch.hpp>
 #include <cstring>
 
 SCENARIO("chunk parser", "[Chunk::Parser]") {

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "utils/log.hpp"
 #include <boost/algorithm/string.hpp>
 #include <experimental/optional>
+#include <functional>
 #include <string>
 
 class TitleParser {
@@ -19,16 +21,24 @@ class TitleParser {
 
 public:
     TitleParser();
+    TitleParser(std::function<void(std::string)> fn);
+
+    void setCallback(std::function<void(std::string)> fn);
 
     template <typename Iter>
-    std::experimental::optional<std::string> parse(Iter beg, Iter end) {
+    bool parse(Iter beg, Iter end) {
         while (beg != end) {
             if (consume(*beg++)) {
-                // ok
-                return boost::trim_right_copy(boost::trim_left_copy(content_));
+                // TODO html escape
+                if (callback_) {
+                    callback_(boost::trim_right_copy(
+                        boost::trim_left_copy(std::move(content_))));
+                }
+                DEBUG("Found!");
+                return true;
             }
         }
-        return {};
+        return false;
     }
 
 private:
@@ -36,4 +46,5 @@ private:
 
 private:
     std::string content_;
+    std::function<void(std::string)> callback_;
 };

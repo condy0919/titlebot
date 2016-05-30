@@ -2,6 +2,13 @@
 
 TitleParser::TitleParser() : state_(TOKEN_OTHER) {}
 
+TitleParser::TitleParser(std::function<void(std::string)> fn)
+    : state_(TOKEN_OTHER), callback_(std::move(fn)) {}
+
+void TitleParser::setCallback(std::function<void(std::string)> fn) {
+    callback_ = std::move(fn);
+}
+
 bool TitleParser::consume(char input) {
     switch (state_) {
     case TOKEN_OTHER:

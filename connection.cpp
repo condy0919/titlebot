@@ -12,7 +12,10 @@ Connection::Connection(boost::asio::io_service& io_service, std::string host,
       resolver_(io_service),
       host_(std::move(host)),
       uri_(std::move(uri)),
-      callback_(std::move(cb)) {}
+      title_parser_(std::move(cb))//,
+      //content_decoder_(std::make_shared<ContentDecoder>(title_parser_)),
+      //chunk_decoder_(std::make_shared<ChunkDecoder>(content_decoder_))
+{}
 
 void Connection::start() {
     DEBUG(__func__);
@@ -102,36 +105,25 @@ void Connection::read_header_handle(const boost::system::error_code& e,
 
         // text/html
         // process Transfer-Encoding and Content-Encoding
-        if (resp_.getHeader("Transfer-Encoding") == "chunked") {
-            //chunk_decoder_ = std::make_unique<Http::Response::ChunkDecoder>();
-        }
         {
             std::string encoding = resp_.getHeader("Content-Encoding");
             if (encoding.empty()) {
-                // no need to process
+                content_decoder_ = std::make_shared<ContentDecoder>(title_parser_);
             } else if (encoding == "gzip") {
-                //content_decoder_ = std::make_unique<GzipDecoder>();
+                content_decoder_ = std::make_shared<GzipDecoder>(title_parser_);
             } else if (encoding == "deflate") {
-                //content_decoder_ = std::make_unique<DeflateDecoder>();
+                content_decoder_ = std::make_shared<DeflateDecoder>(title_parser_);
             } else {
                 ERROR("un-implement encoding = " + encoding);
                 return;
             }
         }
+        chunk_decoder_ = std::make_shared<ChunkDecoder>(content_decoder_);
+        if (resp_.getHeader("Transfer-Encoding") == "chunked") {
+            chunk_decoder_->setParser(std::make_unique<Http::Chunk::Parser>());
+        }
 
-        //if (chunk_decoder_) {
-
-        //}
-
-        // Transfer-Encoding => None
-        std::experimental::optional<std::string> opt =
-            title_parser_.parse(iter, buffer_.data() + bytes_transferred);
-        std::cout << std::string(iter, buffer_.data() + bytes_transferred);
-        if (opt) {
-            callback_(opt.value());
-            std::cout << "Found! " << opt.value() << std::endl;
-        } else {
-            // not found, read content and parse it
+        if (!chunk_decoder_->parse(iter, buffer_.data() + bytes_transferred)) {
             boost::asio::async_read(
                 socket_, boost::asio::buffer(buffer_, buffer_.size()),
                 boost::bind(&Connection::read_content_handle, self,
@@ -159,12 +151,8 @@ void Connection::read_content_handle(const boost::system::error_code& e,
     std::cout << std::string(buffer_.data(), buffer_.data() + bytes_transferred);
 
     auto self = shared_from_this();
-    std::experimental::optional<std::string> opt =
-        title_parser_.parse(buffer_.data(), buffer_.data() + bytes_transferred);
-    if (opt) {
-        callback_(opt.value());
-        std::cout << "Found! " << opt.value() << std::endl;
-    } else {
+    if (!chunk_decoder_->parse(buffer_.data(),
+                               buffer_.data() + bytes_transferred)) {
         // not found, read content and parse it
         boost::asio::async_read(
             socket_, boost::asio::buffer(buffer_, buffer_.size()),

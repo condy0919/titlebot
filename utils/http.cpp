@@ -275,14 +275,19 @@ Response::Parser::state Response::Parser::consume(Response& resp, char input) {
     }
 }
 
+
 void Chunk::reset() {
     size_ = 0;
     data_.clear();
 }
 
+bool Chunk::isLastChunk() const {
+    return !size_;
+}
+
 Chunk::Parser::Parser() : state_(TOKEN_START) {}
 
-Chunk::Parser::state Chunk::Parser::consume(Chunk& chunk_, unsigned char c) {
+Chunk::Parser::state Chunk::Parser::consume(Chunk& chunk_, char c) {
     switch (state_) {
     case TOKEN_START:
         chunk_.data_.clear();
