@@ -18,7 +18,7 @@ bool TitleParser::consume(char input) {
         break;
 
     case TOKEN_LP:
-        if (input == 't') {
+        if (input == 't' || input == 'T') {
             state_ = TOKEN_T_1;
         } else {
             state_ = TOKEN_OTHER;
@@ -26,7 +26,7 @@ bool TitleParser::consume(char input) {
         break;
 
     case TOKEN_T_1:
-        if (input == 'i') {
+        if (input == 'i' || input == 'I') {
             state_ = TOKEN_I;
         } else {
             state_ = TOKEN_OTHER;
@@ -34,7 +34,7 @@ bool TitleParser::consume(char input) {
         break;
 
     case TOKEN_I:
-        if (input == 't') {
+        if (input == 't' || input == 'T') {
             state_ = TOKEN_T_2;
         } else {
             state_ = TOKEN_OTHER;
@@ -42,7 +42,7 @@ bool TitleParser::consume(char input) {
         break;
 
     case TOKEN_T_2:
-        if (input == 'l') {
+        if (input == 'l' || input == 'L') {
             state_ = TOKEN_L;
         } else {
             state_ = TOKEN_OTHER;
@@ -50,7 +50,7 @@ bool TitleParser::consume(char input) {
         break;
 
     case TOKEN_L:
-        if (input == 'e') {
+        if (input == 'e' || input == 'E') {
             state_ = TOKEN_E;
         } else {
             state_ = TOKEN_OTHER;
