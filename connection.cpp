@@ -149,8 +149,6 @@ void Connection::read_content_handle(const boost::system::error_code& e,
         return;
     }
 
-    std::cout << std::string(buffer_.data(), buffer_.data() + bytes_transferred);
-
     auto self = shared_from_this();
     if (!chunk_decoder_->parse(buffer_.data(),
                                buffer_.data() + bytes_transferred)) {
