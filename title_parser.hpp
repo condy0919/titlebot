@@ -31,6 +31,11 @@ public:
             if (consume(*beg++)) {
                 // TODO html escape
                 if (callback_) {
+                    content_.erase(
+                        std::remove_if(
+                            content_.begin(), content_.end(),
+                            [](char c) { return c == '\r' || c == '\n'; }),
+                        content_.end());
                     callback_(boost::trim_right_copy(
                         boost::trim_left_copy(std::move(content_))));
                 }

@@ -275,6 +275,10 @@ Response::Parser::state Response::Parser::consume(Response& resp, char input) {
     }
 }
 
+void Chunk::consumeData() {
+    size_ -= data_.size();
+    data_.clear();
+}
 
 void Chunk::reset() {
     size_ = 0;

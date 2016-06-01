@@ -86,6 +86,7 @@ public:
             if (r) {
                 return true;
             }
+            chunk_.consumeData();
             chunk_.reset();
         }
         return false;

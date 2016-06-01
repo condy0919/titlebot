@@ -5,13 +5,18 @@ project(titlebot)
 enable_testing()
 set(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS ON)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+set(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
 add_definitions(-std=c++17)
 add_definitions(-O2)
 add_definitions(-Wall)
 add_definitions(-Wextra)
-add_definitions(-g)
-add_definitions(-ggdb)
+#add_definitions(-g)
+#add_definitions(-ggdb)
+#add_definitions(-fno-omit-frame-pointer)
+add_definitions(-fuse-ld=gold)
+
 
 file(GLOB SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/*.hpp
@@ -19,15 +24,44 @@ file(GLOB SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/utils/*.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/utils/*.cpp)
 
-find_package(Boost REQUIRED)
+
+set(TITLE_LINK_LIBS)
+
+set(Boost_USE_STATIC_LIBS ON)
+set(Boost_USE_STATIC_RUNTIME ON)
+find_package(Boost REQUIRED COMPONENTS system)
+if(Boost_FOUND)
+    list(APPEND TITLE_LINK_LIBS ${Boost_LIBRARIES})
+endif()
+
 find_package(Threads REQUIRED)
+if(Threads_FOUND)
+    list(APPEND TITLE_LINK_LIBS pthread)
+endif()
+
 find_package(ZLIB REQUIRED)
+string(REGEX REPLACE .so .a ZLIB_STATIC_LIBRARIES ${ZLIB_LIBRARIES})
+if(EXISTS ${ZLIB_STATIC_LIBRARIES})
+    set(ZLIB_LIBRARIES ${ZLIB_STATIC_LIBRARIES})
+endif()
+if(ZLIB_FOUND)
+    list(APPEND TITLE_LINK_LIBS ${ZLIB_LIBRARIES})
+endif()
+
+find_package(jemalloc)
+if(JEMALLOC_FOUND)
+    list(APPEND TITLE_LINK_LIBS jemalloc)
+endif()
+
+
+## Custom
+set(ADDITIONAL_LIBS
+    #tcmalloc
+    #profiler # for gperftools profiling
+)
+
 
 add_executable(titlebot ${SRC})
-
-target_link_libraries(titlebot
-    boost_system
-    pthread
-    z)
+target_link_libraries(titlebot ${TITLE_LINK_LIBS} ${ADDITIONAL_LIBS})
 
 add_subdirectory(tests)

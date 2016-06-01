@@ -12,6 +12,7 @@ Connection::Connection(boost::asio::io_service& io_service, std::string host,
       resolver_(io_service),
       host_(std::move(host)),
       uri_(std::move(uri)),
+      callback_(cb),
       title_parser_(std::move(cb))//,
       //content_decoder_(std::make_shared<ContentDecoder>(title_parser_)),
       //chunk_decoder_(std::make_shared<ChunkDecoder>(content_decoder_))

@@ -1,4 +1,4 @@
-FIND_PATH(CATCH_INCLUDE_DIR catch.hpp /usr/include/catch.hpp /usr/local/include/catch.hpp)
+FIND_PATH(CATCH_INCLUDE_DIR NAMES catch.hpp PATHS /usr/include/ /usr/local/include/)
 
 IF(CATCH_INCLUDE_DIR)
     SET(CATCH_FOUND TRUE)

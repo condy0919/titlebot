@@ -69,6 +69,8 @@ struct Chunk {
     std::size_t size_;
     std::vector<char> data_;
 
+    void consumeData();
+
     void reset();
 
     bool isLastChunk() const;
