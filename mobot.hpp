@@ -103,12 +103,6 @@ private:
 
         std::cout << "[info] connect to " << ep.address().to_string() << ":"
                   << ep.port() << '\n';
-
-        if (ep.address().is_v4()) {
-            sock_.open(ip::tcp::v4());
-        } else {
-            sock_.open(ip::tcp::v6());
-        }
         sock_.connect(ep);
     }
 
