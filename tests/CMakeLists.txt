@@ -9,10 +9,13 @@ if(CATCH_FOUND)
     add_executable(test_privmsg_parser privmsg_parser.cpp)
     target_link_libraries(test_privmsg_parser boost_system)
 
+    add_executable(test_html_unescape unescape.cpp ../utils/entities.cpp)
+
     set(test_list
         test_chunk_parser
         test_decode
         test_privmsg_parser
+        test_html_unescape
         )
 
     foreach(it ${test_list})
