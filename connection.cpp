@@ -1,7 +1,8 @@
-#include "connection.hpp"
-#include "utils/log.hpp"
-#include "utils/http.hpp"
 #include "decoder.hpp"
+#include "utils/log.hpp"
+#include "connection.hpp"
+#include "utils/http.hpp"
+#include "utils/iconv.hpp"
 #include <boost/bind.hpp>
 #include <iostream>
 
@@ -105,6 +106,27 @@ void Connection::read_header_handle(const boost::system::error_code& e,
         }
 
         // text/html
+        // set charset converter if needed
+        // for example:
+        // Content-Type: text/html; charset=gb2312
+        {
+            static char charset[] = "charset";
+            static char sp[] = " ";
+            auto iter = std::search(content_type.begin(), content_type.end(),
+                                    charset, charset + sizeof(charset) - 1);
+            if (iter != content_type.end()) {
+                auto st = iter + sizeof(charset); // include '='
+                auto ed =
+                    std::find_first_of(st, content_type.end(), sp, sp + 1);
+                std::string codec(st, ed);
+                trim_left_if(codec, boost::is_any_of("\"\'"));
+                trim_right_if(codec, boost::is_any_of("\"\'"));
+                DEBUG("charset=" + codec);
+                title_parser_.setConverter(std::make_unique<iconvpp::converter>(
+                    "UTF-8", std::move(codec)));
+            }
+        }
+
         // process Transfer-Encoding and Content-Encoding
         {
             std::string encoding = resp_.getHeader("Content-Encoding");

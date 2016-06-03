@@ -9,7 +9,7 @@ set(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
 add_definitions(-std=c++17)
-add_definitions(-O2)
+add_definitions(-O3)
 add_definitions(-Wall)
 add_definitions(-Wextra)
 #add_definitions(-g)
