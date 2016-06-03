@@ -11,11 +11,14 @@ if(CATCH_FOUND)
 
     add_executable(test_html_unescape unescape.cpp ../utils/entities.cpp)
 
+    add_executable(test_iconv iconv.cpp)
+
     set(test_list
         test_chunk_parser
         test_decode
         test_privmsg_parser
         test_html_unescape
+        test_iconv
         )
 
     foreach(it ${test_list})
