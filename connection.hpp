@@ -192,7 +192,7 @@ private:
             // close socket
         } else if (st == Http::Response::Parser::state::good) {
             // non-text/html
-            std::string content_type = resp_.getHeader("Content-Type");
+            std::string content_type = resp_.getHeader("content-type");
             if (content_type.empty()) {
                 return;
             } else if (content_type.compare(0, sizeof("text/html") - 1, "text/html")) {
@@ -228,7 +228,7 @@ private:
 
             // process Transfer-Encoding and Content-Encoding
             {
-                std::string encoding = resp_.getHeader("Content-Encoding");
+                std::string encoding = resp_.getHeader("content-encoding");
                 if (encoding.empty()) {
                     content_decoder_ =
                         std::make_shared<ContentDecoder>(title_parser_);
@@ -244,7 +244,7 @@ private:
                 }
             }
             chunk_decoder_ = std::make_shared<ChunkDecoder>(content_decoder_);
-            if (resp_.getHeader("Transfer-Encoding") == "chunked") {
+            if (resp_.getHeader("transfer-encoding") == "chunked") {
                 DEBUG("set Chunked Parser");
                 chunk_decoder_->setParser(std::make_unique<Http::Chunk::Parser>());
             }

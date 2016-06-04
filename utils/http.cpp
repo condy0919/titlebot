@@ -1,5 +1,6 @@
 #include "http.hpp"
 #include <cctype>
+#include <boost/algorithm/string.hpp>
 
 namespace {
 bool is_char(int c) {
@@ -71,8 +72,11 @@ std::string Request::get(const std::string& host, const std::string& uri) {
 }
 
 std::string Response::getHeader(std::string key) const {
-    for (auto&& pair_ : headers) {
+    boost::to_lower(key);
+    for (auto pair_ : headers) {
+        boost::to_lower(pair_.first);
         if (pair_.first == key) {
+            boost::to_lower(pair_.second);
             return pair_.second;
         }
     }

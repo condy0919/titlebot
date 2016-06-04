@@ -124,6 +124,14 @@ bool is_tspecial(int c) {
     case ')':
     case '<':
     case '>':
+    case '[':
+    case ']':
+    case '{':
+    case '}':
+    case ',':
+    case ':':
+    case '\\':
+    case '\"':
     case ' ':
         return true;
     default:
