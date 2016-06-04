@@ -11,16 +11,16 @@ void Server::start() {
         bot_.nick("BBruceSucksBot").user("BruceSucksBot").join({"#linuxba"});
         try {
             // capture this pointer!
-            bot_.mainloop([=](std::string url, std::string target) {
-                std::string tmp = url.substr(7);
-                std::string host = tmp, uri = "/";
-                auto iter = std::find(tmp.begin(), tmp.end(), '/');
-                if (iter != tmp.end()) {
-                    host = std::string(tmp.begin(), iter);
-                    uri = std::string(iter, tmp.end());
+            bot_.mainloop([=](std::string protocol, std::string url,
+                              std::string target) {
+                std::string host = url, uri = "/";
+                auto iter = std::find(url.begin(), url.end(), '/');
+                if (iter != url.end()) {
+                    host = std::string(url.begin(), iter);
+                    uri = std::string(iter, url.end());
                 }
                 fetcher_.start(
-                    std::move(host), std::move(uri),
+                    std::move(protocol), std::move(host), std::move(uri),
                     std::bind(&MoBot::privmsg, &bot_, std::placeholders::_1,
                               std::move(target)));
             });

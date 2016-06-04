@@ -3,14 +3,13 @@
 #include "connection.hpp"
 #include <boost/asio.hpp>
 #include <boost/asio/steady_timer.hpp>
-#include <unordered_set>
 #include <functional>
 
 class Fetcher {
 public:
     Fetcher();
 
-    void start(std::string host, std::string uti,
+    void start(std::string protocol, std::string host, std::string uri,
                std::function<void(std::string)> cb);
 
     void run();

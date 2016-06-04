@@ -118,129 +118,159 @@ private:
 };
 
 namespace {
-    bool parse_privmsg(std::string s, std::string& from, std::string& target,
-                       std::string& url) {
-        if (s.front() != ':') {
-            return false;
-        }
-
-        auto from_end = std::find(s.begin() + 1, s.end(), '!');
-        if (from_end == s.end()) {
-            return false;
-        }
-        from = std::string(s.begin() + 1, from_end);
-
-        auto privmsg_start = std::find(from_end, s.end(), ' ');
-        if (privmsg_start == s.end()) {
-            return false;
-        }
-
-        std::uint64_t magic_privmsg = 0x47534d5649525020;  // " PRIVMSG"
-        if (magic_privmsg != *(std::uint64_t*)&*privmsg_start) {
-            return false;
-        }
-
-        auto iter = privmsg_start + 9;
-        auto target_end = std::find(iter, s.end(), ' ');
-        if (target_end == s.end()) {
-            return false;
-        }
-        target = std::string(iter, target_end);
-
-        iter = target_end + 2;
-        std::string tmp;
-        enum {
-            TOKEN_OTHER,
-            TOKEN_H,
-            TOKEN_T_1,
-            TOKEN_T_2,
-            TOKEN_P,
-            // TOKEN_S, // TODO
-            TOKEN_COLON,
-            TOKEN_SLASH_1,
-            TOKEN_SLASH_2,
-            TOKEN_CONTENT
-        } st = TOKEN_OTHER;
-        bool over = false;
-        for (auto i = iter; !over && i != s.end(); ++i) {
-            char c = *i;
-            switch (st) {
-            case TOKEN_OTHER:
-                if (c == 'h' || c == 'H') {
-                    st = TOKEN_H;
-                }
-                break;
-
-            case TOKEN_H:
-                if (c == 't' || c == 'T') {
-                    st = TOKEN_T_1;
-                } else {
-                    st = TOKEN_OTHER;
-                }
-                break;
-
-            case TOKEN_T_1:
-                if (c == 't' || c == 'T') {
-                    st = TOKEN_T_2;
-                } else {
-                    st = TOKEN_OTHER;
-                }
-                break;
-            case TOKEN_T_2:
-                if (c == 'p' || c == 'P') {
-                    st = TOKEN_P;
-                } else {
-                    st = TOKEN_OTHER;
-                }
-                break;
-
-            case TOKEN_P:
-                if (c == ':') {
-                    st = TOKEN_COLON;
-                } else {
-                    st = TOKEN_OTHER;
-                }
-                break;
-
-            case TOKEN_COLON:
-                if (c == '/') {
-                    st = TOKEN_SLASH_1;
-                } else {
-                    st = TOKEN_OTHER;
-                }
-                break;
-            case TOKEN_SLASH_1:
-                if (c == '/') {
-                    st = TOKEN_SLASH_2;
-                } else {
-                    st = TOKEN_OTHER;
-                }
-                break;
-
-            case TOKEN_SLASH_2:
-                if (!std::isspace(c)) {
-                    tmp.push_back(c);
-                    st = TOKEN_CONTENT;
-                } else {
-                    st = TOKEN_OTHER;
-                }
-                break;
-
-            case TOKEN_CONTENT:
-                if (!std::isspace(c)) {
-                    tmp.push_back(c);
-                } else {
-                    over = true;
-                }
-                break;
-            }
-        }
-        if (!tmp.empty()) {
-            url = "http://" + std::move(tmp);
-            return true;
-        }
+bool is_tspecial(int c) {
+    switch (c) {
+    case '(':
+    case ')':
+    case '<':
+    case '>':
+    case ' ':
+        return true;
+    default:
         return false;
     }
+    return false;
+}
+
+bool parse_privmsg(std::string s, std::string& from, std::string& target,
+                   std::string& protocol, std::string& url) {
+    if (s.front() != ':') {
+        return false;
+    }
+
+    auto from_end = std::find(s.begin() + 1, s.end(), '!');
+    if (from_end == s.end()) {
+        return false;
+    }
+    from = std::string(s.begin() + 1, from_end); // Out
+
+    auto privmsg_start = std::find(from_end, s.end(), ' ');
+    if (privmsg_start == s.end()) {
+        return false;
+    }
+
+    std::uint64_t magic_privmsg = 0x47534d5649525020;  // " PRIVMSG"
+    if (magic_privmsg != *(std::uint64_t*)&*privmsg_start) {
+        return false;
+    }
+
+    auto iter = privmsg_start + 9;
+    auto target_end = std::find(iter, s.end(), ' ');
+    if (target_end == s.end()) {
+        return false;
+    }
+    target = std::string(iter, target_end); // Out
+
+    iter = target_end + 2;
+    std::string tmp;
+    enum {
+        TOKEN_OTHER,
+        TOKEN_H,
+        TOKEN_T_1,
+        TOKEN_T_2,
+        TOKEN_P,
+        TOKEN_S,
+        TOKEN_COLON,
+        TOKEN_SLASH_1,
+        TOKEN_SLASH_2,
+        TOKEN_CONTENT
+    } st = TOKEN_OTHER;
+    bool over = false;
+    bool https = false;
+    for (auto i = iter; !over && i != s.end(); ++i) {
+        const char c = *i;
+        switch (st) {
+        case TOKEN_OTHER:
+            https = false;
+            if (c == 'h' || c == 'H') {
+                st = TOKEN_H;
+            }
+            break;
+
+        case TOKEN_H:
+            if (c == 't' || c == 'T') {
+                st = TOKEN_T_1;
+            } else {
+                st = TOKEN_OTHER;
+            }
+            break;
+
+        case TOKEN_T_1:
+            if (c == 't' || c == 'T') {
+                st = TOKEN_T_2;
+            } else {
+                st = TOKEN_OTHER;
+            }
+            break;
+
+        case TOKEN_T_2:
+            if (c == 'p' || c == 'P') {
+                st = TOKEN_P;
+            } else {
+                st = TOKEN_OTHER;
+            }
+            break;
+
+        case TOKEN_P:
+            if (c == 's') {
+                https = true;
+                st = TOKEN_S;
+            } else if (c == ':') {
+                st = TOKEN_COLON;
+            } else {
+                st = TOKEN_OTHER;
+            }
+            break;
+
+        case TOKEN_S:
+            if (c == ':') {
+                st = TOKEN_COLON;
+            } else {
+                st = TOKEN_OTHER;
+            }
+            break;
+
+        case TOKEN_COLON:
+            if (c == '/') {
+                st = TOKEN_SLASH_1;
+            } else {
+                st = TOKEN_OTHER;
+            }
+            break;
+
+        case TOKEN_SLASH_1:
+            if (c == '/') {
+                st = TOKEN_SLASH_2;
+            } else {
+                st = TOKEN_OTHER;
+            }
+            break;
+
+        case TOKEN_SLASH_2:
+            if (!std::isspace(c)) {
+                tmp.push_back(c);
+                st = TOKEN_CONTENT;
+            } else {
+                st = TOKEN_OTHER;
+            }
+            break;
+
+        case TOKEN_CONTENT:
+            if (!is_tspecial(c)) {
+                tmp.push_back(c);
+            } else {
+                over = true;
+            }
+            break;
+        }
+    }
+    if (!tmp.empty()) {
+        url = std::move(tmp);
+        protocol = https ? "https" : "http";
+        return true;
+    }
+    return false;
+}
 }
 
 class MoBot : public IRCBot {
@@ -270,16 +300,17 @@ public:
         return *this;
     }
 
-    void mainloop(std::function<void(std::string, std::string)> callback) {
+    void mainloop(
+        std::function<void(std::string, std::string, std::string)> callback) {
         auto fn = [=](std::string s) {
-            std::string from, target, url;
-            if (parse_privmsg(std::move(s), from, target, url)) {
+            std::string protocol, from, target, url;
+            if (parse_privmsg(std::move(s), from, target, protocol, url)) {
                 if (target.front() == '#') {
                     // channel mode
-                    callback(std::move(url), std::move(target));
+                    callback(std::move(protocol), std::move(url), std::move(target));
                 } else {
                     // private mode
-                    callback(std::move(url), std::move(from));
+                    callback(std::move(protocol), std::move(url), std::move(from));
                 }
             }
         };

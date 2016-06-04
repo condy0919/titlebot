@@ -8,7 +8,7 @@ set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 set(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
-add_definitions(-std=c++17)
+add_definitions(-std=c++14)
 add_definitions(-O3)
 add_definitions(-Wall)
 add_definitions(-Wextra)
@@ -51,6 +51,12 @@ endif()
 find_package(jemalloc)
 if(JEMALLOC_FOUND)
     list(APPEND TITLE_LINK_LIBS jemalloc)
+endif()
+
+## SSL Support
+find_package(OpenSSL REQUIRED)
+if(OPENSSL_FOUND)
+    list(APPEND TITLE_LINK_LIBS ${OPENSSL_LIBRARIES})
 endif()
 
 
