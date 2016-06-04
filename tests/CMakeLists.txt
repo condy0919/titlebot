@@ -15,6 +15,8 @@ if(CATCH_FOUND)
 
     add_executable(test_title_parser title_parser.cpp ../title_parser.cpp ../utils/entities.cpp)
 
+    add_executable(test_numfmt format.cpp ../utils/format.cpp)
+
     set(test_list
         test_chunk_parser
         test_decode
@@ -22,6 +24,7 @@ if(CATCH_FOUND)
         test_html_unescape
         test_iconv
         test_title_parser
+        test_numfmt
         )
 
     foreach(it ${test_list})

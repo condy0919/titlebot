@@ -321,6 +321,9 @@ std::string UnquoteHTML(std::string in) {
         ProcessedChar = false;
         GotCharCode = false;
         switch (MatchState) {
+        case NoMatch:
+            break;
+
         case MatchBegin:
             if (ThisCh == '#') {
                 MatchState = MatchNumber;

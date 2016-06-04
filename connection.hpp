@@ -5,6 +5,7 @@
 #include "utils/log.hpp"
 #include "utils/http.hpp"
 #include "utils/iconv.hpp"
+#include "utils/format.hpp"
 #include "title_parser.hpp"
 #include <boost/bind.hpp>
 #include <boost/asio.hpp>
@@ -196,7 +197,8 @@ private:
             if (content_type.empty()) {
                 return;
             } else if (content_type.compare(0, sizeof("text/html") - 1, "text/html")) {
-                callback_(content_type);
+                std::string content_length = resp_.getHeader("content-length");
+                callback_(content_type + " " + numfmt(content_length));
                 return;
             }
 
