@@ -188,6 +188,7 @@ private:
         std::tie(st, iter) = parser_.parse(resp_, buffer_.data(),
                                            buffer_.data() + bytes_transferred);
         if (st == Http::Response::Parser::state::bad) {
+            ERROR("parse http header error, close socket");
             // close socket
         } else if (st == Http::Response::Parser::state::good) {
             // non-text/html
@@ -244,6 +245,7 @@ private:
             }
             chunk_decoder_ = std::make_shared<ChunkDecoder>(content_decoder_);
             if (resp_.getHeader("Transfer-Encoding") == "chunked") {
+                DEBUG("set Chunked Parser");
                 chunk_decoder_->setParser(std::make_unique<Http::Chunk::Parser>());
             }
 
