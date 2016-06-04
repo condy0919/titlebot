@@ -65,7 +65,13 @@ bool TitleParser::consume(char input) {
         if (input == '>') {
             state_ = TOKEN_RP;
         } else {
-            state_ = TOKEN_OTHER;
+            state_ = TOKEN_PROPERTIES;
+        }
+        break;
+
+    case TOKEN_PROPERTIES:
+        if (input == '>') {
+            state_ = TOKEN_RP;
         }
         break;
 

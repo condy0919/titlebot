@@ -18,6 +18,7 @@ class TitleParser {
         TOKEN_T_2,            // t
         TOKEN_L,              // l
         TOKEN_E,              // e
+        TOKEN_PROPERTIES,     // * except '>'
         TOKEN_RP,             // >
         TOKEN_CONTENT_NO_LP,  // xxx
     } state_;

@@ -13,12 +13,15 @@ if(CATCH_FOUND)
 
     add_executable(test_iconv iconv.cpp)
 
+    add_executable(test_title_parser title_parser.cpp ../title_parser.cpp ../utils/entities.cpp)
+
     set(test_list
         test_chunk_parser
         test_decode
         test_privmsg_parser
         test_html_unescape
         test_iconv
+        test_title_parser
         )
 
     foreach(it ${test_list})
