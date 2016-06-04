@@ -61,7 +61,7 @@ std::string Request::get(const std::string& host, const std::string& uri) {
 
     req += "GET " + uri + " HTTP/1.1\r\n";
     req += "Accept: */*\r\n";
-    req += "Accept-Encoding: identity\r\n";
+    req += "Accept-Encoding: gzip, deflate, identity\r\n";
     //req += "Accept-Encoding: gzip, deflate\r\n";
     req += "Host: " + host + "\r\n";
     req += "User-Agent: titlebot\r\n";
@@ -403,5 +403,33 @@ Chunk::Parser::state Chunk::Parser::consume(Chunk& chunk_, char c) {
     default:
         return bad;
     }
+}
+
+std::tuple<std::string, std::string, std::string> parseURL(std::string url) {
+    std::string protocol, host, uri;
+
+    auto colon_start = std::find(url.begin(), url.end(), ':');
+    if (colon_start != url.end()) {
+        protocol = std::string(url.begin(), colon_start);
+        std::advance(colon_start, 3);
+    } else {
+        colon_start = url.begin();
+    }
+
+    host = std::string(colon_start, url.end()); // :// => 3
+    uri = "/";
+    auto iter = std::find(host.begin(), host.end(), '/');
+    if (iter != host.end()) {
+        uri = std::string(iter, host.end());
+        host.erase(iter, host.end());
+    }
+
+    iter = std::find(uri.begin(), uri.end(), '#');
+    if (iter != uri.end()) {
+        uri.erase(iter, uri.end());
+    }
+
+    return std::make_tuple(std::move(protocol), std::move(host),
+                           std::move(uri));
 }
 }

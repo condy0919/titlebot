@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <tuple>
 
 namespace Http {
 struct Request {
@@ -109,4 +110,6 @@ struct Chunk {
         } state_;
     };
 };
+
+std::tuple<std::string, std::string, std::string> parseURL(std::string url);
 }

@@ -11,18 +11,8 @@ Fetcher::Fetcher() : timer_(io_service_, std::chrono::hours(1)) {
 
 void Fetcher::start(std::string protocol, std::string host, std::string uri,
                     std::function<void(std::string)> cb) {
-    // XXX ugly
-    if (boost::iequals(protocol, "https")) {
-        auto conn = std::make_shared<HTTPSConnection>(
-            io_service_, std::move(protocol), std::move(host), std::move(uri),
-            std::move(cb));
-        conn->start();
-    } else {
-        auto conn = std::make_shared<HTTPConnection>(
-            io_service_, std::move(protocol), std::move(host), std::move(uri),
-            std::move(cb));
-        conn->start();
-    }
+    startConnection(io_service_, std::move(protocol), std::move(host),
+                    std::move(uri), std::move(cb));
 }
 
 void Fetcher::run() {

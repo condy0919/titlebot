@@ -24,6 +24,11 @@ struct is_ssl<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>>
     : std::true_type {};
 };
 
+void startConnection(boost::asio::io_service& io_service, std::string protocol,
+                     std::string host, std::string uri,
+                     std::function<void(std::string)> cb);
+
+
 template <typename SocketT>
 class Connection : public std::enable_shared_from_this<Connection<SocketT>> {
 public:
@@ -202,6 +207,18 @@ private:
                 return;
             }
 
+            // redirect
+            if (resp_.status_code_ >= 300 && resp_.status_code_ <= 307) {
+                std::string loc = resp_.getHeader("location");
+                DEBUG("redirect to " + loc);
+                std::string protocol, host, uri;
+                std::tie(protocol, host, uri) = Http::parseURL(std::move(loc));
+                startConnection(socket_.get_io_service(), std::move(protocol),
+                                std::move(host), std::move(uri),
+                                std::move(callback_));
+                return;
+            }
+
             // text/html
             // set charset converter if needed
             // for example:
@@ -308,6 +325,7 @@ private:
     std::shared_ptr<ContentDecoder> content_decoder_;
     std::shared_ptr<ChunkDecoder> chunk_decoder_;
 };
+
 
 using HTTPConnection = Connection<boost::asio::ip::tcp::socket>;
 using HTTPSConnection =
