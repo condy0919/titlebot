@@ -157,7 +157,7 @@ bool parse_privmsg(std::string s, std::string& from, std::string& target,
         return false;
     }
 
-    std::uint64_t magic_privmsg = 0x47534d5649525020;  // " PRIVMSG"
+    const std::uint64_t magic_privmsg = 0x47534d5649525020;  // " PRIVMSG"
     if (magic_privmsg != *(std::uint64_t*)&*privmsg_start) {
         return false;
     }
@@ -220,7 +220,7 @@ bool parse_privmsg(std::string s, std::string& from, std::string& target,
             break;
 
         case TOKEN_P:
-            if (c == 's') {
+            if (c == 's' || c == 'S') {
                 https = true;
                 st = TOKEN_S;
             } else if (c == ':') {
