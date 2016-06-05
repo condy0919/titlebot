@@ -1,7 +1,7 @@
 #pragma once
 
 #include "utils/log.hpp"
-#include "utils/iconv.hpp"
+#include "utils/utf8tran.hpp"
 #include "utils/entities.hpp"
 #include <boost/algorithm/string.hpp>
 #include <experimental/optional>
@@ -13,6 +13,7 @@ class TitleParser {
     enum state {
         TOKEN_OTHER,
         TOKEN_LP,             // <
+        TOKEN_SP,             // ' '
         TOKEN_T_1,            // t
         TOKEN_I,              // i
         TOKEN_T_2,            // t
@@ -29,19 +30,13 @@ public:
 
     void setCallback(std::function<void(std::string)> fn);
 
-    void setConverter(std::unique_ptr<iconvpp::converter> conv_ptr);
-
     template <typename Iter>
     bool parse(Iter beg, Iter end) {
         while (beg != end) {
             if (consume(*beg++)) {
                 if (callback_) {
-                    // charset
-                    if (conv_ptr_) {
-                        std::string str;
-                        conv_ptr_->convert(content_, str);
-                        content_.swap(str);
-                    }
+                    // UTF-8 always
+                    content_ = translator_.trans(std::move(content_));
 
                     // html unescape
                     content_ = Html::Unescape(std::move(content_));
@@ -71,5 +66,5 @@ private:
     std::string content_;
     std::function<void(std::string)> callback_;
 
-    std::unique_ptr<iconvpp::converter> conv_ptr_;
+    UTF8Translator translator_;
 };

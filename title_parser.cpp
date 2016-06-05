@@ -9,10 +9,6 @@ void TitleParser::setCallback(std::function<void(std::string)> fn) {
     callback_ = std::move(fn);
 }
 
-void TitleParser::setConverter(std::unique_ptr<iconvpp::converter> conv_ptr) {
-    conv_ptr_ = std::move(conv_ptr);
-}
-
 bool TitleParser::consume(char input) {
     switch (state_) {
     case TOKEN_OTHER:

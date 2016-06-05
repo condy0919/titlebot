@@ -220,31 +220,6 @@ private:
             }
 
             // text/html
-            // set charset converter if needed
-            // for example:
-            // Content-Type: text/html; charset=gb2312
-            {
-                static const char charset[] = "charset";
-                static const char sp[] = " ";
-                auto iter =
-                    std::search(content_type.begin(), content_type.end(),
-                                charset, charset + sizeof(charset) - 1);
-                if (iter != content_type.end()) {
-                    auto st = iter + sizeof(charset); // include '='
-                    auto ed = std::find_first_of(st, content_type.end(), sp, sp + 1);
-                    std::string codec(st, ed);
-                    trim_left_if(codec, boost::is_any_of("\"\'"));
-                    trim_right_if(codec, boost::is_any_of("\"\'"));
-                    boost::to_lower(codec);
-                    DEBUG("charset=" + codec);
-                    if (codec.compare(0, 3, "utf")) { // XXX
-                        title_parser_.setConverter(
-                            std::make_unique<iconvpp::converter>(
-                                "UTF-8", std::move(codec)));
-                    }
-                }
-            }
-
             // process Transfer-Encoding and Content-Encoding
             {
                 std::string encoding = resp_.getHeader("content-encoding");

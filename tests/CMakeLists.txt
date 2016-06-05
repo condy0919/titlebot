@@ -4,7 +4,7 @@ if(CATCH_FOUND)
     add_executable(test_chunk_parser chunk_parser.cpp ../utils/http.cpp)
 
     add_executable(test_decode decode.cpp ../utils/http.cpp ../title_parser.cpp ../decoder.cpp ../utils/entities.cpp)
-    target_link_libraries(test_decode z)
+    target_link_libraries(test_decode z uchardet)
 
     add_executable(test_privmsg_parser privmsg_parser.cpp)
     target_link_libraries(test_privmsg_parser boost_system)
@@ -14,8 +14,12 @@ if(CATCH_FOUND)
     add_executable(test_iconv iconv.cpp)
 
     add_executable(test_title_parser title_parser.cpp ../title_parser.cpp ../utils/entities.cpp)
+    target_link_libraries(test_title_parser uchardet)
 
     add_executable(test_numfmt format.cpp ../utils/format.cpp)
+
+    add_executable(test_charset chardet.cpp)
+    target_link_libraries(test_charset uchardet)
 
     set(test_list
         test_chunk_parser
@@ -25,6 +29,7 @@ if(CATCH_FOUND)
         test_iconv
         test_title_parser
         test_numfmt
+        test_charset
         )
 
     foreach(it ${test_list})
