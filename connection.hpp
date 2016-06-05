@@ -197,16 +197,6 @@ private:
             ERROR("parse http header error, close socket");
             // close socket
         } else if (st == Http::Response::Parser::state::good) {
-            // non-text/html
-            std::string content_type = resp_.getHeader("content-type");
-            if (content_type.empty()) {
-                return;
-            } else if (content_type.compare(0, sizeof("text/html") - 1, "text/html")) {
-                std::string content_length = resp_.getHeader("content-length");
-                callback_(content_type + " " + numfmt(content_length));
-                return;
-            }
-
             // redirect
             if (resp_.status_code_ >= 300 && resp_.status_code_ <= 307) {
                 std::string loc = resp_.getHeader("location");
@@ -216,6 +206,16 @@ private:
                 startConnection(socket_.get_io_service(), std::move(protocol),
                                 std::move(host), std::move(uri),
                                 std::move(callback_));
+                return;
+            }
+
+            // non-text/html
+            std::string content_type = resp_.getHeader("content-type");
+            if (content_type.empty()) {
+                return;
+            } else if (content_type.compare(0, sizeof("text/html") - 1, "text/html")) {
+                std::string content_length = resp_.getHeader("content-length");
+                callback_(content_type + " " + numfmt(content_length));
                 return;
             }
 
