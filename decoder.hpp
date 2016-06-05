@@ -48,7 +48,12 @@ public:
     ~DeflateDecoder() noexcept override;
 
 private:
+    bool _decode_ok_;
+    std::vector<char> _decode(const char* s, std::size_t size);
+
     z_stream strm;
+    bool first_try_ = true;
+    std::vector<char> data_;
 };
 
 

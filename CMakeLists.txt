@@ -59,6 +59,11 @@ if(OPENSSL_FOUND)
     list(APPEND TITLE_LINK_LIBS ${OPENSSL_LIBRARIES})
 endif()
 
+find_package(uchardet REQUIRED)
+if(UCHARDET_FOUND)
+    list(APPEND TITLE_LINK_LIBS ${UCHARDET_LIBRARIES})
+endif()
+
 
 ## Custom
 set(ADDITIONAL_LIBS
