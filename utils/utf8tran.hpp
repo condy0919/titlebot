@@ -20,6 +20,9 @@ public:
         if (!std::strcmp(charset, "UTF-8") || !std::strcmp(charset, "ASCII")) {
             return in;
         }
+        if (charset[0] == '\0') {
+            charset = "GBK"; // XXX
+        }
 
         iconvpp::converter conv("UTF-8", charset);
         std::string ret;
