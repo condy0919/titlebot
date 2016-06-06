@@ -44,8 +44,7 @@ public:
     }
 
 private:
-    using ObjT = std::decay_t<decltype(*std::declval<uchardet_t>())>;
-    std::unique_ptr<ObjT, CharDetectorDeleter> ptr_;
+    std::unique_ptr<std::remove_pointer_t<uchardet_t>, CharDetectorDeleter> ptr_;
 };
 
 namespace std {
