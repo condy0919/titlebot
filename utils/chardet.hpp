@@ -44,6 +44,7 @@ public:
     }
 
 private:
+    // XXX Maybe broken
     std::unique_ptr<std::remove_pointer_t<uchardet_t>, CharDetectorDeleter> ptr_;
 };
 
