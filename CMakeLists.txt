@@ -10,6 +10,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-lib
 
 add_definitions(-std=c++14)
 add_definitions(-O3)
+add_definitions(-march=native)
 add_definitions(-Wall)
 add_definitions(-Wextra)
 #add_definitions(-g)
