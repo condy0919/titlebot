@@ -15,5 +15,5 @@ std::string numfmt(double sz) {
 }
 
 std::string numfmt(std::string sz) {
-    return numfmt(sz.empty() ? 0 : boost::lexical_cast<std::size_t>(sz));
+    return numfmt(sz.empty() ? 0 : boost::lexical_cast<double>(sz));
 }
