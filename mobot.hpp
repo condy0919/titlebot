@@ -311,6 +311,11 @@ public:
     void mainloop(
         std::function<void(std::string, std::string, std::string)> callback) {
         auto fn = [=](std::string s) {
+            // e.g. => https://www.google.com #
+            if (s.back() == '#') {
+                return;
+            }
+
             std::string protocol, from, target, url;
             if (parse_privmsg(std::move(s), from, target, protocol, url)) {
                 if (target.front() == '#') {
