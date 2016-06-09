@@ -312,6 +312,7 @@ public:
         std::function<void(std::string, std::string, std::string)> callback) {
         auto fn = [=](std::string s) {
             // e.g. => https://www.google.com #
+            boost::trim_right(s);
             if (s.back() == '#') {
                 return;
             }
