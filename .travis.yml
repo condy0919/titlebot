@@ -11,7 +11,7 @@ os: linux
 
 install:
 - sudo apt-get update
-- sudo apt-get install libboost-*
+- sudo apt-get install libboost-all-dev
   
 script: sh scripts/deploy.sh
 
