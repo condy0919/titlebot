@@ -1,5 +1,5 @@
 SET(LIB_NAME libuchardet.so)
-FIND_PATH(_UCHARDET_LIBRARIES NAMES ${LIB_NAME} PATHS /usr/lib/ /usr/local/lib/)
+FIND_PATH(_UCHARDET_LIBRARIES NAMES ${LIB_NAME} PATHS /usr/lib/ /usr/local/lib/ /usr/lib/x86_64-linux-gnu/)
 
 IF(_UCHARDET_LIBRARIES)
     SET(UCHARDET_FOUND TRUE)
