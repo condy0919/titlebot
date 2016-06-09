@@ -10,8 +10,9 @@ compiler:
 os: linux
 
 install:
-- sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+- sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 - sudo apt-get update
+- sudo apt-get install libuchardet0 libuchardet-dev
 - sudo apt-get install libboost-all-dev
 - sudo apt-get install g++-5
   
@@ -27,7 +28,7 @@ branch:
 notifications:
   email:
     on_success: change
-    on_failure: change
+    on_failure: always
   irc:
     channels:
     - chat.freenode.net#xiyoulinux
