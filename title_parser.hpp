@@ -30,13 +30,23 @@ public:
 
     void setCallback(std::function<void(std::string)> fn);
 
+    void setCharsetDecoder(std::unique_ptr<iconvpp::converter> p);
+
     template <typename Iter>
     bool parse(Iter beg, Iter end) {
         while (beg != end) {
             if (consume(*beg++)) {
                 if (callback_) {
                     // UTF-8 always
-                    content_ = translator_.trans(std::move(content_));
+                    if (conv_ptr_) {
+                        // charset found in `Content-Type' field.
+                        std::string tmp;
+                        conv_ptr_->convert(content_, tmp);
+                        tmp.swap(content_);
+                    } else {
+                        // guess
+                        content_ = translator_.trans(std::move(content_));
+                    }
 
                     // html unescape
                     content_ = Html::Unescape(std::move(content_));
@@ -66,5 +76,6 @@ private:
     std::string content_;
     std::function<void(std::string)> callback_;
 
+    std::unique_ptr<iconvpp::converter> conv_ptr_;
     UTF8Translator translator_;
 };

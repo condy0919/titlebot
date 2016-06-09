@@ -32,6 +32,7 @@ void startConnection(boost::asio::io_service& io_service, std::string protocol,
 template <typename SocketT>
 class Connection : public std::enable_shared_from_this<Connection<SocketT>> {
 public:
+    // ssl version
     template <typename T = SocketT,
               std::enable_if_t<TypeTraits::is_ssl<T>::value, int> = 0>
     Connection(boost::asio::io_service& io_service, std::string protocol,
@@ -46,6 +47,7 @@ public:
           callback_(cb),
           title_parser_(std::move(cb)) {}
 
+    // normal version
     template <typename T = SocketT,
               std::enable_if_t<!TypeTraits::is_ssl<T>::value, int> = 0>
     Connection(boost::asio::io_service& io_service, std::string protocol,
@@ -220,6 +222,24 @@ private:
             }
 
             // text/html
+            // process charset
+            // e.g. Content-Type: text/html;charset=gbk
+            {
+                static const char charset[] = {'c','h','a','r','s','e','t'};
+                auto iter = std::search(content_type.begin(), content_type.end(),
+                                        std::begin(charset), std::end(charset));
+                if (iter != content_type.end()) {
+                    iter += sizeof(charset) + 1;
+                    auto sp = std::find_if(iter, content_type.end(), ::isspace);
+                    title_parser_.setCharsetDecoder(
+                        std::make_unique<iconvpp::converter>(
+                            "UTF-8", boost::trim_copy_if(
+                                         std::string(iter, sp), [](char c) {
+                                             return c == '\'' || c == '\"';
+                                         })));
+                }
+            }
+
             // process Transfer-Encoding and Content-Encoding
             {
                 std::string encoding = resp_.getHeader("content-encoding");
