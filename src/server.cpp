@@ -1,4 +1,5 @@
 #include "server.hpp"
+#include "setting.hpp"
 #include "utils/log.hpp"
 #include <vector>
 #include <thread>
@@ -8,7 +9,7 @@ Server::Server() = default;
 void Server::start() {
     std::thread fetcher_thread(&Fetcher::run, &fetcher_);
     std::thread mobot_thread([&]() {
-        bot_.nick("BBruceSucksBot").user("BruceSucksBot").join({"#linuxba"});
+        bot_.nick(TITLEBOT_NICK).user(TITLEBOT_USER).join(TITLEBOT_CHANNELS);
         try {
             // capture this pointer!
             bot_.mainloop([=](std::string protocol, std::string url,

@@ -1,22 +1,22 @@
 find_package(catch)
 
 if(CATCH_FOUND)
-    add_executable(test_chunk_parser chunk_parser.cpp ../utils/http.cpp)
+    add_executable(test_chunk_parser chunk_parser.cpp ../src/utils/http.cpp)
 
-    add_executable(test_decode decode.cpp ../utils/http.cpp ../title_parser.cpp ../decoder.cpp ../utils/entities.cpp)
+    add_executable(test_decode decode.cpp ../src/utils/http.cpp ../src/title_parser.cpp ../src/decoder.cpp ../src/utils/entities.cpp)
     target_link_libraries(test_decode z uchardet)
 
     add_executable(test_privmsg_parser privmsg_parser.cpp)
     target_link_libraries(test_privmsg_parser boost_system)
 
-    add_executable(test_html_unescape unescape.cpp ../utils/entities.cpp)
+    add_executable(test_html_unescape unescape.cpp ../src/utils/entities.cpp)
 
     add_executable(test_iconv iconv.cpp)
 
-    add_executable(test_title_parser title_parser.cpp ../title_parser.cpp ../utils/entities.cpp)
+    add_executable(test_title_parser title_parser.cpp ../src/title_parser.cpp ../src/utils/entities.cpp)
     target_link_libraries(test_title_parser uchardet)
 
-    add_executable(test_numfmt format.cpp ../utils/format.cpp)
+    add_executable(test_numfmt format.cpp ../src/utils/format.cpp)
 
     add_executable(test_charset chardet.cpp)
     target_link_libraries(test_charset uchardet)

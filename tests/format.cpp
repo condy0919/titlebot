@@ -1,5 +1,5 @@
 #define CATCH_CONFIG_MAIN
-#include "../utils/format.hpp"
+#include "../src/utils/format.hpp"
 #include <catch.hpp>
 
 TEST_CASE("number format", "[number format]") {

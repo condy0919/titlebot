@@ -1,5 +1,5 @@
 #define CATCH_CONFIG_MAIN
-#include "../title_parser.hpp"
+#include "../src/title_parser.hpp"
 #include <catch.hpp>
 #include <string>
 

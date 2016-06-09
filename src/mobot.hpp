@@ -308,6 +308,17 @@ public:
         return *this;
     }
 
+    MoBot& join(std::string channels) {
+        std::istringstream iss(std::move(channels));
+        std::vector<std::string> chs;
+        std::string ch;
+
+        while (std::getline(iss, ch, ',')) {
+            chs.push_back(std::move(ch));
+        }
+        return join(std::move(chs));
+    }
+
     void mainloop(
         std::function<void(std::string, std::string, std::string)> callback) {
         auto fn = [=](std::string s) {

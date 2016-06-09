@@ -19,11 +19,16 @@ add_definitions(-Wextra)
 add_definitions(-fuse-ld=gold)
 
 
+# Settings
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/setting.hpp.in
+    ${CMAKE_CURRENT_BINARY_DIR}/setting.hpp @ONLY)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+
 file(GLOB SRC
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils/*.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/*.cpp)
 
 
 set(TITLE_LINK_LIBS)

@@ -1,5 +1,5 @@
 #define CATCH_CONFIG_MAIN
-#include "../utils/http.hpp"
+#include "../src/utils/http.hpp"
 #include <catch.hpp>
 #include <string>
 #include <tuple>

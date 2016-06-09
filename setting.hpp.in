@@ -1,0 +1,17 @@
+#pragma once
+
+#cmakedefine TITLEBOT_NICK "@TITLEBOT_NICK@"
+#cmakedefine TITLEBOT_USER "@TITLEBOT_USER@"
+#cmakedefine TITLEBOT_CHANNELS "@TITLEBOT_CHANNELS@"
+
+#ifndef TITLEBOT_NICK
+#define TITLEBOT_NICK "BBruceSucksBot"
+#endif
+
+#ifndef TITLEBOT_USER
+#define TITLEBOT_USER "BBruceSucksBot"
+#endif
+
+#ifndef TITLEBOT_CHANNELS
+#define TITLEBOT_CHANNELS "#linuxba"
+#endif

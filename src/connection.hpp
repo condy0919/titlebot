@@ -105,6 +105,7 @@ private:
         DEBUG(__func__);
         if (e) {
             ERROR("resolve error " + e.message());
+            return;
         }
 
         auto self = this->shared_from_this();

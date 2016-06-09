@@ -1,5 +1,5 @@
 #define CATCH_CONFIG_MAIN
-#include "../mobot.hpp"
+#include "../src/mobot.hpp"
 #include <catch.hpp>
 #include <iostream>
 #include <string>

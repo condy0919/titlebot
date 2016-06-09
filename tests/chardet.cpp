@@ -1,6 +1,6 @@
 #define CATCH_CONFIG_MAIN
-#include "../utils/iconv.hpp"
-#include "../utils/chardet.hpp"
+#include "../src/utils/iconv.hpp"
+#include "../src/utils/chardet.hpp"
 #include <catch.hpp>
 #include <cstring>
 #include <iostream>

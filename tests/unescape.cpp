@@ -1,5 +1,5 @@
 #define CATCH_CONFIG_MAIN
-#include "../utils/entities.hpp"
+#include "../src/utils/entities.hpp"
 #include <catch.hpp>
 #include <string>
 #include <iostream>
