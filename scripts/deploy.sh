@@ -1,6 +1,6 @@
 #!bash
 
-set -euo pipefail
+set -eu
 
 mkdir -p build
 cd build
