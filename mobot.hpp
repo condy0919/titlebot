@@ -17,7 +17,7 @@ public:
     IRCBot(std::string server, std::string port)
         : server_(std::move(server)),
           port_(std::move(port)),
-          beat_(service_, boost::posix_time::minutes(9)),
+          beat_(service_, boost::posix_time::minutes(6)),
           sock_(service_) {
         connect();
     }
@@ -65,7 +65,7 @@ protected:
                         if (line.compare(0, 4, "PING") == 0) {
                             async_write("PONG" + line.substr(4) + "\r\n");
                             beat_.expires_from_now(
-                                boost::posix_time::minutes(9));
+                                boost::posix_time::minutes(6));
                             beat_.async_wait(&IRCBot::timeout);
                         } else {
                             if (line.back() == '\r') {
@@ -312,6 +312,7 @@ public:
         std::function<void(std::string, std::string, std::string)> callback) {
         auto fn = [=](std::string s) {
             // e.g. => https://www.google.com #
+            boost::trim_right(s);
             if (s.back() == '#') {
                 return;
             }
