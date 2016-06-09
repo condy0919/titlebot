@@ -1,5 +1,5 @@
 SET(LIB_NAME libjemalloc.so)
-FIND_PATH(_JEMALLOC_LIBRARIES NAMES ${LIB_NAME} PATHS /usr/lib/ /usr/local/lib/)
+FIND_PATH(_JEMALLOC_LIBRARIES NAMES ${LIB_NAME} PATHS /usr/lib/ /usr/local/lib/ /usr/lib/x86_64-linux-gnu/)
 
 IF(_JEMALLOC_LIBRARIES)
     SET(JEMALLOC_FOUND TRUE)
