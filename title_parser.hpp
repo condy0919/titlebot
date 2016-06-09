@@ -13,6 +13,7 @@ class TitleParser {
     enum state {
         TOKEN_OTHER,
         TOKEN_LP,             // <
+        TOKEN_LP_SP,          // ' '*
         TOKEN_T_1,            // t
         TOKEN_I,              // i
         TOKEN_T_2,            // t

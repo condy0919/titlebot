@@ -13,7 +13,15 @@ bool TitleParser::consume(char input) {
     switch (state_) {
     case TOKEN_OTHER:
         if (input == '<') {
-            state_ = TOKEN_LP;
+            state_ = TOKEN_LP_SP;
+        }
+        break;
+
+    case TOKEN_LP_SP:
+        if (input == 't' || input == 'T') {
+            state_ = TOKEN_T_1;
+        } else if (!std::isspace(input)) {
+            state_ = TOKEN_OTHER;
         }
         break;
 

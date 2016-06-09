@@ -22,4 +22,9 @@ TEST_CASE("title parser", "[title parser]") {
         bool b = tp.parse(s.begin(), s.end());
         REQUIRE(b);
     }
+    SECTION("< title >") {
+        s = "<    title  >twitter</title>";
+        bool b = tp.parse(s.begin(), s.end());
+        REQUIRE(b);
+    }
 }
