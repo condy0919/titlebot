@@ -8,4 +8,3 @@
  make
  make test
 )
-cp build/titlebot .
