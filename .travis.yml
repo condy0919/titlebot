@@ -10,10 +10,15 @@ compiler:
 os: linux
 
 install:
+- sudo add-apt-repository ppa:ubuntu-toolchain-r/test
 - sudo apt-get update
 - sudo apt-get install libboost-all-dev
+- sudo apt-get install g++-5
   
-script: sh scripts/deploy.sh
+script:
+- export CC=gcc-5
+- export CXX=g++-5
+- sh scripts/deploy.sh
 
 branch:
   only:
@@ -27,4 +32,4 @@ notifications:
     channels:
     - chat.freenode.net#xiyoulinux
     template:
-    - "%{repository}/%{branch} (${commit} - ${author}): %{build_url}: %{message}"
+    - "%{repository}/%{branch} (%{commit} - %{author}): %{build_url}: %{message}"
