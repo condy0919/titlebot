@@ -1,7 +1,30 @@
 ---
 language: cpp
+
+sudo: required
+
 compiler:
 - gcc
 - clang
 
-script: sh deploy.sh
+os: linux
+
+install:
+- sudo apt-get update
+- sudo apt-get install libboost-*
+  
+script: sh scripts/deploy.sh
+
+branch:
+  only:
+  - master
+
+notifications:
+  email:
+    on_success: change
+    on_failure: change
+  irc:
+    channels:
+    - chat.freenode.net#xiyoulinux
+    template:
+    - "%{repository}/%{branch} (${commit} - ${author}): %{build_url}: %{message}"
