@@ -1,10 +1,11 @@
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 #include <boost/format.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/algorithm/string.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
 #include <iostream>
 #include <utility>
+#include <chrono>
 #include <vector>
 #include <string>
 #include <random>
@@ -18,11 +19,9 @@ public:
     IRCBot(std::string server, std::string port)
         : server_(std::move(server)),
           port_(std::move(port)),
-          beat_(service_, boost::posix_time::minutes(10)),
-          pong_(service_, boost::posix_time::minutes(1)),
+          read_timer_(service_),
           sock_(service_) {
         connect();
-        do_pong();
     }
 
     ~IRCBot() {
@@ -30,7 +29,6 @@ public:
     }
 
     void start() {
-        beat_.async_wait(&IRCBot::timeout);
         service_.run();
     }
 
@@ -56,29 +54,27 @@ protected:
         async_write(s.data(), s.length());
     }
 
-    void async_read(std::function<void(std::string)> callback) {
+    void async_read(const std::function<void(std::string)>& callback) {
+        read_timer_.expires_from_now(std::chrono::minutes(5));
+        read_timer_.async_wait(boost::bind(&IRCBot::timeout, this,
+                                           boost::asio::placeholders::error));
         boost::asio::async_read_until(
             sock_, buf_, "\r\n",
-            [this, callback](boost::system::error_code ec, size_t sent __attribute__((unused))) {
+            [this, &callback](boost::system::error_code ec, size_t sz __attribute__((unused))) {
                 if (!ec) {
+                    read_timer_.cancel_one(ec);
+
                     std::istream is(&buf_);
                     std::string line;
 
-                    while (std::getline(is, line)) {
-                        if (line.compare(0, 4, "PING") == 0) {
-                            ping_reply_ = "PONG" + line.substr(4) + "\r\n";
-                            async_write(ping_reply_);
-                            beat_.expires_from_now(
-                                boost::posix_time::minutes(10));
-                            beat_.async_wait(&IRCBot::timeout);
-                        } else {
-                            if (line.back() == '\r') {
-                                line.pop_back();
-                            }
-                            callback(line);
-                        }
-                        std::cout << "[info] " << line << '\n';
+                    std::getline(is, line);
+                    if (line.compare(0, 4, "PING") == 0) {
+                        async_write("PONG" + line.substr(4) + "\n");
+                    } else {
+                        line.pop_back();
+                        callback(line);
                     }
+                    std::cout << "[info] " << line << '\n';
                 } else {
                     boost::asio::streambuf::const_buffers_type bufs = buf_.data();
                     std::string s(boost::asio::buffers_begin(bufs),
@@ -92,22 +88,10 @@ protected:
     }
 
 private:
-    static void timeout(const boost::system::error_code& ec) {
+    void timeout(const boost::system::error_code& ec) {
         if (ec != boost::asio::error::operation_aborted) {
             throw "[timeout] goodbye";
         }
-    }
-
-    void do_pong() {
-        pong_.expires_from_now(boost::posix_time::minutes(1));
-        pong_.async_wait(boost::bind(&IRCBot::pong, this, boost::asio::placeholders::error));
-    }
-
-    void pong(const boost::system::error_code& ec __attribute__((unused))) {
-        if (!ping_reply_.empty()) {
-            async_write(ping_reply_);
-        }
-        do_pong();
     }
 
     void connect() {
@@ -128,9 +112,7 @@ private:
 
     std::string server_, port_;
     boost::asio::io_service service_;
-    boost::asio::deadline_timer beat_;
-    std::string ping_reply_;
-    boost::asio::deadline_timer pong_;
+    boost::asio::steady_timer read_timer_;
     boost::asio::ip::tcp::socket sock_;
     boost::asio::streambuf buf_;
 };
