@@ -21,6 +21,9 @@ if(CATCH_FOUND)
     add_executable(test_charset chardet.cpp)
     target_link_libraries(test_charset uchardet)
 
+    add_executable(test_cache cache.cpp)
+    target_link_libraries(test_cache boost_system pthread)
+
     set(test_list
         test_chunk_parser
         test_decode
@@ -30,6 +33,7 @@ if(CATCH_FOUND)
         test_title_parser
         test_numfmt
         test_charset
+        test_cache
         )
 
     foreach(it ${test_list})

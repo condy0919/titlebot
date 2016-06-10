@@ -1,4 +1,5 @@
 #include <boost/asio.hpp>
+#include <boost/bind.hpp>
 #include <boost/format.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -17,7 +18,8 @@ public:
     IRCBot(std::string server, std::string port)
         : server_(std::move(server)),
           port_(std::move(port)),
-          beat_(service_, boost::posix_time::minutes(6)),
+          beat_(service_, boost::posix_time::minutes(7)),
+          pong_(service_, boost::posix_time::minutes(1)),
           sock_(service_) {
         connect();
     }
@@ -49,7 +51,7 @@ protected:
         async_write(buf, std::strlen(buf));
     }
 
-    void async_write(std::string s) {
+    void async_write(const std::string& s) {
         async_write(s.data(), s.length());
     }
 
@@ -63,9 +65,10 @@ protected:
 
                     while (std::getline(is, line)) {
                         if (line.compare(0, 4, "PING") == 0) {
-                            async_write("PONG" + line.substr(4) + "\r\n");
+                            ping_reply_ = "PONG" + line.substr(4) + "\r\n";
+                            async_write(ping_reply_);
                             beat_.expires_from_now(
-                                boost::posix_time::minutes(6));
+                                boost::posix_time::minutes(7));
                             beat_.async_wait(&IRCBot::timeout);
                         } else {
                             if (line.back() == '\r') {
@@ -94,6 +97,19 @@ private:
         }
     }
 
+    void do_pong() {
+        pong_.expires_from_now(boost::posix_time::minutes(1));
+        pong_.async_wait(boost::bind(&IRCBot::pong, this, boost::asio::placeholders::error));
+    }
+
+    void pong(const boost::system::error_code& ec __attribute__((unused))) {
+        if (!ping_reply_.empty()) {
+            async_write(ping_reply_);
+        }
+        pong_.expires_from_now(boost::posix_time::minutes(1));
+        pong_.async_wait(boost::bind(&IRCBot::pong, this, boost::asio::placeholders::error));
+    }
+
     void connect() {
         using namespace boost::asio;
         ip::tcp::resolver resolver(service_);
@@ -113,6 +129,8 @@ private:
     std::string server_, port_;
     boost::asio::io_service service_;
     boost::asio::deadline_timer beat_;
+    std::string ping_reply_;
+    boost::asio::deadline_timer pong_;
     boost::asio::ip::tcp::socket sock_;
     boost::asio::streambuf buf_;
 };

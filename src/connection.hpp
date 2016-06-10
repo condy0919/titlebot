@@ -2,6 +2,7 @@
 
 #include "global.hpp"
 #include "decoder.hpp"
+#include "dns_cache.hpp"
 #include "utils/log.hpp"
 #include "utils/http.hpp"
 #include "utils/iconv.hpp"
@@ -72,6 +73,14 @@ private:
     void do_start() {
         DEBUG(__func__);
         auto self = this->shared_from_this();
+        // dns lookup cache
+        auto opt = Global::getDNSCache().get(protocol_, host_);
+        if (opt) {
+            DEBUG("dns cache hit");
+            resolve_handle<SocketT>(boost::system::error_code(), opt.value());
+            return;
+        }
+
         boost::asio::ip::tcp::resolver::query query(host_, protocol_);
         resolver_.async_resolve(
             query, boost::bind(&Connection::resolve_handle<SocketT>, self,
@@ -89,6 +98,11 @@ private:
             ERROR("resolve error " + e.message());
             return;
         }
+
+        // Update dns cache
+        const auto entry = *ep_iter;
+        std::string serv = entry.service_name(), host = entry.host_name();
+        Global::getDNSCache().put(std::move(serv), std::move(host), ep_iter);
 
         auto self = this->shared_from_this();
         boost::asio::async_connect(
@@ -204,11 +218,19 @@ private:
             if (resp_.status_code_ >= 300 && resp_.status_code_ <= 307) {
                 std::string loc = resp_.getHeader("location");
                 DEBUG("redirect to " + loc);
-                std::string protocol, host, uri;
-                std::tie(protocol, host, uri) = Http::parseURL(std::move(loc));
-                startConnection(socket_.get_io_service(), std::move(protocol),
-                                std::move(host), std::move(uri),
-                                std::move(callback_));
+                if (loc.front() != '/') {
+                    std::tie(protocol_, host_, uri_) = Http::parseURL(std::move(loc));
+                    startConnection(socket_.get_io_service(),
+                                    std::move(protocol_), std::move(host_),
+                                    std::move(uri_), std::move(callback_));
+                } else {
+                    uri_ = std::move(loc);
+                    auto req = Http::Request::get(host_, uri_);
+                    boost::asio::async_write(
+                        socket_, boost::asio::buffer(req),
+                        boost::bind(&Connection::write_handle, self,
+                                    boost::asio::placeholders::error));
+                }
                 return;
             }
 
@@ -231,7 +253,7 @@ private:
                                         std::begin(charset), std::end(charset));
                 if (iter != content_type.end()) {
                     iter += sizeof(charset) + 1;
-                    auto sp = std::find_if(iter, content_type.end(), ::isspace);
+                    auto sp = std::find(iter, content_type.end(), ' ');
                     title_parser_.setCharsetDecoder(
                         std::make_unique<iconvpp::converter>(
                             "UTF-8", boost::trim_copy_if(
