@@ -18,7 +18,7 @@ public:
     IRCBot(std::string server, std::string port)
         : server_(std::move(server)),
           port_(std::move(port)),
-          beat_(service_, boost::posix_time::minutes(7)),
+          beat_(service_, boost::posix_time::minutes(10)),
           pong_(service_, boost::posix_time::minutes(1)),
           sock_(service_) {
         connect();
@@ -69,7 +69,7 @@ protected:
                             ping_reply_ = "PONG" + line.substr(4) + "\r\n";
                             async_write(ping_reply_);
                             beat_.expires_from_now(
-                                boost::posix_time::minutes(7));
+                                boost::posix_time::minutes(10));
                             beat_.async_wait(&IRCBot::timeout);
                         } else {
                             if (line.back() == '\r') {
