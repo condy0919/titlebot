@@ -19,8 +19,8 @@ install:
 - wget --no-verbose --output-document=boost-trunk.tar.bz2 http://sourceforge.net/projects/boost/files/boost/1.61.0/boost_1_61_0.tar.bz2/download
 - mkdir -p BOOST_ROOT
 - tar jxf boost-trunk.tar.bz2 --strip-components=1 -C BOOST_ROOT
-- (cd $BOOST_ROOT; ./bootstrap.sh)
-- (cd $BOOST_ROOT; ./b2 --build-type=complete --layout=versioned threading=multi install)
+- (cd BOOST_ROOT; ./bootstrap.sh)
+- (cd BOOST_ROOT; sudo ./b2 --build-type=complete --layout=versioned threading=multi install)
   
 script:
 - export CC=gcc-5
