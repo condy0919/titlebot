@@ -12,16 +12,15 @@ os: linux
 install:
 - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 - sudo apt-get update
+- sudo apt-get install -y mpi-default-dev libicu-dev python-dev python3-dev libbz2-dev zlib1g-dev
 - sudo apt-get install -y libuchardet0 libuchardet-dev
 - sudo apt-get install -y g++-5
 # install boost
-- wget --no-verbose --output-document=boost-trunk.tar.bz2 http://sourceforge.net/projects/boost/files/boost/1.55.0/boost_1_55_0.tar.bz2/download
-- export BOOST_ROOT="$TRAVIS_BUILD_DIR/../boost-trunk"
-- export CMAKE_MODULE_PATH="$BOOST_ROOT"
-- mkdir -p $BOOST_ROOT
-- tar jxf boost-trunk.tar.bz2 --strip-components=1 -C $BOOST_ROOT
-- (cd $BOOST_ROOT; ./bootstrap.sh --with-libraries=date_time,filesystem,system,iostreams)
-- (cd $BOOST_ROOT; ./b2 threading=multi --prefix=$BOOST_ROOT -d0 install)
+- wget --no-verbose --output-document=boost-trunk.tar.bz2 http://sourceforge.net/projects/boost/files/boost/1.61.0/boost_1_61_0.tar.bz2/download
+- mkdir -p BOOST_ROOT
+- tar jxf boost-trunk.tar.bz2 --strip-components=1 -C BOOST_ROOT
+- (cd $BOOST_ROOT; ./bootstrap.sh)
+- (cd $BOOST_ROOT; ./b2 --build-type=complete --layout=versioned threading=multi install)
   
 script:
 - export CC=gcc-5
