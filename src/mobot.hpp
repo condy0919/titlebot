@@ -22,6 +22,7 @@ public:
           pong_(service_, boost::posix_time::minutes(1)),
           sock_(service_) {
         connect();
+        do_pong();
     }
 
     ~IRCBot() {
@@ -106,8 +107,7 @@ private:
         if (!ping_reply_.empty()) {
             async_write(ping_reply_);
         }
-        pong_.expires_from_now(boost::posix_time::minutes(1));
-        pong_.async_wait(boost::bind(&IRCBot::pong, this, boost::asio::placeholders::error));
+        do_pong();
     }
 
     void connect() {
