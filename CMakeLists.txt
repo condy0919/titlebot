@@ -64,6 +64,7 @@ find_package(OpenSSL REQUIRED)
 if(OPENSSL_FOUND)
     list(APPEND TITLE_LINK_LIBS ${OPENSSL_LIBRARIES})
     list(APPEND TITLE_LINK_LIBS dl)
+    list(APPEND TITLE_LINK_LIBS ${ZLIB_LIBRARIES})
 endif()
 
 find_package(uchardet REQUIRED)
