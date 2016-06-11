@@ -2,7 +2,6 @@
 
 #include "connection.hpp"
 #include <boost/asio.hpp>
-#include <boost/asio/steady_timer.hpp>
 #include <functional>
 
 class Fetcher {
@@ -17,9 +16,6 @@ public:
     void poll();
 
 private:
-    void keepalive(const boost::system::error_code& e);
-
-private:
     boost::asio::io_service io_service_;
-    boost::asio::steady_timer timer_;
+    std::shared_ptr<boost::asio::io_service::work> work_;
 };

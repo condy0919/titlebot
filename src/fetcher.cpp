@@ -4,10 +4,8 @@
 #include <boost/algorithm/string.hpp>
 #include <chrono>
 
-Fetcher::Fetcher() : timer_(io_service_, std::chrono::hours(1)) {
-    timer_.async_wait(
-        std::bind(&Fetcher::keepalive, this, std::placeholders::_1));
-}
+Fetcher::Fetcher()
+    : work_(std::make_shared<boost::asio::io_service::work>(io_service_)) {}
 
 void Fetcher::start(std::string protocol, std::string host, std::string uri,
                     std::function<void(std::string)> cb) {
@@ -21,11 +19,4 @@ void Fetcher::run() {
 
 void Fetcher::poll() {
     io_service_.poll();
-}
-
-void Fetcher::keepalive(const boost::system::error_code& e
-                        __attribute__((unused))) {
-    timer_.expires_from_now(std::chrono::hours(24));  // XXX infinity time is better
-    timer_.async_wait(
-        std::bind(&Fetcher::keepalive, this, std::placeholders::_1));
 }

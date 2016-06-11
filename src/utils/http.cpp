@@ -410,7 +410,8 @@ Chunk::Parser::state Chunk::Parser::consume(Chunk& chunk_, char c) {
 std::tuple<std::string, std::string, std::string> parseURL(std::string url) {
     std::string protocol, host, uri;
 
-    auto colon_start = std::find(url.begin(), url.end(), ':');
+    const static char delim[] = {':', '/', '/'};
+    auto colon_start = std::search(url.begin(), url.end(), std::begin(delim), std::end(delim));
     if (colon_start != url.end()) {
         protocol = std::string(url.begin(), colon_start);
         std::advance(colon_start, 3);
