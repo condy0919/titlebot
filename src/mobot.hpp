@@ -1,3 +1,4 @@
+#include "utils/string.hpp"
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 #include <boost/format.hpp>
@@ -298,7 +299,10 @@ public:
 
     /// privmsg [target] [msg]
     MoBot& privmsg(std::string msg, std::string to) {
-        return raw_send("PRIVMSG " + to + " :" + msg);
+        std::string buf;
+        StringUtils::concat(buf, "PRIVMSG ", std::move(to), " :",
+                            std::move(msg));
+        return raw_send(std::move(buf));
     }
 
     /// join [#channel]
@@ -346,7 +350,8 @@ public:
 
 private:
     MoBot& raw_send(std::string s) {
-        async_write(s + "\r\n");
+        s.append("\r\n");
+        async_write(std::move(s));
         return *this;
     }
 

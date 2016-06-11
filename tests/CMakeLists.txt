@@ -1,9 +1,9 @@
 find_package(catch)
 
 if(CATCH_FOUND)
-    add_executable(test_chunk_parser chunk_parser.cpp ../src/utils/http.cpp)
+    add_executable(test_chunk_parser chunk_parser.cpp ../src/utils/http.cpp ../src/utils/string.cpp)
 
-    add_executable(test_decode decode.cpp ../src/utils/http.cpp ../src/title_parser.cpp ../src/decoder.cpp ../src/utils/entities.cpp)
+    add_executable(test_decode decode.cpp ../src/utils/http.cpp ../src/title_parser.cpp ../src/decoder.cpp ../src/utils/entities.cpp ../src/utils/string.cpp)
     target_link_libraries(test_decode z uchardet)
 
     add_executable(test_privmsg_parser privmsg_parser.cpp)

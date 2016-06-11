@@ -1,4 +1,5 @@
 #include "http.hpp"
+#include "string.hpp"
 #include <cctype>
 #include <boost/algorithm/string.hpp>
 
@@ -57,27 +58,27 @@ namespace Http {
 // host => www.acgdoge.net, uri => /archives/1234
 std::string Request::get(const std::string& host, const std::string& uri) {
     std::string req;
-    req.reserve(512);
+    req.reserve(256);
 
-    req += "GET " + uri + " HTTP/1.1\r\n";
-    req += "Accept: */*\r\n";
-    req += "Accept-Encoding: gzip, deflate, identity\r\n";
-    //req += "Accept-Encoding: gzip, deflate\r\n";
-    req += "Host: " + host + "\r\n";
-    req += "User-Agent: titlebot\r\n";
-    req += "Connection: close\r\n";
-    req += "\r\n";
+    StringUtils::concat(req, "GET ", uri, " HTTP/1.1\r\n");
+    StringUtils::concat(req, "Accept: */*\r\n");
+    StringUtils::concat(req, "Accept-Encoding: gzip,deflate,identity\r\n");
+    StringUtils::concat(req, "Host: ", host, "\r\n");
+    StringUtils::concat(req, "User-Agent: titlebot\r\n");
+    StringUtils::concat(req, "Connection: close\r\n\r\n");
 
     return req;
 }
 
+/*
+ * @require `key' must be in lower case
+ */
 std::string Response::getHeader(std::string key, bool lower_case) const {
-    boost::to_lower(key);
     for (auto pair_ : headers) {
-        boost::to_lower(pair_.first);
         if (pair_.first == key) {
             if (lower_case) {
-                boost::to_lower(pair_.second);
+                std::string& s = pair_.second;
+                std::transform(s.begin(), s.end(), s.begin(), ::tolower);
             }
             return pair_.second;
         }
@@ -216,7 +217,7 @@ Response::Parser::state Response::Parser::consume(Response& resp, char input) {
             return bad;
         } else {
             resp.headers.emplace_back();
-            resp.headers.back().first.push_back(input);
+            resp.headers.back().first.push_back(std::tolower(input));
             state_ = header_name;
             return indeterminate;
         }
@@ -242,7 +243,7 @@ Response::Parser::state Response::Parser::consume(Response& resp, char input) {
         } else if (!is_char(input) || is_ctl(input) || is_tspecial(input)) {
             return bad;
         } else {
-            resp.headers.back().first.push_back(input);
+            resp.headers.back().first.push_back(std::tolower(input));
             return indeterminate;
         }
 

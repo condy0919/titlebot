@@ -1,5 +1,5 @@
 #include "entities.hpp"
-#include <map>
+#include <unordered_map>
 #include <sstream>
 #include <utility>
 
@@ -279,7 +279,7 @@ static const EntityNameEntry StaticEntityNames[] =
         {NULL, 0} /* marks end of list */
 };                /*StaticEntityNames*/
 
-typedef std::map<std::string, unsigned int> EntityNameMap;
+typedef std::unordered_map<std::string, unsigned int> EntityNameMap;
 typedef std::pair<std::string, unsigned int> EntityNamePair;
 
 static EntityNameMap EntityNames;
@@ -311,7 +311,7 @@ std::string UnquoteHTML(std::string in) {
         MatchDecimalNumber,
         MatchHexNumber,
     } MatchState;
-    std::ostringstream Out;
+    std::string Out;
     std::string MatchingName;
     unsigned int CharCode;
     bool ProcessedChar, GotCharCode;
@@ -330,11 +330,11 @@ std::string UnquoteHTML(std::string in) {
                 ProcessedChar = true;
             } else if ((ThisCh >= 'a' && ThisCh <= 'z') ||
                        (ThisCh >= 'A' && ThisCh <= 'Z')) {
-                MatchingName.append(1, ThisCh);
+                MatchingName += ThisCh;
                 MatchState = MatchName;
                 ProcessedChar = true;
             } else {
-                Out.put('&');
+                Out += '&';
                 MatchState = NoMatch;
             }
             break;
@@ -343,7 +343,7 @@ std::string UnquoteHTML(std::string in) {
             if ((ThisCh >= 'a' and ThisCh <= 'z') ||
                 (ThisCh >= 'A' and ThisCh <= 'Z') ||
                 (ThisCh >= '0' and ThisCh <= '9')) {
-                MatchingName.append(1, ThisCh);
+                MatchingName += ThisCh;
                 ProcessedChar = true;
             } else if (ThisCh == ';') {
                 if (EntityNames.empty()) {
@@ -367,10 +367,8 @@ std::string UnquoteHTML(std::string in) {
                 } /*if*/
             }     /*if*/
             if (not ProcessedChar) {
-                Out.put('&');
-                for (unsigned int i = 0; i < MatchingName.size(); ++i) {
-                    Out.put(MatchingName[i]);
-                } /*for*/
+                Out += '&';
+                Out.append(MatchingName);
                 MatchState = NoMatch;
             } /*if*/
             break;
@@ -421,18 +419,18 @@ std::string UnquoteHTML(std::string in) {
         }
 
         if (GotCharCode) {
-            Out << WriteUTF8(CharCode);
+            Out.append(WriteUTF8(CharCode));
             MatchState = NoMatch;
-        } else if (not ProcessedChar and MatchState == NoMatch) {
+        } else if (!ProcessedChar && MatchState == NoMatch) {
             if (ThisCh == '&') {
                 MatchState = MatchBegin;
                 MatchingName.erase();
             } else {
-                Out.put(ThisCh);
+                Out += ThisCh;
             } /*if*/
         }     /*if*/
     }         /*for*/
-    return Out.str();
+    return Out;
 }
 }
 
