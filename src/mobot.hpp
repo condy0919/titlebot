@@ -130,7 +130,7 @@ bool is_tspecial(int c) {
     case '}':
     case '^':
     case '|':
-    case ':':
+    // case ':': // XXX
     case '\\':
     case '\"':
     case ' ':
