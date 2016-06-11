@@ -39,7 +39,7 @@ std::vector<char> GzipDecoder::decode(const char* s, std::size_t size) {
         case Z_NEED_DICT:
         case Z_DATA_ERROR:
         case Z_MEM_ERROR:
-            throw "data error";
+            return {};
         }
 
         int sz = sizeof(out) - strm.avail_out;

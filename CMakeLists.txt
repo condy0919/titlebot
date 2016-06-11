@@ -10,7 +10,17 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-lib
 
 add_definitions(-std=c++14)
 add_definitions(-O3)
+add_definitions(-pipe)
+
+# Warning starts
 add_definitions(-march=native)
+add_definitions(-funsafe-loop-optimizations)
+add_definitions(-fdevirtualize-speculatively)
+add_definitions(-fdevirtualize-at-ltrans)
+add_definitions(-ftree-vectorize)
+add_definitions(-flto)
+# Warning ends
+
 add_definitions(-Wall)
 add_definitions(-Wextra)
 #add_definitions(-g)
