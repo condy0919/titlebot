@@ -12,6 +12,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/algorithm/string.hpp>
+#include <algorithm>
 #include <type_traits>
 #include <memory>
 #include <array>

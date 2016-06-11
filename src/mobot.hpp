@@ -54,13 +54,13 @@ protected:
         async_write(s.data(), s.length());
     }
 
-    void async_read(const std::function<void(std::string)>& callback) {
+    void async_read(std::function<void(std::string)> callback) {
         read_timer_.expires_from_now(std::chrono::minutes(5));
         read_timer_.async_wait(boost::bind(&IRCBot::timeout, this,
                                            boost::asio::placeholders::error));
         boost::asio::async_read_until(
             sock_, buf_, "\r\n",
-            [this, &callback](boost::system::error_code ec, size_t sz __attribute__((unused))) {
+            [this, callback](boost::system::error_code ec, size_t sz __attribute__((unused))) {
                 if (!ec) {
                     read_timer_.cancel_one(ec);
 
