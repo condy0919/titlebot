@@ -217,7 +217,7 @@ private:
         } else if (st == Http::Response::Parser::state::good) {
             // redirect
             if (resp_.status_code_ >= 300 && resp_.status_code_ <= 307) {
-                std::string loc = resp_.getHeader("location");
+                std::string loc = resp_.getHeader("location", false);
                 DEBUG("redirect to " + loc);
                 if (loc.front() != '/') {
                     std::tie(protocol_, host_, uri_) = Http::parseURL(std::move(loc));

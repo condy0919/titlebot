@@ -19,7 +19,7 @@ struct Response {
     std::string desc;
     std::vector<std::pair<std::string, std::string>> headers;
 
-    std::string getHeader(std::string key) const;
+    std::string getHeader(std::string key, bool lower_case = true) const;
 
     struct Parser {
         enum state { good, bad, indeterminate };

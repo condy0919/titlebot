@@ -71,12 +71,14 @@ std::string Request::get(const std::string& host, const std::string& uri) {
     return req;
 }
 
-std::string Response::getHeader(std::string key) const {
+std::string Response::getHeader(std::string key, bool lower_case) const {
     boost::to_lower(key);
     for (auto pair_ : headers) {
         boost::to_lower(pair_.first);
         if (pair_.first == key) {
-            boost::to_lower(pair_.second);
+            if (lower_case) {
+                boost::to_lower(pair_.second);
+            }
             return pair_.second;
         }
     }
