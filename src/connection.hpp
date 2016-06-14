@@ -24,11 +24,12 @@ struct is_ssl : std::false_type {};
 template <>
 struct is_ssl<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>>
     : std::true_type {};
-};
+}
 
 void startConnection(boost::asio::io_service& io_service, std::string protocol,
                      std::string host, std::string uri,
-                     std::function<void(std::string)> cb);
+                     std::function<void(std::string)> cb,
+                     std::size_t redirect_cnt = 0);
 
 
 template <typename SocketT>
@@ -39,7 +40,8 @@ public:
               std::enable_if_t<TypeTraits::is_ssl<T>::value, int> = 0>
     Connection(boost::asio::io_service& io_service, std::string protocol,
                std::string host, std::string uri,
-               std::function<void(std::string)> cb)
+               std::function<void(std::string)> cb,
+               std::size_t redirect_cnt)
         : io_service_(io_service),
           socket_(io_service, Global::getSSLContext().native()),
           resolver_(io_service),
@@ -47,14 +49,16 @@ public:
           host_(std::move(host)),
           uri_(std::move(uri)),
           callback_(cb),
-          title_parser_(std::move(cb)) {}
+          title_parser_(std::move(cb)),
+          redirect_cnt_(redirect_cnt) {}
 
     // normal version
     template <typename T = SocketT,
               std::enable_if_t<!TypeTraits::is_ssl<T>::value, int> = 0>
     Connection(boost::asio::io_service& io_service, std::string protocol,
                std::string host, std::string uri,
-               std::function<void(std::string)> cb)
+               std::function<void(std::string)> cb,
+               std::size_t redirect_cnt)
         : io_service_(io_service),
           socket_(io_service),
           resolver_(io_service),
@@ -62,7 +66,8 @@ public:
           host_(std::move(host)),
           uri_(std::move(uri)),
           callback_(cb),
-          title_parser_(std::move(cb)) {}
+          title_parser_(std::move(cb)),
+          redirect_cnt_(redirect_cnt) {}
 
     void start() {
         DEBUG(__func__);
@@ -219,19 +224,7 @@ private:
             if (resp_.status_code_ >= 300 && resp_.status_code_ <= 307) {
                 std::string loc = resp_.getHeader("location", false);
                 DEBUG("redirect to " + loc);
-                if (loc.front() != '/') {
-                    std::tie(protocol_, host_, uri_) = Http::parseURL(std::move(loc));
-                    startConnection(socket_.get_io_service(),
-                                    std::move(protocol_), std::move(host_),
-                                    std::move(uri_), std::move(callback_));
-                } else {
-                    uri_ = std::move(loc);
-                    auto req = Http::Request::get(host_, uri_);
-                    boost::asio::async_write(
-                        socket_, boost::asio::buffer(req),
-                        boost::bind(&Connection::write_handle, self,
-                                    boost::asio::placeholders::error));
-                }
+                redirect(std::move(loc));
                 return;
             }
 
@@ -325,6 +318,29 @@ private:
         }
     }
 
+    void redirect(std::string loc) {
+        ++redirect_cnt_;
+        if (redirect_cnt_ > 3) {
+            ERROR("too many redirections");
+            return;
+        }
+
+        auto self = this->shared_from_this();
+        if (loc.front() != '/') {
+            std::tie(protocol_, host_, uri_) = Http::parseURL(std::move(loc));
+            startConnection(socket_.get_io_service(), std::move(protocol_),
+                            std::move(host_), std::move(uri_),
+                            std::move(callback_), redirect_cnt_);
+        } else {
+            uri_ = std::move(loc);
+            auto req = Http::Request::get(host_, uri_);
+            boost::asio::async_write(
+                socket_, boost::asio::buffer(req),
+                boost::bind(&Connection::write_handle, self,
+                            boost::asio::placeholders::error));
+        }
+    }
+
 private:
     boost::asio::io_service& io_service_;
 
@@ -343,6 +359,9 @@ private:
     TitleParser title_parser_;
     std::shared_ptr<ContentDecoder> content_decoder_;
     std::shared_ptr<ChunkDecoder> chunk_decoder_;
+
+    // policy
+    std::size_t redirect_cnt_;
 };
 
 

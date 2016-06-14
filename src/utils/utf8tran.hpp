@@ -17,9 +17,12 @@ public:
         det_.term();
         
         const char* charset = det_.getCharset();
-        if (!std::strcmp(charset, "UTF-8") || !std::strcmp(charset, "ASCII")) {
+        if (!std::strcmp(charset, "UTF-8") ||
+            !strncasecmp(charset, "ASCII", sizeof("ASCII") - 1)) {
             return in;
         }
+
+        // unknown type. using `GBK` charset anyway
         if (charset[0] == '\0') {
             charset = "GBK"; // XXX
         }

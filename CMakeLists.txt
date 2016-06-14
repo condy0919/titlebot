@@ -11,6 +11,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-lib
 add_definitions(-std=c++14)
 add_definitions(-O3)
 add_definitions(-pipe)
+#add_definitions(-fsanitize=address)
 
 # Warning starts
 add_definitions(-march=native)
@@ -85,6 +86,7 @@ endif()
 
 ## Custom
 set(ADDITIONAL_LIBS
+    #-fsanitize=address
     #tcmalloc
     #profiler # for gperftools profiling
 )

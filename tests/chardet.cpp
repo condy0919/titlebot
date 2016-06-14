@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include "../src/utils/iconv.hpp"
 #include "../src/utils/chardet.hpp"
+#include <strings.h>
 #include <catch.hpp>
 #include <cstring>
 #include <iostream>
@@ -17,7 +18,7 @@ TEST_CASE("Char Detector", "[Char Detector]") {
         REQUIRE(det.feed(s.data(), s.size()));
         det.term();
         charset = det.getCharset();
-        REQUIRE(std::strcmp(charset, "ASCII") == 0);
+        REQUIRE(strncasecmp(charset, "ASCII", sizeof("ASCII") - 1) == 0);
     }
     SECTION("test utf-8") {
         det.reset();
