@@ -29,4 +29,12 @@ TEST_CASE("PRIVMSG Parser", "[PRIVMSG Parser]") {
         s = ":condy!~condy@unaffiliated/condy PRIVMSG #linuxba : uccu";
         REQUIRE(!parse_privmsg(s, from, target, protocol, url));
     }
+    SECTION("chinese symbol") {
+        s = ":condy!~condy@unaffiliated/condy PRIVMSG #linuxba :https://www.baidu.com（";
+        REQUIRE(parse_privmsg(s, from, target, protocol, url));
+        REQUIRE(from == "condy");
+        REQUIRE(target == "#linuxba");
+        REQUIRE(protocol == "https");
+        REQUIRE(url == "www.baidu.com");
+    }
 }

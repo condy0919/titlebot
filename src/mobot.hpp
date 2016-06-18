@@ -137,7 +137,7 @@ bool is_tspecial(int c) {
     case ' ':
         return true;
     default:
-        return false;
+        return !isascii(c);
     }
     return false;
 }
