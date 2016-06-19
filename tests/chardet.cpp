@@ -18,7 +18,8 @@ TEST_CASE("Char Detector", "[Char Detector]") {
         REQUIRE(det.feed(s.data(), s.size()));
         det.term();
         charset = det.getCharset();
-        REQUIRE(strncasecmp(charset, "ASCII", sizeof("ASCII") - 1) == 0);
+        REQUIRE((std::strlen(charset) == 0 ||
+                 strncasecmp(charset, "ASCII", sizeof("ASCII") - 1) == 0));
     }
     SECTION("test utf-8") {
         det.reset();

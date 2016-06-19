@@ -22,9 +22,10 @@ public:
             return in;
         }
 
-        // unknown type. using `GBK` charset anyway
+        // unknown type. using `ASCII` charset anyway
+        // see uchardet 0.0.1 for detail.
         if (charset[0] == '\0') {
-            charset = "GBK"; // XXX
+            charset = "ASCII"; // XXX
         }
 
         iconvpp::converter conv("UTF-8", charset);
