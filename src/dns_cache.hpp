@@ -81,7 +81,6 @@ public:
         }
         std::get<1>(tp) = ts;
         return boost::optional<ValueT>(std::get<0>(tp));
-        //return {std::get<0>(tp)};
     }
 
     boost::optional<ValueT> get(const KeyT& key) {
@@ -96,6 +95,10 @@ public:
         if (!touch(key)) {
             records_.emplace(key, std::make_tuple(value, now()));
         }
+    }
+
+    void erase(const KeyT& key) {
+        records_.erase(key);
     }
 
     bool empty() const noexcept {
@@ -133,6 +136,22 @@ public:
     void put(const std::string& serv, const std::string& host,
              boost::asio::ip::tcp::resolver::iterator iter) {
         cache_.put(std::make_pair(serv, host), iter);
+    }
+
+    void erase(const std::string& serv, const std::string& host) {
+        cache_.erase(std::make_pair(serv, host));
+    }
+
+    bool empty() const noexcept {
+        return cache_.empty();
+    }
+
+    std::size_t size() const noexcept {
+        return cache_.size();
+    }
+
+    void clear() noexcept {
+        cache_.clear();
     }
 
 private:

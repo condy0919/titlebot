@@ -33,5 +33,17 @@ SCENARIO("DNS Cache", "[DNS Cache]") {
                 REQUIRE(!bool(opt));
             }
         }
+
+        WHEN("put pair {http, www.baidu.com}") {
+            service = "http";
+            host = "www.baidu.com";
+
+            cache.put(service, host, boost::asio::ip::tcp::resolver::iterator());
+            REQUIRE(cache.size() == 1);
+            THEN("remove it") {
+                cache.erase(service, host);
+                REQUIRE(cache.empty());
+            }
+        }
     }
 }

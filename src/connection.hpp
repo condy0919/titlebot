@@ -102,6 +102,7 @@ private:
         DEBUG(__func__);
         if (e) {
             ERROR("resolve error " + e.message());
+            Global::getDNSCache().erase(protocol_, host_);
             return;
         }
 
@@ -125,6 +126,7 @@ private:
         DEBUG(__func__);
         if (e) {
             ERROR("resolve error " + e.message());
+            Global::getDNSCache().erase(protocol_, host_);
             return;
         }
 
