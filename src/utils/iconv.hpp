@@ -37,6 +37,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace iconvpp {
 
+class InvalidMultibyteError : public std::exception {
+public:
+    const char* what() const noexcept override {
+        return "invalid multibyte chars";
+    }
+};
+
 class converter {
 public:
     converter(const std::string& out_encode, const std::string& in_encode,
@@ -98,9 +105,9 @@ private:
     void check_convert_error(int err) const {
         switch (err) {
         case EILSEQ:
-            throw std::runtime_error("invalid multibyte chars");
+            throw InvalidMultibyteError();
         case EINVAL:
-            throw std::runtime_error("invalid multibyte chars");
+            throw InvalidMultibyteError();
         default:
             throw std::runtime_error("unknown error");
         }

@@ -12,6 +12,7 @@ if(CATCH_FOUND)
     add_executable(test_html_unescape unescape.cpp ../src/utils/entities.cpp)
 
     add_executable(test_iconv iconv.cpp)
+    target_link_libraries(test_iconv uchardet)
 
     add_executable(test_title_parser title_parser.cpp ../src/title_parser.cpp ../src/utils/entities.cpp)
     target_link_libraries(test_title_parser uchardet)
