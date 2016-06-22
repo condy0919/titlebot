@@ -37,4 +37,12 @@ TEST_CASE("PRIVMSG Parser", "[PRIVMSG Parser]") {
         REQUIRE(protocol == "https");
         REQUIRE(url == "www.baidu.com");
     }
+    SECTION(":condy!~condy@unaffiliated/condy PRIVMSG #linuxba : https://\"http://www.baidu.com") {
+        s = ":condy!~condy@unaffiliated/condy PRIVMSG #linuxba : https://\"http://www.baidu.com";
+        REQUIRE(parse_privmsg(s, from, target, protocol, url));
+        REQUIRE(from == "condy");
+        REQUIRE(target == "#linuxba");
+        REQUIRE(protocol == "http");
+        REQUIRE(url == "www.baidu.com");
+    }
 }
