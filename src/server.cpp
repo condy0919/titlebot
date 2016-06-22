@@ -12,12 +12,12 @@ void Server::start() {
         bot_.nick(TITLEBOT_NICK).user(TITLEBOT_USER).join(TITLEBOT_CHANNELS);
         try {
             // capture this pointer!
-            bot_.mainloop([=](std::string protocol, std::string url,
+            bot_.mainloop([=](std::string schema, std::string url,
                               std::string target) {
                 std::string host, uri;
                 std::tie(std::ignore, host, uri) = Http::parseURL(url);
                 fetcher_.start(
-                    std::move(protocol), std::move(host), std::move(uri),
+                    std::move(schema), std::move(host), std::move(uri),
                     std::bind(&MoBot::privmsg, &bot_, std::placeholders::_1,
                               std::move(target)));
             });

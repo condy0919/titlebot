@@ -26,7 +26,7 @@ struct is_ssl<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>>
     : std::true_type {};
 }
 
-void startConnection(boost::asio::io_service& io_service, std::string protocol,
+void startConnection(boost::asio::io_service& io_service, std::string schema,
                      std::string host, std::string uri,
                      std::function<void(std::string)> cb,
                      std::size_t redirect_cnt = 0);
@@ -38,14 +38,14 @@ public:
     // ssl version
     template <typename T = SocketT,
               std::enable_if_t<TypeTraits::is_ssl<T>::value, int> = 0>
-    Connection(boost::asio::io_service& io_service, std::string protocol,
+    Connection(boost::asio::io_service& io_service, std::string schema,
                std::string host, std::string uri,
                std::function<void(std::string)> cb,
                std::size_t redirect_cnt)
         : io_service_(io_service),
           socket_(io_service, Global::getSSLContext().native()),
           resolver_(io_service),
-          protocol_(std::move(protocol)),
+          schema_(std::move(schema)),
           host_(std::move(host)),
           uri_(std::move(uri)),
           callback_(cb),
@@ -55,14 +55,14 @@ public:
     // normal version
     template <typename T = SocketT,
               std::enable_if_t<!TypeTraits::is_ssl<T>::value, int> = 0>
-    Connection(boost::asio::io_service& io_service, std::string protocol,
+    Connection(boost::asio::io_service& io_service, std::string schema,
                std::string host, std::string uri,
                std::function<void(std::string)> cb,
                std::size_t redirect_cnt)
         : io_service_(io_service),
           socket_(io_service),
           resolver_(io_service),
-          protocol_(std::move(protocol)),
+          schema_(std::move(schema)),
           host_(std::move(host)),
           uri_(std::move(uri)),
           callback_(cb),
@@ -80,14 +80,14 @@ private:
         DEBUG(__func__);
         auto self = this->shared_from_this();
         // dns lookup cache
-        auto opt = Global::getDNSCache().get(protocol_, host_);
+        auto opt = Global::getDNSCache().get(schema_, host_);
         if (opt) {
             DEBUG("dns cache hit");
             resolve_handle<SocketT>(boost::system::error_code(), opt.value());
             return;
         }
 
-        boost::asio::ip::tcp::resolver::query query(host_, protocol_);
+        boost::asio::ip::tcp::resolver::query query(host_, schema_);
         resolver_.async_resolve(
             query, boost::bind(&Connection::resolve_handle<SocketT>, self,
                                boost::asio::placeholders::error,
@@ -102,7 +102,7 @@ private:
         DEBUG(__func__);
         if (e) {
             ERROR("resolve error " + e.message());
-            Global::getDNSCache().erase(protocol_, host_);
+            Global::getDNSCache().erase(schema_, host_);
             return;
         }
 
@@ -126,7 +126,7 @@ private:
         DEBUG(__func__);
         if (e) {
             ERROR("resolve error " + e.message());
-            Global::getDNSCache().erase(protocol_, host_);
+            Global::getDNSCache().erase(schema_, host_);
             return;
         }
 
@@ -329,8 +329,8 @@ private:
 
         auto self = this->shared_from_this();
         if (loc.front() != '/') {
-            std::tie(protocol_, host_, uri_) = Http::parseURL(std::move(loc));
-            startConnection(socket_.get_io_service(), std::move(protocol_),
+            std::tie(schema_, host_, uri_) = Http::parseURL(std::move(loc));
+            startConnection(socket_.get_io_service(), std::move(schema_),
                             std::move(host_), std::move(uri_),
                             std::move(callback_), redirect_cnt_);
         } else {
@@ -349,7 +349,7 @@ private:
     SocketT socket_;
 
     boost::asio::ip::tcp::resolver resolver_;
-    std::string protocol_, host_, uri_;
+    std::string schema_, host_, uri_;
 
     std::function<void(std::string)> callback_;
 

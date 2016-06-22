@@ -409,12 +409,12 @@ Chunk::Parser::state Chunk::Parser::consume(Chunk& chunk_, char c) {
 }
 
 std::tuple<std::string, std::string, std::string> parseURL(std::string url) {
-    std::string protocol, host, uri;
+    std::string schema, host, uri;
 
     const static char delim[] = {':', '/', '/'};
     auto colon_start = std::search(url.begin(), url.end(), std::begin(delim), std::end(delim));
     if (colon_start != url.end()) {
-        protocol = std::string(url.begin(), colon_start);
+        schema = std::string(url.begin(), colon_start);
         std::advance(colon_start, 3);
     } else {
         colon_start = url.begin();
@@ -433,7 +433,7 @@ std::tuple<std::string, std::string, std::string> parseURL(std::string url) {
         uri.erase(iter, uri.end());
     }
 
-    return std::make_tuple(std::move(protocol), std::move(host),
+    return std::make_tuple(std::move(schema), std::move(host),
                            std::move(uri));
 }
 }

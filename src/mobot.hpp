@@ -143,7 +143,7 @@ bool is_tspecial(int c) {
 }
 
 bool parse_privmsg(std::string s, std::string& from, std::string& target,
-                   std::string& protocol, std::string& url) {
+                   std::string& schema, std::string& url) {
     if (s.front() != ':') {
         return false;
     }
@@ -276,7 +276,7 @@ bool parse_privmsg(std::string s, std::string& from, std::string& target,
     }
     if (!tmp.empty()) {
         url = std::move(tmp);
-        protocol = https ? "https" : "http";
+        schema = https ? "https" : "http";
         return true;
     }
     return false;
@@ -333,14 +333,14 @@ public:
                 return;
             }
 
-            std::string protocol, from, target, url;
-            if (parse_privmsg(std::move(s), from, target, protocol, url)) {
+            std::string schema, from, target, url;
+            if (parse_privmsg(std::move(s), from, target, schema, url)) {
                 if (target.front() == '#') {
                     // channel mode
-                    callback(std::move(protocol), std::move(url), std::move(target));
+                    callback(std::move(schema), std::move(url), std::move(target));
                 } else {
                     // private mode
-                    callback(std::move(protocol), std::move(url), std::move(from));
+                    callback(std::move(schema), std::move(url), std::move(from));
                 }
             }
         };

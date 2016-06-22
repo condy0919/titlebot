@@ -7,9 +7,9 @@
 Fetcher::Fetcher()
     : work_(std::make_shared<boost::asio::io_service::work>(io_service_)) {}
 
-void Fetcher::start(std::string protocol, std::string host, std::string uri,
+void Fetcher::start(std::string schema, std::string host, std::string uri,
                     std::function<void(std::string)> cb) {
-    startConnection(io_service_, std::move(protocol), std::move(host),
+    startConnection(io_service_, std::move(schema), std::move(host),
                     std::move(uri), std::move(cb));
 }
 

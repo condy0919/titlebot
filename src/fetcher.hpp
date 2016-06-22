@@ -8,7 +8,7 @@ class Fetcher {
 public:
     Fetcher();
 
-    void start(std::string protocol, std::string host, std::string uri,
+    void start(std::string schema, std::string host, std::string uri,
                std::function<void(std::string)> cb);
 
     void run();
