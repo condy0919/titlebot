@@ -96,3 +96,4 @@ add_executable(titlebot ${SRC})
 target_link_libraries(titlebot ${TITLE_LINK_LIBS} ${ADDITIONAL_LIBS})
 
 add_subdirectory(tests)
+add_subdirectory(tools)

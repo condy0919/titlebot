@@ -26,22 +26,14 @@ TEST_CASE("iconv", "[test]") {
     }
     SECTION("龙卷风收音机 - CRadio") {
         UTF8Translator tran;
-        unsigned char buf[] = {
-            0xc1, 0xfa, 0xbe, 0xed, 0xb7, 0xe7, 0xca, 0xd5, 0xd2, 0xf4, 0xbb,
-            0xfa, 0x20, 0x2d, 0x20, 0x43, 0x52, 0x61, 0x64, 0x69, 0x6f, '\0'
-        };
+        unsigned char buf[]="\xc1\xfa\xbe\xed\xb7\xe7\xca\xd5\xd2\xf4\xbb\xfa\x20\x2d\x20\x43\x52\x61\x64\x69\x6f";
         out = tran.trans(std::string((char*)buf));
         std::cout << out << '\n';
         REQUIRE(out == "龙卷风收音机 - CRadio");
     }
     SECTION("caoliu") {
         UTF8Translator tran;
-        unsigned char buf[] = {
-            0x20, 0x20, 0xb2, 0xdd, 0xc1, 0xf1, 0xc9, 0xe7, 0x85, 0x5e, 0x20,
-            0x20, 0x2d, 0x20, 0x70, 0x6f, 0x77, 0x65, 0x72, 0x65, 0x64, 0x20,
-            0x62, 0x79, 0x20, 0x70, 0x68, 0x70, 0x77, 0x69, 0x6e, 0x64, 0x2e,
-            0x6e, 0x65, 0x74, '\0'
-        };
+        unsigned char buf[] = "\x20\x20\xb2\xdd\xc1\xf1\xc9\xe7\x85\x5e\x20\x20\x2d\x20\x70\x6f\x77\x65\x72\x65\x64\x20\x62\x79\x20\x70\x68\x70\x77\x69\x6e\x64\x2e\x6e\x65\x74";
         out = tran.trans(std::string((char*)buf));
         std::cout << out << '\n';
         REQUIRE(out == "  草榴社區  - powered by phpwind.net");
