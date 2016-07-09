@@ -313,7 +313,7 @@ std::string UnquoteHTML(std::string in) {
     } MatchState;
     std::string Out;
     std::string MatchingName;
-    unsigned int CharCode;
+    unsigned int CharCode = 0;
     bool ProcessedChar, GotCharCode;
     MatchState = NoMatch;
 
