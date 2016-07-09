@@ -249,6 +249,9 @@ Response::Parser::state Response::Parser::consume(Response& resp, char input) {
 
     case space_before_header_value:
         if (input == ' ') {
+            return indeterminate;
+        } else if (::isascii(input)) {
+            resp.headers.back().second.push_back(input);
             state_ = header_value;
             return indeterminate;
         } else {
