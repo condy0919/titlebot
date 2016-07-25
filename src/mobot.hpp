@@ -257,7 +257,7 @@ bool parse_privmsg(std::string s, std::string& from, std::string& target,
             break;
 
         case TOKEN_SLASH_2:
-            if (std::isalpha(c)) {
+            if (std::isalnum(c)) {
                 tmp.push_back(c);
                 st = TOKEN_CONTENT;
             } else {
