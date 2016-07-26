@@ -15,7 +15,6 @@ std::string formatNormalize(std::string s) {
         COMMA,
         COLOR_BG_1
     } state = OTHER;
-    char prev = '\0';
 
     // remove all colors
 #define AMONG_0_5(c) (c == '0' || c == '1' || c == '2' || c == '3' || c == '4' || c == '5')
@@ -36,14 +35,12 @@ std::string formatNormalize(std::string s) {
                 ret += c; // eat!
                 state = OTHER;
             } else {
-                prev = c;
                 state = COLOR_FG_1;
             }
             break;
 
         case COLOR_FG_1:
-            if ((prev == '0' && AMONG_0_9(c)) ||
-                (prev == '1' && AMONG_0_5(c))) {
+            if (AMONG_0_9(c)) {
                 state = COLOR_FG_2;
             } else if (c == ',') {
                 state = COMMA;
@@ -64,7 +61,6 @@ std::string formatNormalize(std::string s) {
         
         case COMMA:
             if (AMONG_0_9(c)) {
-                prev = c;
                 state = COLOR_BG_1;
             } else {
                 ret += ','; // eat!
@@ -74,8 +70,7 @@ std::string formatNormalize(std::string s) {
             break;
 
         case COLOR_BG_1:
-            if ((prev == '0' && AMONG_0_9(c)) ||
-                (prev == '1' && AMONG_0_5(c))) {
+            if (AMONG_0_9(c)) {
                 state = OTHER;
             } else {
                 ret += c; // eat!

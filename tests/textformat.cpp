@@ -29,6 +29,17 @@ TEST_CASE("textformat", "[textformat]") {
         // \x0301,20
         s = "\x03\x30\x31,20";
         r = IRC::formatNormalize(s);
-        REQUIRE(r == "0");
+        REQUIRE(r == "");
+
+        // \x0301,2
+        s = "\x03\x30\x31,2";
+        r = IRC::formatNormalize(s);
+        REQUIRE(r == "");
+    }
+    SECTION("color value ranges from 00 to 99") {
+        // \x0399,98
+        s = "\x03\x39\x39,98hello\x03";
+        r = IRC::formatNormalize(s);
+        REQUIRE(r == "hello");
     }
 }
