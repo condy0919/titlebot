@@ -1,4 +1,5 @@
 #include "utils/string.hpp"
+#include "textformat.hpp"
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 #include <boost/format.hpp>
@@ -172,6 +173,10 @@ bool parse_privmsg(std::string s, std::string& from, std::string& target,
     target = std::string(iter, target_end); // Out
 
     iter = target_end + 2;
+
+    // remove color/bold/italic/underline...
+    s = IRC::formatNormalize(std::string(iter, s.end()));
+
     std::string tmp;
     enum {
         TOKEN_OTHER,
@@ -187,7 +192,7 @@ bool parse_privmsg(std::string s, std::string& from, std::string& target,
     } st = TOKEN_OTHER;
     bool over = false;
     bool https = false;
-    for (auto i = iter; !over && i != s.end(); ++i) {
+    for (auto i = s.begin(); !over && i != s.end(); ++i) {
         const char c = *i;
         switch (st) {
         case TOKEN_OTHER:

@@ -45,4 +45,29 @@ TEST_CASE("PRIVMSG Parser", "[PRIVMSG Parser]") {
         REQUIRE(protocol == "http");
         REQUIRE(url == "www.baidu.com");
     }
+    SECTION("colorful privmsg message") {
+        // \x0331
+        s = ":condy!~condy@unaffiliated/condy PRIVMSG #linuxba :\x03\x30\x31http://www.baidu.com\x03";
+        REQUIRE(parse_privmsg(s, from, target, protocol, url));
+        REQUIRE(from == "condy");
+        REQUIRE(target == "#linuxba");
+        REQUIRE(protocol == "http");
+        REQUIRE(url == "www.baidu.com");
+
+        // \x033,12
+        s = ":condy!~condy@unaffiliated/condy PRIVMSG #linuxba :\x03\x30,12http://www.baidu.com";
+        REQUIRE(parse_privmsg(s, from, target, protocol, url));
+        REQUIRE(from == "condy");
+        REQUIRE(target == "#linuxba");
+        REQUIRE(protocol == "http");
+        REQUIRE(url == "www.baidu.com");
+    }
+    SECTION("url starting with digits") {
+        s = ":condy!~condy@unaffiliated/condy PRIVMSG #linuxba :>   http://2016.sina.cn/zq/2016-07-24/detail-ifxuhukz0921444.d.html?wm=3049_0015 测试";
+        REQUIRE(parse_privmsg(s, from, target, protocol, url));
+        REQUIRE(from == "condy");
+        REQUIRE(target == "#linuxba");
+        REQUIRE(protocol == "http");
+        REQUIRE(url == "2016.sina.cn/zq/2016-07-24/detail-ifxuhukz0921444.d.html?wm=3049_0015");
+    }
 }
