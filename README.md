@@ -39,3 +39,8 @@ titlebot 仅解析 PRIVMSG 类型的消息，且仅解析消息中第一条 url�
 ``` sh ./script/deploy.sh ``` 编译
 
 ``` ./build/titlebot ``` 运行程序。
+
+
+后记
+------------
+2年后看了下这东西，写的是啥玩意啊，果然是垃圾。

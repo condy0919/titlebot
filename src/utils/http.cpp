@@ -63,6 +63,7 @@ std::string Request::get(const std::string& host, const std::string& uri) {
     StringUtils::concat(req, "GET ", uri, " HTTP/1.1\r\n");
     StringUtils::concat(req, "Accept: */*\r\n");
     StringUtils::concat(req, "Accept-Encoding: gzip,deflate,identity\r\n");
+    StringUtils::concat(req, "Accept-Language: zh-cn,en\r\n");
     StringUtils::concat(req, "Host: ", host, "\r\n");
     StringUtils::concat(req, "User-Agent: titlebot\r\n");
     StringUtils::concat(req, "Connection: close\r\n\r\n");
