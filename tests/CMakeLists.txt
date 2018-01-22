@@ -7,7 +7,7 @@ if(CATCH_FOUND)
     target_link_libraries(test_decode z uchardet)
 
     add_executable(test_privmsg_parser privmsg_parser.cpp ../src/textformat.cpp)
-    target_link_libraries(test_privmsg_parser boost_system)
+    target_link_libraries(test_privmsg_parser boost_system pthread)
 
     add_executable(test_html_unescape unescape.cpp ../src/utils/entities.cpp)
 
