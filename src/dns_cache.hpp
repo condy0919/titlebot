@@ -29,16 +29,16 @@ template <typename KeyT,
           std::size_t Expire,
           typename Hash = std::hash<KeyT>,
           typename Pred = std::equal_to<KeyT>,
-          typename Alloc = std::allocator<std::pair<const KeyT, ValueT>>>
+          typename Alloc = std::allocator<std::pair<const KeyT, std::tuple<ValueT, std::time_t>>>>
 class Cache {
 private:
-    typedef std::unordered_map<KeyT, std::tuple<ValueT, std::time_t>,
-                               Hash, Pred, Alloc> RecordsT;
+    using RecordsT = std::unordered_map<KeyT, std::tuple<ValueT, std::time_t>,
+                                        Hash, Pred, Alloc>;
 
 public:
     typedef KeyT key_type;
     typedef ValueT mapped_type;
-    typedef std::pair<const key_type, mapped_type> value_type;
+    typedef std::pair<const key_type, std::tuple<ValueT, std::time_t>> value_type;
     typedef Alloc allocator_type;
     // missing key_compare/value_compare
     typedef typename allocator_type::reference reference;
