@@ -1,6 +1,10 @@
 #include "decoder.hpp"
-#include <iterator>
+
 #include <cassert>
+#include <iterator>
+#include <utility>
+
+namespace tb {
 
 ContentDecoder::ContentDecoder(TitleParser& title_parser)
     : title_parser_(title_parser) {}
@@ -42,7 +46,7 @@ std::vector<char> GzipDecoder::decode(const char* s, std::size_t size) {
             return {};
         }
 
-        int sz = sizeof(out) - strm.avail_out;
+        int sz = static_cast<int>(sizeof(out) - strm.avail_out);
         ret.insert(ret.end(), out, out + sz);
     }
     return ret;
@@ -87,7 +91,7 @@ std::vector<char> DeflateDecoder::_decode(const char* s, std::size_t size) {
             _decode_ok_ = false;
             return {};
         }
-        int sz = sizeof(out) - strm.avail_out;
+        int sz = static_cast<int>(sizeof(out) - strm.avail_out);
         ret.insert(ret.end(), out, out + sz);
     }
     return ret;
@@ -124,8 +128,10 @@ DeflateDecoder::~DeflateDecoder() noexcept {
 }
 
 ChunkDecoder::ChunkDecoder(std::shared_ptr<ContentDecoder> content_decoder)
-    : content_decoder_(content_decoder) {}
+    : content_decoder_(std::move(content_decoder)) {}
 
 void ChunkDecoder::setParser(std::unique_ptr<Http::Chunk::Parser> parser) {
     impl_ = std::move(parser);
 }
+
+} // namespace tb

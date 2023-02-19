@@ -5,3 +5,4 @@ titlebot
 perf.data
 perf.data.old
 build
+.cache/

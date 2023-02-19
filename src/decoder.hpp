@@ -1,11 +1,16 @@
-#pragma once
+#ifndef TITLEBOT_DECODER_HPP_
+#define TITLEBOT_DECODER_HPP_
+
+#include "title_parser.hpp"
+
+#include <memory>
+#include <vector>
+#include <zlib.h>
 
 #include "utils/http.hpp"
-#include "title_parser.hpp"
-#include <zlib.h>
-#include <vector>
-#include <memory>
 
+namespace tb {
+///
 class ContentDecoder {
 public:
     ContentDecoder(TitleParser& title_parser);
@@ -19,12 +24,13 @@ public:
         return title_parser_.parse(res.begin(), res.end());
     }
 
-    virtual ~ContentDecoder() noexcept {}
+    virtual ~ContentDecoder() noexcept = default;
 
 private:
     TitleParser& title_parser_;
 };
 
+///
 class GzipDecoder : public ContentDecoder {
 public:
     GzipDecoder(TitleParser& title_parser);
@@ -38,6 +44,7 @@ private:
     z_stream strm;
 };
 
+///
 class DeflateDecoder : public ContentDecoder {
 public:
     DeflateDecoder(TitleParser& title_parser);
@@ -55,7 +62,6 @@ private:
     bool first_try_ = true;
     std::vector<char> data_;
 };
-
 
 class ChunkDecoder {
 public:
@@ -101,3 +107,6 @@ private:
     std::unique_ptr<Http::Chunk::Parser> impl_;
     Http::Chunk chunk_;
 };
+} // namespace tb
+
+#endif // TITLEBOT_DECODER_HPP_
