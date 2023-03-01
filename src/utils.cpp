@@ -4,9 +4,15 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <optional>
-#include <string_view>
+#include <string>
 #include <tuple>
+
+#include <iconv.h>
+#include <uchardet/uchardet.h>
+
+#include <boost/scope_exit.hpp>
 
 namespace tb {
 namespace details {
@@ -28,6 +34,40 @@ std::string utf8(unsigned ch) {
     return buf;
 }
 
+std::optional<std::string> iconv(const std::string& s, const char* encodings[], std::size_t n) {
+    // Copy the string to a buffer as `iconv` requires a non-const char pointer.
+    std::string in_buf(s);
+    std::string buf(2048, ' ');
+    for (std::size_t i = 0; i < n; ++i) {
+        if (*encodings[i] == '\0') {
+            continue;
+        }
+
+        iconv_t conv = ::iconv_open("UTF-8", encodings[i]);
+        if (conv == (iconv_t)-1) { // NOLINT
+            continue;
+        }
+
+        std::string out;
+        char* src_ptr = &in_buf[0];
+        std::size_t src_sz = in_buf.size();
+        while (src_sz) {
+            char* dst_ptr = &buf[0];
+            std::size_t dst_sz = buf.size();
+            std::size_t ret = ::iconv(conv, &src_ptr, &src_sz, &dst_ptr, &dst_sz);
+            if (ret == (std::size_t)-1) {
+                break;
+            }
+            out.append(buf.c_str(), buf.size() - dst_sz);
+        }
+
+        if (!out.empty()) {
+            return out;
+        }
+    }
+
+    return std::nullopt;
+}
 } // namespace details
 
 constexpr std::array<std::tuple<const char*, unsigned>, 251> entity_names = {{
@@ -337,5 +377,31 @@ std::string unquote(const char* s) {
     }
 
     return out;
+}
+
+std::optional<std::string> utf8(const std::string& in) {
+    // predefined encodings + encoding guessed from `uchardet`
+    const char* encodings[] = {
+        "", "GB18030", "Big5", "EUCTW", "EUCJP", "EUCKR", "CP949", "SJIS", "UTF-8",
+    };
+
+    // Guess encoding via uchardet. If failed, guess with predefined encoding list.
+    uchardet_t ud = ::uchardet_new();
+    BOOST_SCOPE_EXIT(&ud) {
+        uchardet_delete(ud);
+    }
+    BOOST_SCOPE_EXIT_END
+    if (::uchardet_handle_data(ud, in.data(), in.size())) {
+        return details::iconv(in, encodings, std::size(encodings));
+    }
+
+    // No need converting for UTF-8 and ASCII strings.
+    const char* encoding = ::uchardet_get_charset(ud);
+    if (::strncasecmp(encoding, "utf-8", 5) == 0 || ::strncasecmp(encoding, "ascii", 5) == 0) {
+        return in;
+    }
+
+    encodings[0] = encoding;
+    return details::iconv(in, encodings, std::size(encodings));
 }
 } // namespace tb

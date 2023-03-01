@@ -1,6 +1,6 @@
 #include "irc.hpp"
 
-#include "doctest/doctest.h"
+#include <doctest/doctest.h>
 
 TEST_CASE("TextFormat") {
     // \x3 0 1 hello => hello
