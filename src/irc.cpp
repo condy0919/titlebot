@@ -5,7 +5,7 @@
 
 namespace {
 // HTTP chars that need quoting.
-constexpr bool is_tspecial(char c) {
+inline constexpr bool is_tspecial(char c) {
     switch (c) {
     case '(':
     case ')':

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -14,63 +15,8 @@
 
 #include <boost/scope_exit.hpp>
 
-namespace tb {
-namespace details {
-std::string utf8(unsigned ch) {
-    char buf[4];
-    if (ch >= 0x800) {
-        buf[0] = static_cast<char>(0xe0 | ((ch >> 12) & 0x0f));
-        buf[1] = static_cast<char>(0x80 | ((ch >> 6) & 0x3f));
-        buf[2] = static_cast<char>(0x80 | (ch & 0x3f));
-        buf[3] = '\0';
-    } else if (ch >= 0x80) {
-        buf[0] = static_cast<char>(0xc0 | ((ch >> 6) & 0x1f));
-        buf[1] = static_cast<char>(0x80 | (ch & 0x3f));
-        buf[2] = '\0';
-    } else {
-        buf[0] = static_cast<char>(ch);
-        buf[1] = '\0';
-    }
-    return buf;
-}
-
-std::optional<std::string> iconv(const std::string& s, const char* encodings[], std::size_t n) {
-    // Copy the string to a buffer as `iconv` requires a non-const char pointer.
-    std::string in_buf(s);
-    std::string buf(2048, ' ');
-    for (std::size_t i = 0; i < n; ++i) {
-        if (*encodings[i] == '\0') {
-            continue;
-        }
-
-        iconv_t conv = ::iconv_open("UTF-8", encodings[i]);
-        if (conv == (iconv_t)-1) { // NOLINT
-            continue;
-        }
-
-        std::string out;
-        char* src_ptr = &in_buf[0];
-        std::size_t src_sz = in_buf.size();
-        while (src_sz) {
-            char* dst_ptr = &buf[0];
-            std::size_t dst_sz = buf.size();
-            std::size_t ret = ::iconv(conv, &src_ptr, &src_sz, &dst_ptr, &dst_sz);
-            if (ret == (std::size_t)-1) {
-                break;
-            }
-            out.append(buf.c_str(), buf.size() - dst_sz);
-        }
-
-        if (!out.empty()) {
-            return out;
-        }
-    }
-
-    return std::nullopt;
-}
-} // namespace details
-
-constexpr std::array<std::tuple<const char*, unsigned>, 251> entity_names = {{
+namespace {
+inline constexpr std::array<std::tuple<const char*, unsigned>, 251> entity_names = {{
     {"nbsp", 160},
     {"iexcl", 161},
     {"cent", 162},
@@ -335,6 +281,420 @@ constexpr std::array<std::tuple<const char*, unsigned>, 251> entity_names = {{
     {"euro", 8364},
 }};
 
+// HTTP chars that need quoting.
+inline constexpr bool is_tspecial(char c) {
+    switch (c) {
+    case '(':
+    case ')':
+    case '<':
+    case '>':
+    case '@':
+    case ',':
+    case ';':
+    case ':':
+    case '\\':
+    case '\"':
+    case '[':
+    case ']':
+    case '?':
+    case '=':
+    case '{':
+    case '}':
+    case ' ':
+    case '\t':
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+inline constexpr std::string toutf8(unsigned ch) {
+    char buf[4];
+    if (ch >= 0x800) {
+        buf[0] = static_cast<char>(0xe0 | ((ch >> 12) & 0x0f));
+        buf[1] = static_cast<char>(0x80 | ((ch >> 6) & 0x3f));
+        buf[2] = static_cast<char>(0x80 | (ch & 0x3f));
+        buf[3] = '\0';
+    } else if (ch >= 0x80) {
+        buf[0] = static_cast<char>(0xc0 | ((ch >> 6) & 0x1f));
+        buf[1] = static_cast<char>(0x80 | (ch & 0x3f));
+        buf[2] = '\0';
+    } else {
+        buf[0] = static_cast<char>(ch);
+        buf[1] = '\0';
+    }
+    return buf;
+}
+
+inline constexpr int tohex(int c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    } else if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    } else {
+        return c - 'A' + 10;
+    }
+}
+
+std::optional<std::string> iconv(const std::string& s, const char* encodings[], std::size_t n) {
+    // Copy the string to a buffer as `iconv` requires a non-const char pointer.
+    std::string in_buf(s);
+    std::string buf(2048, ' ');
+    for (std::size_t i = 0; i < n; ++i) {
+        if (*encodings[i] == '\0') {
+            continue;
+        }
+
+        iconv_t conv = ::iconv_open("UTF-8", encodings[i]);
+        if (conv == (iconv_t)-1) { // NOLINT
+            continue;
+        }
+
+        std::string out;
+        char* src_ptr = &in_buf[0];
+        std::size_t src_sz = in_buf.size();
+        while (src_sz) {
+            char* dst_ptr = &buf[0];
+            std::size_t dst_sz = buf.size();
+            std::size_t ret = ::iconv(conv, &src_ptr, &src_sz, &dst_ptr, &dst_sz);
+            if (ret == (std::size_t)-1) {
+                break;
+            }
+            out.append(buf.c_str(), buf.size() - dst_sz);
+        }
+
+        if (!out.empty()) {
+            return out;
+        }
+    }
+
+    return std::nullopt;
+}
+} // namespace
+
+namespace tb {
+std::optional<std::string> HttpResponse::get_header(const std::string& key, bool lower_case) const {
+    for (const auto& [k, v] : headers_) {
+        if (k == key) {
+            std::string val = v;
+            if (lower_case) {
+                // std::tolower has an variant about std::locale
+                std::transform(val.begin(), val.end(), val.begin(), ::tolower);
+            }
+            return val;
+        }
+    }
+
+    return std::nullopt;
+}
+
+HttpResponse::Parser::Status HttpResponse::Parser::consume(HttpResponse& resp, char c) {
+    switch (state_) {
+    case http_version_h:
+        if (c == 'H') {
+            state_ = http_version_t_1;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_version_t_1:
+        if (c == 'T') {
+            state_ = http_version_t_2;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_version_t_2:
+        if (c == 'T') {
+            state_ = http_version_p;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_version_p:
+        if (c == 'P') {
+            state_ = http_version_slash;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_version_slash:
+        if (c == '/') {
+            resp.major_ = resp.minor_ = 0;
+            state_ = http_version_major_start;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_version_major_start:
+        if (std::isdigit(c)) {
+            resp.major_ = resp.major_ * 10 + (c - '0');
+            state_ = http_version_major;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_version_major:
+        if (c == '.') {
+            state_ = http_version_minor_start;
+            return Status::Indeterminate;
+        } else if (std::isdigit(c)) {
+            resp.major_ = resp.major_ * 10 + (c - '0');
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_version_minor_start:
+        if (std::isdigit(c)) {
+            resp.minor_ = resp.minor_ * 10 + (c - '0');
+            state_ = http_version_minor;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_version_minor:
+        if (c == ' ') {
+            resp.status_code_ = 0;
+            state_ = http_status_code;
+            return Status::Indeterminate;
+        } else if (std::isdigit(c)) {
+            resp.minor_ = resp.minor_ * 10 + (c - '0');
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_status_code:
+        if (std::isdigit(c)) {
+            resp.status_code_ = resp.status_code_ * 10 + (c - '0');
+            return Status::Indeterminate;
+        } else if (c == ' ') {
+            state_ = http_status_msg;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case http_status_msg:
+        if (c == '\r') {
+            state_ = expecting_newline_1;
+            return Status::Indeterminate;
+        } else if (isascii(c)) {
+            resp.desc_.push_back(c);
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case expecting_newline_1:
+        if (c == '\n') {
+            state_ = header_line_start;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case header_line_start:
+        if (c == '\r') {
+            state_ = expecting_newline_3;
+            return Status::Indeterminate;
+        } else if (!resp.headers_.empty() && (c == ' ' || c == '\t')) {
+            state_ = header_lws;
+            return Status::Indeterminate;
+        } else if (!isascii(c) || std::iscntrl(c) || is_tspecial(c)) {
+            return Status::Bad;
+        } else {
+            resp.headers_.emplace_back();
+            resp.headers_.back().first.push_back(static_cast<char>(std::tolower(c)));
+            state_ = header_name;
+            return Status::Indeterminate;
+        }
+
+    case header_lws:
+        if (c == '\r') {
+            state_ = expecting_newline_2;
+            return Status::Indeterminate;
+        } else if (c == ' ' || c == '\t') {
+            return Status::Indeterminate;
+        } else if (std::iscntrl(c)) {
+            return Status::Bad;
+        } else {
+            state_ = header_value;
+            resp.headers_.back().second.push_back(c);
+            return Status::Indeterminate;
+        }
+
+    case header_name:
+        if (c == ':') {
+            state_ = space_before_header_value;
+            return Status::Indeterminate;
+        } else if (!isascii(c) || std::iscntrl(c) || is_tspecial(c)) {
+            return Status::Bad;
+        } else {
+            resp.headers_.back().first.push_back(static_cast<char>(std::tolower(c)));
+            return Status::Indeterminate;
+        }
+
+    case space_before_header_value:
+        if (c == ' ') {
+            return Status::Indeterminate;
+        } else if (c == '\r') {
+            state_ = expecting_newline_2;
+            return Status::Indeterminate;
+        } else if (isascii(c)) {
+            resp.headers_.back().second.push_back(c);
+            state_ = header_value;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case header_value:
+        if (c == '\r') {
+            state_ = expecting_newline_2;
+            return Status::Indeterminate;
+        } else if (std::iscntrl(c)) {
+            return Status::Bad;
+        } else {
+            resp.headers_.back().second.push_back(c);
+            return Status::Indeterminate;
+        }
+
+    case expecting_newline_2:
+        if (c == '\n') {
+            state_ = header_line_start;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case expecting_newline_3:
+        return (c == '\n') ? Status::Good : Status::Bad;
+
+    default:
+        return Status::Bad;
+    }
+}
+
+HttpChunk::Parser::Status HttpChunk::Parser::consume(HttpChunk& chunk, char c) {
+    switch (state_) {
+    case token_start:
+        chunk.data_.clear();
+        if (std::isxdigit(c)) {
+            chunk.size_ = tohex(c);
+            state_ = token_size;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case token_size:
+        if (std::isxdigit(c)) {
+            chunk.size_ = 16 * chunk.size_ + tohex(c);
+            return Status::Indeterminate;
+        } else if (c == '\r') {
+            state_ = token_cr1;
+            return Status::Indeterminate;
+        } else {
+            state_ = token_extension;
+            return Status::Indeterminate;
+        }
+
+    case token_extension:
+        if (c == '\r') {
+            state_ = token_cr1;
+            return Status::Indeterminate;
+        } else {
+            return Status::Indeterminate;
+        }
+
+    case token_cr1:
+        if (c == '\n') {
+            state_ = token_lf1;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case token_lf1:
+        if (chunk.size_ == 0) {
+            if (c == '\r') {
+                state_ = token_cr3;
+            } else {
+                state_ = token_trailer;
+            }
+            return Status::Indeterminate;
+        } else {
+            chunk.data_.push_back(c);
+            state_ = token_data;
+            return Status::Indeterminate;
+        }
+
+    case token_data:
+        if (chunk.data_.size() < chunk.size_) {
+            chunk.data_.push_back(c);
+            return Status::Indeterminate;
+        } else if (chunk.data_.size() == chunk.size_ && c == '\r') {
+            state_ = token_cr2;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case token_cr2:
+        if (c == '\n') {
+            state_ = token_start;
+            return Status::Good;
+        } else {
+            return Status::Bad;
+        }
+
+    case token_trailer:
+        if (c == '\r') {
+            state_ = token_trailer_cr;
+            return Status::Indeterminate;
+        } else {
+            return Status::Indeterminate;
+        }
+
+    case token_trailer_cr:
+        if (c == '\n') {
+            state_ = token_trailer_lf;
+            return Status::Indeterminate;
+        } else {
+            return Status::Bad;
+        }
+
+    case token_trailer_lf:
+        if (c == '\r') {
+            state_ = token_cr3;
+            return Status::Indeterminate;
+        } else {
+            state_ = token_trailer;
+            return Status::Indeterminate;
+        }
+
+    case token_cr3:
+        if (c == '\n') {
+            return Status::Good;
+        } else {
+            return Status::Bad;
+        }
+
+    default:
+        return Status::Bad;
+    }
+}
+
 std::string unquote(const char* s) {
     std::string out;
     while (*s) {
@@ -366,7 +726,7 @@ std::string unquote(const char* s) {
                                              return std::get<0>(tp) == sv;
                                          });
                 if (iter != entity_names.end()) {
-                    out += details::utf8(std::get<1>(*iter));
+                    out += toutf8(std::get<1>(*iter));
                 }
             }
 
@@ -379,29 +739,76 @@ std::string unquote(const char* s) {
     return out;
 }
 
+std::string make_request(const std::string& host, const std::string& uri) {
+    std::string req;
+    req.reserve(512);
+    req.append("GET ").append(uri).append(" HTTP/1.1\r\n");
+    req.append("Accept: */*\r\n");
+    req.append("Accept-Encoding: gzip,deflate,identity\r\n");
+    req.append("Accept-Language: zh-CN,zh;q=0.9,en;q=0.8,zh-TW;q=0.7,ja;q=0.6");
+    req.append("Host: ").append(host).append("\r\n");
+    req.append("User-Agent: titlebot\r\n");
+    req.append("Connection: close\r\n\r\n");
+
+    return req;
+}
+
 std::optional<std::string> utf8(const std::string& in) {
     // predefined encodings + encoding guessed from `uchardet`
     const char* encodings[] = {
         "", "GB18030", "Big5", "EUCTW", "EUCJP", "EUCKR", "CP949", "SJIS", "UTF-8",
     };
 
-    // Guess encoding via uchardet. If failed, guess with predefined encoding list.
     uchardet_t ud = ::uchardet_new();
     BOOST_SCOPE_EXIT(&ud) {
         uchardet_delete(ud);
     }
     BOOST_SCOPE_EXIT_END
-    if (::uchardet_handle_data(ud, in.data(), in.size())) {
-        return details::iconv(in, encodings, std::size(encodings));
+
+    // Guess encoding via uchardet. If failed, guess with predefined encoding list.
+    if (::uchardet_handle_data(ud, in.data(), in.size()) != 0) {
+        return iconv(in, encodings, std::size(encodings));
     }
 
-    // No need converting for UTF-8 and ASCII strings.
+    // No need to convert for UTF-8 and ASCII strings.
     const char* encoding = ::uchardet_get_charset(ud);
     if (::strncasecmp(encoding, "utf-8", 5) == 0 || ::strncasecmp(encoding, "ascii", 5) == 0) {
         return in;
     }
 
     encodings[0] = encoding;
-    return details::iconv(in, encodings, std::size(encodings));
+    return iconv(in, encodings, std::size(encodings));
+}
+
+std::tuple<std::string, std::string, std::string> parse_url(const std::string& url) {
+    constexpr char delim[] = {':', '/', '/'};
+
+    // Determine the schema
+    std::string schema;
+    auto colon_start = std::search(url.begin(), url.end(), std::begin(delim), std::end(delim));
+    if (colon_start != url.end()) {
+        schema.assign(url.begin(), colon_start);
+        std::advance(colon_start, 3);
+    } else {
+        schema = "http";
+        colon_start = url.begin();
+    }
+
+    // Determine the host and the uri
+    std::string uri;
+    std::string host(colon_start, url.end());
+    if (auto iter = std::find(host.begin(), host.end(), '/'); iter != host.end()) {
+        uri.assign(iter, host.end());
+        host.erase(iter, host.end());
+    } else {
+        uri = "/";
+    }
+
+    // Remove the fragments.
+    if (auto iter = std::find(uri.begin(), uri.end(), '#'); iter != uri.end()) {
+        uri.erase(iter, uri.end());
+    }
+
+    return {std::move(schema), std::move(host), std::move(uri)};
 }
 } // namespace tb
