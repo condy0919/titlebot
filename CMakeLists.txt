@@ -1,99 +1,117 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.14)
 
-project(titlebot)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-enable_testing()
-set(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS ON)
-set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
-set(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-
-add_definitions(-std=c++14)
-add_definitions(-O3)
-add_definitions(-pipe)
-#add_definitions(-fsanitize=address)
-
-# Warning starts
-add_definitions(-march=native)
-add_definitions(-funsafe-loop-optimizations)
-add_definitions(-fdevirtualize-speculatively)
-add_definitions(-fdevirtualize-at-ltrans)
-add_definitions(-ftree-vectorize)
-add_definitions(-flto)
-# Warning ends
-
-add_definitions(-Wall)
-add_definitions(-Wextra)
-#add_definitions(-g)
-#add_definitions(-ggdb)
-#add_definitions(-fno-omit-frame-pointer)
-add_definitions(-fuse-ld=gold)
-
-
-# Settings
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/setting.hpp.in
-    ${CMAKE_CURRENT_BINARY_DIR}/setting.hpp @ONLY)
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
-
-
-file(GLOB SRC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/*.cpp)
-
-
-set(TITLE_LINK_LIBS)
-
-set(Boost_USE_STATIC_LIBS ON)
-set(Boost_USE_STATIC_RUNTIME ON)
-find_package(Boost REQUIRED COMPONENTS system)
-if(Boost_FOUND)
-    list(APPEND TITLE_LINK_LIBS ${Boost_LIBRARIES})
-endif()
-
-find_package(Threads REQUIRED)
-if(Threads_FOUND)
-    list(APPEND TITLE_LINK_LIBS pthread)
-endif()
-
-find_package(ZLIB REQUIRED)
-string(REGEX REPLACE .so .a ZLIB_STATIC_LIBRARIES ${ZLIB_LIBRARIES})
-if(EXISTS ${ZLIB_STATIC_LIBRARIES})
-    set(ZLIB_LIBRARIES ${ZLIB_STATIC_LIBRARIES})
-endif()
-if(ZLIB_FOUND)
-    list(APPEND TITLE_LINK_LIBS ${ZLIB_LIBRARIES})
-endif()
-
-find_package(jemalloc)
-if(JEMALLOC_FOUND)
-    list(APPEND TITLE_LINK_LIBS jemalloc)
-endif()
-
-## SSL Support
-find_package(OpenSSL REQUIRED)
-if(OPENSSL_FOUND)
-    list(APPEND TITLE_LINK_LIBS ${OPENSSL_LIBRARIES})
-    list(APPEND TITLE_LINK_LIBS dl)
-    list(APPEND TITLE_LINK_LIBS ${ZLIB_LIBRARIES})
-endif()
-
-find_package(uchardet REQUIRED)
-if(UCHARDET_FOUND)
-    list(APPEND TITLE_LINK_LIBS ${UCHARDET_LIBRARIES})
-endif()
-
-
-## Custom
-set(ADDITIONAL_LIBS
-    #-fsanitize=address
-    #tcmalloc
-    #profiler # for gperftools profiling
+project(titlebot
+  VERSION 0.1.0
+  LANGUAGES CXX
+  DESCRIPTION ""
+  HOMEPAGE_URL ""
 )
 
+include(CTest)
+include(FetchContent)
 
-add_executable(titlebot ${SRC})
-target_link_libraries(titlebot ${TITLE_LINK_LIBS} ${ADDITIONAL_LIBS})
+option(TITLEBOT_ENABLE_TESTS "Enable tests" ON)
+option(TITLEBOT_ENABLE_BENCHMARKS "Enable benchmarks" OFF)
 
-add_subdirectory(tests)
-add_subdirectory(tools)
+# Sources for the library are specified at the end
+add_library(titlebot "")
+
+### Compile options
+# Enable C++20 (Required)
+target_compile_features(titlebot
+  PUBLIC
+    cxx_std_20
+)
+
+# Common GCC/Clang options
+target_compile_options(titlebot
+  PRIVATE
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>
+)
+
+### Libraries
+find_package(PkgConfig REQUIRED)
+
+# Enable threading support
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+target_link_libraries(titlebot PRIVATE Threads::Threads)
+
+# uchardet
+pkg_search_module(uchardet REQUIRED uchardet)
+target_include_directories(titlebot
+  PUBLIC
+    ${uchardet_INCLUDE_DIRS}
+)
+target_link_libraries(titlebot
+  PUBLIC
+    ${uchardet_LIBRARIES}
+)
+
+# zlib
+find_package(ZLIB REQUIRED)
+target_link_libraries(titlebot
+  PUBLIC
+    ZLIB::ZLIB
+)
+
+# openssl
+find_package(OpenSSL REQUIRED)
+target_link_libraries(titlebot
+  PUBLIC
+    OpenSSL::SSL
+)
+
+# Test
+if(TITLEBOT_ENABLE_TESTS)
+  # libdoctest.a and libdoctest_with_main.a will be built
+  FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest
+    GIT_TAG        v2.4.11
+    GIT_SHALLOW    true
+    GIT_PROGRESS   true
+  )
+  FetchContent_MakeAvailable(doctest)
+endif()
+
+### Definitions
+
+### Includes
+
+### Sources
+target_sources(titlebot
+  PRIVATE
+    # ${CMAKE_CURRENT_SOURCE_DIR}/src/connection.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/decoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/irc.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/title_parser.cpp
+)
+
+# Tests
+if(TITLEBOT_ENABLE_TESTS)
+  add_executable(titlebot_unittests
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/decoder_unittest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/numfmt_unittest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils_unittest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/irc_unittest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/title_parser_unittest.cpp
+  )
+
+  target_compile_definitions(titlebot_unittests
+    PUBLIC
+      TITLEBOT_PROJ_ROOT="${PROJECT_SOURCE_DIR}"
+  )
+
+  target_link_libraries(titlebot_unittests
+    PRIVATE
+      titlebot
+      doctest::doctest_with_main
+  )
+
+  add_test(NAME titlebot_unittests COMMAND titlebot_unittests)
+endif()

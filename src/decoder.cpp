@@ -1,44 +1,29 @@
 #include "decoder.hpp"
 
-#include <cassert>
-#include <iterator>
 #include <utility>
+#include <vector>
 
 namespace tb {
-
-ContentDecoder::ContentDecoder(TitleParser& title_parser)
-    : title_parser_(title_parser) {}
-
-std::vector<char> ContentDecoder::decode(const char* s, std::size_t size) {
-    return {s, s + size};
-}
-
-std::vector<char> ContentDecoder::decode(const char* beg, const char* end) {
-    return {beg, end};
-}
-
-GzipDecoder::GzipDecoder(TitleParser& title_parser)
-    : ContentDecoder(title_parser) {
-    strm.zalloc = Z_NULL;
-    strm.zfree = Z_NULL;
-    strm.opaque = Z_NULL;
-    strm.avail_in = 0;
-    strm.next_in = Z_NULL;
-    inflateInit2(&strm, 16 + MAX_WBITS);
+GzipDecoder::GzipDecoder() {
+    strm_.zalloc = Z_NULL;
+    strm_.zfree = Z_NULL;
+    strm_.opaque = Z_NULL;
+    strm_.avail_in = 0;
+    strm_.next_in = Z_NULL;
+    ::inflateInit2(&strm_, 16 + MAX_WBITS);
 }
 
 std::vector<char> GzipDecoder::decode(const char* s, std::size_t size) {
+    data_.clear();
+
     int err = Z_OK;
     char out[2048];
-    std::vector<char> ret;
-    ret.reserve(512);
-
-    strm.next_in = (unsigned char*)s;
-    strm.avail_in = size;
-    while (strm.avail_in > 0 && err != Z_STREAM_END) {
-        strm.avail_out = sizeof(out);
-        strm.next_out = (unsigned char*)out;
-        err = inflate(&strm, Z_NO_FLUSH);
+    strm_.next_in = (unsigned char*)s;
+    strm_.avail_in = size;
+    while (strm_.avail_in > 0 && err != Z_STREAM_END) {
+        strm_.avail_out = sizeof(out);
+        strm_.next_out = (unsigned char*)out;
+        err = ::inflate(&strm_, Z_NO_FLUSH);
         switch (err) {
         case Z_NEED_DICT:
         case Z_DATA_ERROR:
@@ -46,92 +31,50 @@ std::vector<char> GzipDecoder::decode(const char* s, std::size_t size) {
             return {};
         }
 
-        int sz = static_cast<int>(sizeof(out) - strm.avail_out);
-        ret.insert(ret.end(), out, out + sz);
+        const int sz = static_cast<int>(sizeof(out) - strm_.avail_out);
+        data_.insert(data_.end(), out, out + sz);
     }
-    return ret;
+    return data_;
 }
 
-std::vector<char> GzipDecoder::decode(const char* beg, const char* end) {
-    std::size_t dis = std::distance(beg, end);
-    return decode(beg, dis);
+GzipDecoder::~GzipDecoder() {
+    ::inflateEnd(&strm_);
 }
 
-GzipDecoder::~GzipDecoder() noexcept {
-    inflateEnd(&strm);
-}
-
-DeflateDecoder::DeflateDecoder(TitleParser& title_parser)
-    : ContentDecoder(title_parser) {
-    strm.zalloc = Z_NULL;
-    strm.zfree = Z_NULL;
-    strm.opaque = Z_NULL;
-    strm.avail_in = 0;
-    strm.next_in = Z_NULL;
-    inflateInit(&strm);
-}
-
-std::vector<char> DeflateDecoder::_decode(const char* s, std::size_t size) {
-    _decode_ok_ = true;
-    int err = Z_OK;
-    char out[2048];
-    std::vector<char> ret;
-    ret.reserve(512);
-
-    strm.next_in = (unsigned char*)s;
-    strm.avail_in = size;
-    while (strm.avail_in > 0 && err != Z_STREAM_END) {
-        strm.avail_out = sizeof(out);
-        strm.next_out = (unsigned char*)out;
-        err = inflate(&strm, Z_NO_FLUSH);
-        switch (err) {
-        case Z_NEED_DICT:
-        case Z_DATA_ERROR:
-        case Z_MEM_ERROR:
-            _decode_ok_ = false;
-            return {};
-        }
-        int sz = static_cast<int>(sizeof(out) - strm.avail_out);
-        ret.insert(ret.end(), out, out + sz);
-    }
-    return ret;
+DeflateDecoder::DeflateDecoder() {
+    strm_.zalloc = Z_NULL;
+    strm_.zfree = Z_NULL;
+    strm_.opaque = Z_NULL;
+    strm_.avail_in = 0;
+    strm_.next_in = Z_NULL;
+    ::inflateInit2(&strm_, -MAX_WBITS);
 }
 
 std::vector<char> DeflateDecoder::decode(const char* s, std::size_t size) {
-    if (!first_try_) {
-        return _decode(s, size);
-    }
-
-    data_.insert(data_.end(), s, s + size);
-    std::vector<char> ret = _decode(s, size);
-    if (_decode_ok_) {
-        return ret;
-    }
-    first_try_ = false;
-    inflateInit2(&strm, -MAX_WBITS);
-    ret = _decode(data_.data(), data_.size());
-    if (_decode_ok_) {
-        return ret;
-    }
     data_.clear();
-    data_.shrink_to_fit();
-    return {};
+
+    int err = Z_OK;
+    char out[2048];
+    strm_.next_in = (unsigned char*)s;
+    strm_.avail_in = size;
+    while (strm_.avail_in > 0 && err != Z_STREAM_END) {
+        strm_.avail_out = sizeof(out);
+        strm_.next_out = (unsigned char*)out;
+        err = inflate(&strm_, Z_NO_FLUSH);
+        switch (err) {
+        case Z_NEED_DICT:
+        case Z_DATA_ERROR:
+        case Z_MEM_ERROR:
+            return {};
+        }
+
+        const int sz = static_cast<int>(sizeof(out) - strm_.avail_out);
+        data_.insert(data_.end(), out, out + sz);
+    }
+    return data_;
 }
 
-std::vector<char> DeflateDecoder::decode(const char* beg, const char* end) {
-    std::size_t dis = std::distance(beg, end);
-    return decode(beg, dis);
+DeflateDecoder::~DeflateDecoder() {
+    ::inflateEnd(&strm_);
 }
-
-DeflateDecoder::~DeflateDecoder() noexcept {
-    inflateEnd(&strm);
-}
-
-ChunkDecoder::ChunkDecoder(std::shared_ptr<ContentDecoder> content_decoder)
-    : content_decoder_(std::move(content_decoder)) {}
-
-void ChunkDecoder::setParser(std::unique_ptr<Http::Chunk::Parser> parser) {
-    impl_ = std::move(parser);
-}
-
 } // namespace tb

@@ -3,109 +3,73 @@
 
 #include "title_parser.hpp"
 
+#include <iterator>
 #include <memory>
+#include <optional>
 #include <vector>
+
+#include "utils.hpp"
+
 #include <zlib.h>
 
-#include "utils/http.hpp"
-
 namespace tb {
-///
+/// The base class of all Decoders.
 class ContentDecoder {
 public:
-    ContentDecoder(TitleParser& title_parser);
-
-    virtual std::vector<char> decode(const char* s, std::size_t size);
-    virtual std::vector<char> decode(const char* beg, const char* end);
-
     template <typename Iter>
-    bool parse(Iter beg, Iter end) {
-        std::vector<char> res = decode(beg, end);
-        return title_parser_.parse(res.begin(), res.end());
+    std::optional<std::string> parse(TitleParser& tparser, Iter beg, Iter end) {
+        const std::vector<char>& res = decode(beg, end);
+        return tparser.parse(res.begin(), res.end());
     }
 
-    virtual ~ContentDecoder() noexcept = default;
+    virtual ~ContentDecoder() = default;
 
 private:
-    TitleParser& title_parser_;
+    virtual std::vector<char> decode(const char* s, std::size_t size) {
+        return {s, s + size};
+    }
+
+    virtual std::vector<char> decode(const char* begin, const char* end) {
+        return {begin, end};
+    }
 };
 
 ///
 class GzipDecoder : public ContentDecoder {
 public:
-    GzipDecoder(TitleParser& title_parser);
+    GzipDecoder();
 
-    std::vector<char> decode(const char* s, std::size_t size) override;
-    std::vector<char> decode(const char* beg, const char* end) override;
-
-    ~GzipDecoder() noexcept override;
+    ~GzipDecoder() override;
 
 private:
-    z_stream strm;
+    std::vector<char> decode(const char* s, std::size_t size) override;
+
+    std::vector<char> decode(const char* begin, const char* end) override {
+        const std::size_t len = std::distance(begin, end);
+        return decode(begin, len);
+    }
+
+    z_stream strm_;
+    std::vector<char> data_;
 };
 
 ///
 class DeflateDecoder : public ContentDecoder {
 public:
-    DeflateDecoder(TitleParser& title_parser);
+    DeflateDecoder();
 
-    std::vector<char> decode(const char* s, std::size_t size) override;
-    std::vector<char> decode(const char* beg, const char* end) override;
-
-    ~DeflateDecoder() noexcept override;
+    ~DeflateDecoder() override;
 
 private:
-    bool _decode_ok_;
-    std::vector<char> _decode(const char* s, std::size_t size);
+    std::vector<char> decode(const char* s, std::size_t size) override;
 
-    z_stream strm;
-    bool first_try_ = true;
-    std::vector<char> data_;
-};
-
-class ChunkDecoder {
-public:
-    ChunkDecoder(std::shared_ptr<ContentDecoder> content_decoder);
-
-    void setParser(std::unique_ptr<Http::Chunk::Parser> parser);
-
-    template <typename Iter>
-    bool parse(Iter beg, Iter end) {
-        std::size_t len = 0;
-        Iter iter = nullptr;
-
-        while (beg != end) {
-            if (impl_) {
-                Http::Chunk::Parser::state st;
-                std::tie(st, beg) = impl_->parse(chunk_, beg, end);
-                if ((st == Http::Chunk::Parser::good &&
-                     !chunk_.isLastChunk()) ||
-                    st == Http::Chunk::Parser::indeterminate) {
-                    len = chunk_.data_.size();
-                    iter = chunk_.data_.data();
-                } else {
-                    // last chunk or bad format, either ends chunk
-                    return false;
-                }
-            } else {
-                len = std::distance(beg, end);
-                iter = beg;
-                beg = end;
-            }
-
-            bool r = content_decoder_->parse(iter, iter + len);
-            if (r) {
-                return true;
-            }
-            chunk_.consumeData();
-        }
-        return false;
+    std::vector<char> decode(const char* begin, const char* end) override {
+        const std::size_t len = std::distance(begin, end);
+        return decode(begin, len);
     }
 
-private:
-    std::shared_ptr<ContentDecoder> content_decoder_;
-    std::unique_ptr<Http::Chunk::Parser> impl_;
-    Http::Chunk chunk_;
+    z_stream strm_;
+    std::vector<char> data_;
 };
 } // namespace tb
 
