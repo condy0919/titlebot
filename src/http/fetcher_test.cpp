@@ -244,6 +244,15 @@ TEST_F(FetcherLoopback, DistinguishesMissingTitleFromInvalidOrOversizedContent) 
               std::unexpected(tb::FetchError::kResponseLimit));
 }
 
+TEST_F(FetcherLoopback, ReadsChunkedAndEofDelimitedBodies) {
+    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                   "7\r\n<title>\r\nA\r\nOK</title>\r\n0\r\n\r\n"}),
+              tb::FetchResult(std::string("OK")));
+    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\n\r\nno title"}), tb::FetchResult(std::nullopt));
+    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 50\r\n\r\ntoo short"}),
+              std::unexpected(tb::FetchError::kNetwork));
+}
+
 TEST_F(FetcherLoopback, ReturnsCompleteTitleBeforeBodyEnds) {
     // Send only the prefix. A client that waits for the rest of the body will see a truncation
     // error.

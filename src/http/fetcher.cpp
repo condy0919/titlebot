@@ -1,11 +1,13 @@
 #include "fetcher.hpp"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
-#include <boost/beast/core.hpp>
+#include <boost/beast/core/string.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/url.hpp>
 
@@ -56,6 +58,49 @@ FetchResult FormatTitle(const std::string& title, const std::string& charset,
     return normalized;
 }
 
+using ResponseParser = http::response_parser<http::buffer_body>;
+constexpr std::size_t kBodyLimit = 512 * 1024;
+
+// Keep unconsumed bytes across parser steps and informational responses. For example,
+// a read containing both a 103 header and a 200 header leaves the latter for the next parser.
+template <class Stream>
+asio::awaitable<void> ReadResponsePart(Stream& stream, std::string& pending,
+                                       ResponseParser& parser) {
+    auto buffer = asio::dynamic_buffer(pending, kBodyLimit);
+    boost::system::error_code ec;
+    for (;;) {
+        if (buffer.size()) {
+            const auto consumed = parser.put(buffer.data(0, buffer.size()), ec);
+            buffer.consume(consumed);
+            if (!ec || ec == http::error::need_buffer) {
+                co_return;
+            }
+            if (ec != http::error::need_more) {
+                throw boost::system::system_error(ec);
+            }
+        }
+
+        const auto offset = buffer.size();
+        const auto space = std::min<std::size_t>(4096, buffer.max_size() - offset);
+        if (!space) {
+            throw boost::system::system_error(http::error::buffer_overflow);
+        }
+        buffer.grow(space);
+        const auto count = co_await stream.async_read_some(buffer.data(offset, space),
+                                                           asio::redirect_error(use_awaitable, ec));
+        buffer.shrink(space - count);
+        if (ec == asio::error::eof && parser.got_some()) {
+            parser.put_eof(ec);
+            if (!ec) {
+                co_return;
+            }
+        }
+        if (ec) {
+            throw boost::system::system_error(ec);
+        }
+    }
+}
+
 template <class Stream>
 asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, std::string path,
                                        std::string& location) {
@@ -66,13 +111,15 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     request.keep_alive(false);
     request.set(http::field::accept_encoding, "gzip, deflate, identity");
     co_await http::async_write(stream, request, use_awaitable);
-    boost::beast::flat_buffer buffer;
-    std::optional<http::response_parser<http::buffer_body>> parser_storage;
+    std::string pending;
+    std::optional<ResponseParser> parser_storage;
     for (;;) {
         auto& parser = parser_storage.emplace();
         parser.header_limit(16384);
-        parser.body_limit(512 * 1024);
-        co_await http::async_read_header(stream, buffer, parser, use_awaitable);
+        parser.body_limit(kBodyLimit);
+        while (!parser.is_header_done()) {
+            co_await ReadResponsePart(stream, pending, parser);
+        }
         auto status = parser.get().result_int();
         if (status == 101) {
             co_return std::nullopt;
@@ -129,13 +176,8 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
         auto& body = response.get().body();
         body.data = block.data();
         body.size = block.size();
-        boost::system::error_code ec;
         if (!response.is_done()) {
-            co_await http::async_read_some(stream, buffer, response,
-                                           asio::redirect_error(use_awaitable, ec));
-        }
-        if (ec && ec != http::error::need_buffer) {
-            throw boost::system::system_error(ec);
+            co_await ReadResponsePart(stream, pending, response);
         }
         auto title =
             decoder.Consume(parser, {block.data(), block.size() - body.size}, response.is_done());
@@ -238,7 +280,8 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         if (Clock::now() >= expires) {
             co_return std::unexpected(FetchError::kTimeout);
         }
-        if (error.code() == http::error::header_limit || error.code() == http::error::body_limit) {
+        if (error.code() == http::error::header_limit || error.code() == http::error::body_limit ||
+            error.code() == http::error::buffer_overflow) {
             co_return std::unexpected(FetchError::kResponseLimit);
         }
         co_return std::unexpected(FetchError::kNetwork);
