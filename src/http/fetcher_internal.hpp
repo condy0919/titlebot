@@ -4,9 +4,12 @@
 #include <chrono>
 #include <functional>
 
+#include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ssl/context.hpp>
 
 #include "fetcher.hpp"
+#include "irc/irc.hpp"
 
 namespace tb {
 namespace detail {
@@ -16,6 +19,9 @@ struct FetchPolicy {
     std::chrono::milliseconds connect_timeout;
 };
 
+/// Check each resolved endpoint against policy.allow, including after redirects. The total
+/// timeout covers the entire fetch. For example, co_await FetchWithPolicy(msg, tls, policy)
+/// returns kBlockedAddress if the policy rejects an endpoint for the requested HTTP URL.
 boost::asio::awaitable<FetchResult> FetchWithPolicy(PrivMsg msg, boost::asio::ssl::context& tls,
                                                     FetchPolicy policy);
 } // namespace detail

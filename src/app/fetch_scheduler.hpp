@@ -2,13 +2,18 @@
 #define TITLEBOT_FETCH_SCHEDULER_HPP_
 
 #include <chrono>
+#include <cstddef>
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <boost/asio/any_io_executor.hpp>
 
+#include "http/fetcher.hpp"
+#include "irc/irc.hpp"
 #include "server.hpp"
 
 namespace tb {
@@ -20,10 +25,19 @@ class FetchScheduler : public std::enable_shared_from_this<FetchScheduler> {
 public:
     using Deliver = std::function<void(const std::string&)>;
 
+    /// Create with std::make_shared<FetchScheduler>(executor, fetch) so active jobs can keep
+    /// the scheduler alive until their completion handlers run.
     FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch, Now now = Clock::now);
 
+    /// Queue a fetch and call deliver if it yields a title. For example, two accepted
+    /// Submit(msg, deliver) calls for the same pending URL fetch it once and deliver twice.
     void Submit(PrivMsg message, Deliver deliver);
+
+    /// Count a dropped outgoing reply. RecordReplyDrop() increments stats().reply_drops by one.
     void RecordReplyDrop();
+
+    /// Write current counters to std::clog. For example, Report() includes completed=0
+    /// before the first fetch completes.
     void Report() const;
 
     struct Stats {
@@ -67,6 +81,8 @@ private:
 /// Track a fixed window for each IRC target and discard expired entries.
 class ReplyLimiter {
 public:
+    /// Consume one of two replies allowed per target in a two-second window.
+    /// For example, three calls to Allow("#room", now) on a fresh limiter yield true, true, false.
     bool Allow(std::string target, Clock::time_point now);
 
 private:

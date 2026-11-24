@@ -9,6 +9,9 @@
 namespace tb {
 class TitleParser {
 public:
+    /// Feed successive ranges from one document. Return the raw title when its closing tag
+    /// arrives. For example, calling parse on "<title>A &amp;" yields std::nullopt;
+    /// calling parse on " B</title>" with the same parser then yields "A &amp; B".
     template <typename Iter>
     std::optional<std::string> parse(Iter begin, Iter end) {
         while (begin != end) {
@@ -19,14 +22,17 @@ public:
         return std::nullopt;
     }
 
+    /// View the first 1024 input bytes or the shorter prefix consumed so far.
     std::string_view sample() const {
         return head_;
     }
 
+    /// Return the first recognized meta charset declaration, or an empty string.
     std::string DeclaredCharset() const {
         return charset_;
     }
 
+    /// Report whether the input began with a UTF-8 or UTF-16 byte order mark.
     bool unicode_bom() const {
         return utf16_ || head_.starts_with("\xef\xbb\xbf");
     }

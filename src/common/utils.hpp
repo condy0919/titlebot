@@ -6,8 +6,13 @@
 #include <string_view>
 
 namespace tb {
+/// Decode named and numeric HTML character references, preserving unrecognized references.
+/// For example, `unquote("template&lt;T&gt; foo")` returns `"template<T> foo"`.
 std::string unquote(std::string_view text);
 
+/// Convert in to UTF-8 using the supplied charset. If charset is empty, try UTF-8 first,
+/// then use in and the optional sample to detect the encoding. Return std::nullopt on failure.
+/// For example, `utf8("Caf\xE9", "ISO-8859-1")` returns an optional containing `"Café"`.
 std::optional<std::string> utf8(const std::string& in, const std::string& charset = {},
                                 std::string_view sample = {});
 } // namespace tb
