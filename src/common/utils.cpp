@@ -14,6 +14,8 @@
 #include <tuple>
 
 namespace {
+// Each entry maps an HTML entity name to its Unicode code point, written in decimal.
+// For example, {"euro", 8364} maps &euro; to U+20AC, which the decoder encodes as UTF-8.
 inline constexpr std::array<std::tuple<const char*, unsigned>, 256> entity_names = {{
     {"nbsp", 160},
     {"iexcl", 161},
@@ -284,7 +286,7 @@ inline constexpr std::array<std::tuple<const char*, unsigned>, 256> entity_names
     {"euro", 8364},
 }};
 
-inline constexpr std::string encode_utf8_code_point(unsigned ch) {
+constexpr std::string encode_utf8_code_point(unsigned ch) {
     if (ch >= 0x10000) {
         return {static_cast<char>(0xf0 | (ch >> 18)), static_cast<char>(0x80 | ((ch >> 12) & 63)),
                 static_cast<char>(0x80 | ((ch >> 6) & 63)), static_cast<char>(0x80 | (ch & 63))};
@@ -317,7 +319,7 @@ std::optional<std::string> try_source_encodings(const std::string& s, const char
         }
 
         iconv_t conv = ::iconv_open("UTF-8", encodings[i]);
-        if (conv == (iconv_t)-1) { // NOLINT
+        if (conv == reinterpret_cast<iconv_t>(-1)) { // NOLINT
             continue;
         }
 
@@ -329,7 +331,9 @@ std::optional<std::string> try_source_encodings(const std::string& s, const char
             std::size_t dst_sz = buf.size();
             std::size_t ret = ::iconv(conv, &src_ptr, &src_sz, &dst_ptr, &dst_sz);
             out.append(buf.data(), buf.size() - dst_sz);
-            if (ret == static_cast<std::size_t>(-1) && errno != E2BIG) {
+            // E2BIG means the next character needs more output space. Resume at src_ptr
+            // with a fresh buffer. Other errors rule out this candidate encoding.
+            if (ret == static_cast<std::size_t>(-1) && errno != E2BIG) { // NOLINT
                 break;
             }
         }
@@ -348,31 +352,54 @@ std::string decode_html_entities(std::string_view text) {
     if (text.empty()) {
         return {};
     }
+
     auto s = text.data();
     const auto limit = s + text.size();
     std::string out;
     while (s != limit) {
+        // Only '&' can start a reference. Copy every other byte verbatim, including UTF-8 bytes.
         if (*s != '&') {
             out += *s++;
             continue;
         }
+
         const char* end = s + 1;
+        // Scan the candidate once: letters and digits cover names and hex values, and '#'
+        // can introduce a numeric reference. Check the bound before inspecting the next byte.
         while (end != limit && (std::isalnum(static_cast<unsigned char>(*end)) || *end == '#')) {
             ++end;
         }
+
+        // This decoder requires a semicolon. Consume only the '&' on a false start so that
+        // a later reference still gets a chance to match: "&bad&amp;" becomes "&bad&".
         if (end == limit || *end != ';') {
             out += *s++;
             continue;
         }
+
         std::string_view name(s + 1, end);
+        // A leading '#' selects numeric parsing; the remaining candidates use the name table.
         if (name.starts_with('#')) {
             name.remove_prefix(1);
-            bool hex = name.starts_with('x') || name.starts_with('X');
+            // Strip an optional 'x' or 'X' and select the matching base so that both
+            // "&#65;" and "&#x41;" decode to "A".
+            const bool hex = name.starts_with('x') || name.starts_with('X');
             name.remove_prefix(hex ? 1 : 0);
+
             unsigned code = 0;
-            auto parsed = std::from_chars(name.data(), end, code, hex ? 16 : 10);
-            if (parsed.ec == std::errc{} && parsed.ptr == end && code && code <= 0x10ffff &&
+            auto [ptr, ec] = std::from_chars(name.data(), end, code, hex ? 16 : 10); // NOLINT
+            // Decode only if all five checks pass. Otherwise, keep the reference as written.
+            // - ec: from_chars found digits and the value fits in unsigned.
+            // - ptr == end: every character before ';' was consumed. For "&#12z;",
+            //   from_chars succeeds with 12 but leaves ptr at 'z'.
+            // - code != 0: preserve "&#0;" to avoid inserting a NUL byte into the title.
+            // - code <= 0x10ffff: U+10FFFF is the highest Unicode code point.
+            // - Outside U+D800..U+DFFF: UTF-16 surrogates cannot be encoded as UTF-8.
+            if (ec == std::errc{} && ptr == end && code != 0 && code <= 0x10ffff &&
                 !(code >= 0xd800 && code <= 0xdfff)) {
+                // HTML uses legacy Windows-1252 mappings for numeric references in this
+                // range. For example, &#128; represents the euro sign (U+20AC). Outside
+                // 128-159, encode the parsed code point directly.
                 constexpr unsigned replacements[] = {
                     0x20ac, 129,    0x201a, 0x192,  0x201e, 0x2026, 0x2020, 0x2021,
                     0x2c6,  0x2030, 0x160,  0x2039, 0x152,  141,    0x17d,  143,
@@ -381,47 +408,60 @@ std::string decode_html_entities(std::string_view text) {
                 out += encode_utf8_code_point(code >= 128 && code <= 159 ? replacements[code - 128]
                                                                          : code);
             } else {
+                // Preserve the entire invalid reference, including '&' and ';'.
                 out.append(s, end + 1);
             }
         } else {
-            auto it =
-                std::find_if(entity_names.begin(), entity_names.end(),
-                             [name](const auto& entity) { return std::get<0>(entity) == name; });
+            // Look up the exact name, including its case, to get the Unicode code point.
+            auto it = std::ranges::find_if(
+                entity_names, [name](const auto& entity) { return std::get<0>(entity) == name; });
             if (it != entity_names.end()) {
+                // A known name contributes its character to the output, e.g. "&lt;" becomes "<".
                 out += encode_utf8_code_point(std::get<1>(*it));
             } else {
+                // An unknown name such as "&example;" passes through with its original spelling.
                 out.append(s, end + 1);
             }
         }
+
+        // Both branches consumed the semicolon. Resume in the input so decoded text is
+        // never scanned a second time: "&amp;lt;" becomes "&lt;" in one call.
         s = end + 1;
     }
     return out;
 }
 
-std::optional<std::string> convert_to_utf8(const std::string& in, const std::string& charset,
-                                           std::string_view sample) {
+std::optional<std::string> convert_to_utf8(const std::string& in, // NOLINT
+                                           const std::string& charset, std::string_view sample) {
     const char* declared[] = {charset.c_str()};
     if (!charset.empty()) {
         return try_source_encodings(in, declared, 1);
     }
+
     const char* unicode[] = {"UTF-8"};
     if (auto valid = try_source_encodings(in, unicode, 1)) {
         return valid;
     }
+
     std::unique_ptr<uchardet, decltype(&::uchardet_delete)> detector(::uchardet_new(),
                                                                      &::uchardet_delete);
     if (!detector) {
         return std::nullopt;
     }
+
     if (sample.empty()) {
         sample = in;
     }
+
+    // An ASCII-only page prefix gives few clues about the title's encoding. Include the
+    // title bytes in the detector's sample if the prefix does not already contain them.
     if (::uchardet_handle_data(detector.get(), sample.data(), sample.size()) != 0 ||
         (sample.find(in) == sample.npos &&
          ::uchardet_handle_data(detector.get(), in.data(), in.size()) != 0)) {
         return std::nullopt;
     }
     ::uchardet_data_end(detector.get());
+
     const char* guessed[] = {::uchardet_get_charset(detector.get())};
     // Prefer legacy Chinese encodings when a short sample also fits the single-byte guess.
     const char* fallback[] = {"GB18030", "Big5", "EUC-JP", "EUC-KR", "SJIS"};
