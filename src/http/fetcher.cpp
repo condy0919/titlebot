@@ -29,8 +29,9 @@ bool IsPublic(asio::ip::address_v4 address) {
            !(b[0] == 203 && b[1] == 0 && b[2] == 113);
 }
 
-FetchResult FormatTitle(const std::string& title, const std::string& charset) {
-    auto text = utf8(title, charset);
+FetchResult FormatTitle(const std::string& title, const std::string& charset,
+                        std::string_view sample) {
+    auto text = utf8(title, charset, sample);
     if (!text) {
         return std::unexpected(FetchError::kDecode);
     }
@@ -126,7 +127,11 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
                                           : FetchError::kDecode);
         }
         if (*title) {
-            co_return FormatTitle(**title, charset);
+            co_return FormatTitle(**title,
+                                  parser.unicode_bom() ? "UTF-8"
+                                  : charset.empty()    ? parser.DeclaredCharset()
+                                                       : charset,
+                                  parser.sample());
         }
     } while (!response.is_done());
     co_return std::nullopt;

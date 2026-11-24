@@ -36,3 +36,13 @@ TEST(TitleParser, RequiresCompleteClosingTagAtEverySplit) {
         EXPECT_EQ(parser.parse(html.begin() + split, html.end()), "中文 < 3 &amp; A");
     }
 }
+
+TEST(TitleParser, ReadsDeclaredCharsetAcrossChunks) {
+    tb::TitleParser parser;
+    std::string html =
+        "<meta content='text/html; charset=shift_jis' http-equiv='Content-Type'><title>x</title>";
+    for (auto it = html.begin(); it != html.end(); ++it) {
+        parser.parse(it, it + 1);
+    }
+    EXPECT_EQ(parser.DeclaredCharset(), "shift_jis");
+}

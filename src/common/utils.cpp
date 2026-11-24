@@ -758,7 +758,7 @@ std::string make_request(const std::string& host, const std::string& uri) {
     return req;
 }
 
-std::optional<std::string> utf8(const std::string& in, const std::string& charset) {
+std::optional<std::string> utf8(const std::string& in, const std::string& charset, std::string_view sample) {
     const char* declared[] = {charset.c_str()};
     if (!charset.empty()) {
         return iconv(in, declared, 1);
@@ -766,11 +766,6 @@ std::optional<std::string> utf8(const std::string& in, const std::string& charse
     const char* unicode[] = {"UTF-8"};
     if (auto valid = iconv(in, unicode, 1)) {
         return valid;
-    }
-    // 短标题的统计探测可能将繁体中文误判为单字节编码，优先沿用项目的东亚编码顺序。
-    const char* encodings[] = {"GB18030", "Big5", "EUC-TW", "EUC-JP", "EUC-KR", "CP949", "SJIS"};
-    if (auto text = iconv(in, encodings, std::size(encodings))) {
-        return text;
     }
     uchardet_t ud = ::uchardet_new();
     if (!ud) {
@@ -780,12 +775,20 @@ std::optional<std::string> utf8(const std::string& in, const std::string& charse
         uchardet_delete(ud);
     }
     BOOST_SCOPE_EXIT_END
-    if (::uchardet_handle_data(ud, in.data(), in.size()) != 0) {
+    if (sample.empty()) { sample = in; }
+    if (::uchardet_handle_data(ud, sample.data(), sample.size()) != 0) {
         return std::nullopt;
     }
     ::uchardet_data_end(ud);
     const char* guessed[] = {::uchardet_get_charset(ud)};
-    return iconv(in, guessed, 1);
+    // 短样本的单字节猜测若同时符合旧中文编码，保留项目原有的优先顺序。
+    const char* fallback[] = {"GB18030", "Big5", "EUC-JP", "EUC-KR", "SJIS"};
+    std::string_view guess(guessed[0]);
+    if (sample.size() < 64 && (guess.starts_with("WINDOWS-") || guess.starts_with("ISO-8859"))) {
+        if (auto text = iconv(in, fallback, std::size(fallback))) { return text; }
+    }
+    if (auto text = iconv(in, guessed, 1)) { return text; }
+    return iconv(in, fallback, std::size(fallback));
 }
 
 std::tuple<std::string, std::string, std::string> parse_url(const std::string& url) {

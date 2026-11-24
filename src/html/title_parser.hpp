@@ -12,14 +12,27 @@ public:
     template <typename Iter>
     std::optional<std::string> parse(Iter begin, Iter end) {
         while (begin != end) {
-            if (auto result = consume(*begin++)) {
+            if (auto result = ReadByte(*begin++)) {
                 return result;
             }
         }
         return std::nullopt;
     }
 
+    std::string_view sample() const {
+        return head_;
+    }
+    std::string DeclaredCharset() const;
+    bool unicode_bom() const {
+        return utf16_ || head_.starts_with("\xef\xbb\xbf");
+    }
+
 private:
+    std::optional<std::string> ReadByte(char ch);
+    std::string head_;
+    int utf16_ = 0;
+    int first_byte_ = -1;
+    unsigned surrogate_ = 0;
     std::optional<std::string> consume(char ch);
 
     enum class State {

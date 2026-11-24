@@ -145,7 +145,7 @@ std::string unquote(const char* s);
 std::string make_request(const std::string& host, const std::string& uri);
 
 /// Convert `in` of any other encoding to utf-8.
-std::optional<std::string> utf8(const std::string& in, const std::string& charset = {});
+std::optional<std::string> utf8(const std::string& in, const std::string& charset = {}, std::string_view sample = {});
 
 /// Parse url and return (schema, host, uri).
 std::tuple<std::string, std::string, std::string> parse_url(const std::string& url);
