@@ -38,8 +38,8 @@ asio::awaitable<void> ExerciseSession() {
     EXPECT_EQ(co_await ReadLine(peer, input), "NICK titlebot");
     EXPECT_EQ(co_await ReadLine(peer, input), "USER titlebot 0 * :titlebot");
     // 注册成功后模拟频道消息，验证只抓取首个链接且回到原频道。
-    const std::string messages = ":irc 001 titlebot :welcome\r\n"
-                                 ":alice!user@host PRIVMSG #room "
+    const std::string messages = ":irc  001  titlebot :welcome\r\n"
+                                 ":alice!user@host  PRIVMSG  #room "
                                  ":http://first.example:8080/?q=title https://second.example/\r\n";
     co_await asio::async_write(peer, asio::buffer(messages), use_awaitable);
     EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #room");
@@ -47,7 +47,7 @@ asio::awaitable<void> ExerciseSession() {
     const std::string followup = ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
                                  ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
                                  ":bob!b PRIVMSG #other :http://first.example:8080/?q=title\r\n"
-                                 ":irc PING :keepalive\r\n"
+                                 ":irc  PING  :keepalive\r\n"
                                  ":bob!user@host PRIVMSG TitleBot :https://private.example/\r\n";
     co_await asio::async_write(peer, asio::buffer(followup), use_awaitable);
     EXPECT_EQ(co_await ReadLine(peer, input), "PONG :keepalive");
@@ -132,5 +132,19 @@ TEST(Server, RejoinsAndIsolatesPendingReplies) {
     if (error) {
         std::rethrow_exception(error);
     }
+}
+TEST(Server, EndsUnregisteredSessionOnNicknameConflict) {
+    asio::io_context io;
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    tcp::socket client(io);
+    client.connect(listener.local_endpoint());
+    auto peer = listener.accept();
+    auto result =
+        asio::co_spawn(io, tb::RunSession(std::move(client), "bot", "#room", {}), asio::use_future);
+    std::string conflict = ":irc  433  * bot :Nickname in use\r\n";
+    asio::write(peer, asio::buffer(conflict));
+    io.run_for(std::chrono::seconds(2));
+    ASSERT_EQ(result.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_FALSE(result.get());
 }
 } // namespace

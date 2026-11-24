@@ -3,8 +3,11 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace tb {
+std::string_view TakeIrcToken(std::string_view& rest);
+
 struct PrivMsg {
     std::string who;
     std::string channel;

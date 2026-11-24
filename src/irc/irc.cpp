@@ -33,6 +33,16 @@ inline constexpr bool is_tspecial(char c) {
 } // namespace
 
 namespace tb {
+std::string_view TakeIrcToken(std::string_view& rest) {
+    auto end = rest.find(' ');
+    auto word = rest.substr(0, end);
+    rest.remove_prefix(word.size());
+    while (rest.starts_with(' ')) {
+        rest.remove_prefix(1);
+    }
+    return word;
+}
+
 std::string normalize(const std::string& s) {
     std::string out;
     for (size_t i = 0; i < s.size();) {
@@ -76,22 +86,13 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
     }
 
     std::string_view rest(s);
-    auto token = [&]() {
-        auto end = rest.find(' ');
-        auto word = rest.substr(0, end);
-        rest.remove_prefix(word.size());
-        while (rest.starts_with(' ')) {
-            rest.remove_prefix(1);
-        }
-        return word;
-    };
-    auto prefix = token().substr(1);
+    auto prefix = TakeIrcToken(rest).substr(1);
     auto bang = prefix.find('!');
-    if (bang == prefix.npos || !bang || token() != "PRIVMSG") {
+    if (bang == prefix.npos || !bang || TakeIrcToken(rest) != "PRIVMSG") {
         return std::nullopt;
     }
     auto who = prefix.substr(0, bang);
-    auto target = token();
+    auto target = TakeIrcToken(rest);
     auto control = [](unsigned char c) { return c < 32 || c == 127; };
     if (target.empty() || target.starts_with(':') || std::ranges::any_of(prefix, control) ||
         std::ranges::any_of(target, control) || rest.empty()) {

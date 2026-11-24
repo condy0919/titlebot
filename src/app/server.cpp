@@ -115,30 +115,25 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
                 session->socket, asio::dynamic_buffer(input, 8192), "\r\n", use_awaitable);
             auto line = input.substr(0, count - 2);
             input.erase(0, count);
-            std::string_view command(line);
+            std::string_view params(line);
             std::string_view source;
-            if (command.starts_with(':')) {
-                auto end = command.find(' ');
-                if (end == command.npos) {
-                    continue;
-                }
-                source = command.substr(1, end - 1);
-                command.remove_prefix(end + 1);
+            if (params.starts_with(':')) {
+                source = TakeIrcToken(params).substr(1);
             }
-            auto space = command.find(' ');
-            if (space == command.npos) {
+            auto command = TakeIrcToken(params);
+            if (params.empty()) {
                 continue;
             }
-            auto params = command.substr(space + 1);
-            command = command.substr(0, space);
             if (command == "PING") {
                 Send(session, "PONG " + std::string(params), true);
             } else if (command == "001") {
                 registered = true;
-                nick = params.substr(0, params.find(' '));
+                nick = TakeIrcToken(params);
                 Send(session, "JOIN " + channels);
             } else if (command == "433" && !registered) {
-                session->socket.close();
+                std::cerr << "IRC registration failed: nickname in use (433)\n";
+                boost::system::error_code ignored;
+                session->socket.close(ignored);
                 break;
             } else if (command == "NICK" && SameNick(source.substr(0, source.find('!')), nick)) {
                 if (params.starts_with(':')) {
