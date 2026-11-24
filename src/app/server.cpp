@@ -1,6 +1,7 @@
 #include "server.hpp"
 #include <boost/asio.hpp>
 #include <deque>
+#include <iostream>
 
 namespace tb {
 namespace {
@@ -76,11 +77,12 @@ asio::awaitable<void> Reply(std::shared_ptr<Session> session, Fetch fetch, PrivM
 }
 } // namespace
 
-asio::awaitable<void> RunSession(asio::ip::tcp::socket socket, std::string nick,
+asio::awaitable<bool> RunSession(asio::ip::tcp::socket socket, std::string nick,
                                  std::string channels, Fetch fetch) {
     auto session = std::make_shared<Session>(Session{std::move(socket), {}});
     Send(session, "NICK " + nick);
     Send(session, "USER " + nick + " 0 * :titlebot");
+    bool registered = false;
     std::string input;
     try {
         while (true) {
@@ -92,6 +94,7 @@ asio::awaitable<void> RunSession(asio::ip::tcp::socket socket, std::string nick,
             if (line.starts_with("PING ")) {
                 Send(session, "PONG " + line.substr(5), true);
             } else if (space != line.npos && line.compare(space, 5, " 001 ") == 0) {
+                registered = true;
                 Send(session, "JOIN " + channels);
             } else if (!line.empty() && session->active < 8) {
                 if (auto msg = parse_privmsg(line)) {
@@ -107,5 +110,29 @@ asio::awaitable<void> RunSession(asio::ip::tcp::socket socket, std::string nick,
         boost::system::error_code ignored;
         session->socket.close(ignored);
     }
+    co_return registered;
 }
+
+asio::awaitable<void> RunBot(std::string host, std::string port, std::string nick,
+                             std::string channels, Fetch fetch) {
+    auto executor = co_await asio::this_coro::executor;
+    asio::ip::tcp::resolver resolver(executor);
+    unsigned delay = 1;
+    while (true) {
+        try {
+            auto endpoints = co_await resolver.async_resolve(host, port, asio::use_awaitable);
+            asio::ip::tcp::socket socket(executor);
+            co_await asio::async_connect(socket, endpoints, asio::use_awaitable);
+            if (co_await RunSession(std::move(socket), nick, channels, fetch)) {
+                delay = 1;
+            }
+        } catch (const boost::system::system_error&) {
+            std::cerr << "IRC connection failed\n";
+        }
+        asio::steady_timer timer(executor, std::chrono::seconds(delay));
+        co_await timer.async_wait(asio::use_awaitable);
+        delay = std::min(60u, delay * 2);
+    }
+}
+
 } // namespace tb

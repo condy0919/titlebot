@@ -6,7 +6,9 @@
 
 namespace tb {
 using Fetch = std::function<boost::asio::awaitable<FetchResult>(PrivMsg)>;
-boost::asio::awaitable<void> RunSession(boost::asio::ip::tcp::socket socket, std::string nick,
+boost::asio::awaitable<void> RunBot(std::string host, std::string port, std::string nick,
+                                    std::string channels, Fetch fetch);
+boost::asio::awaitable<bool> RunSession(boost::asio::ip::tcp::socket socket, std::string nick,
                                         std::string channels, Fetch fetch);
 } // namespace tb
 #endif
