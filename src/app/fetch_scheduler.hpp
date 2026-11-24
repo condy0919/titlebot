@@ -1,0 +1,70 @@
+#ifndef TITLEBOT_FETCH_SCHEDULER_HPP_
+#define TITLEBOT_FETCH_SCHEDULER_HPP_
+
+#include "server.hpp"
+#include <boost/asio/any_io_executor.hpp>
+#include <chrono>
+#include <list>
+#include <memory>
+#include <vector>
+
+namespace tb {
+using Clock = std::chrono::steady_clock;
+using Now = std::function<Clock::time_point()>;
+
+/// 仅由 IRC 的单线程执行器调用，跨会话共用下载额度。
+class FetchScheduler : public std::enable_shared_from_this<FetchScheduler> {
+public:
+    FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch, Now now = Clock::now);
+    using Deliver = std::function<void(const std::string&)>;
+    void Submit(PrivMsg message, Deliver deliver);
+    void RecordReplyDrop();
+    void Report() const;
+
+    struct Stats {
+        std::size_t completed = 0;
+        std::size_t timeouts = 0;
+        std::size_t dropped = 0;
+        std::size_t merged = 0;
+        std::size_t peak_queue = 0;
+        std::chrono::milliseconds elapsed{};
+    };
+    const Stats& stats() const {
+        return stats_;
+    }
+
+private:
+    struct Job {
+        PrivMsg message;
+        std::string host;
+        std::vector<Deliver> replies;
+        bool running = false;
+    };
+    void Pump();
+    void Complete(std::list<Job>::iterator job, Clock::time_point start, const FetchResult& result);
+    void MaybeReport();
+    boost::asio::any_io_executor executor_;
+    Fetch fetch_;
+    Now now_;
+    Clock::time_point next_report_;
+    std::list<Job> jobs_;
+    std::size_t active_ = 0;
+    std::size_t subscribers_ = 0;
+    Stats stats_;
+};
+
+/// 按 IRC 目标计数；固定窗口只保留尚未过期的记录。
+class ReplyLimiter {
+public:
+    bool Allow(std::string target, Clock::time_point now);
+
+private:
+    struct Window {
+        std::string target;
+        Clock::time_point expires;
+        unsigned sent;
+    };
+    std::list<Window> windows_;
+};
+} // namespace tb
+#endif

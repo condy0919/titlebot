@@ -18,6 +18,7 @@ option(TITLEBOT_ENABLE_TESTS "Enable tests" ON)
 option(TITLEBOT_ENABLE_BENCHMARKS "Enable benchmarks" OFF)
 
 add_library(titlebot
+  src/app/fetch_scheduler.cpp
   src/app/server.cpp
   src/http/fetcher.cpp
   src/irc/irc.cpp
@@ -90,6 +91,7 @@ if(TITLEBOT_ENABLE_TESTS)
   FetchContent_MakeAvailable(googletest)
 
   add_executable(titlebot_unittests
+    src/app/fetch_scheduler_test.cpp
     src/app/server_test.cpp
     src/http/fetcher_test.cpp
     src/http/decoder_test.cpp

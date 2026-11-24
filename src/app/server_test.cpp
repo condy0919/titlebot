@@ -44,13 +44,19 @@ asio::awaitable<void> ExerciseSession() {
     co_await asio::async_write(peer, asio::buffer(messages), use_awaitable);
     EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #room");
     // 首次抓取仍在等待时，心跳和私聊应能独立完成。
-    const std::string followup = "PING :keepalive\r\n"
+    const std::string followup = ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
+                                 ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
+                                 ":bob!b PRIVMSG #other :http://first.example:8080/?q=title\r\n"
+                                 "PING :keepalive\r\n"
                                  ":bob!user@host PRIVMSG titlebot :https://private.example/\r\n";
     co_await asio::async_write(peer, asio::buffer(followup), use_awaitable);
     EXPECT_EQ(co_await ReadLine(peer, input), "PONG :keepalive");
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG bob :测试标题");
     release.cancel();
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #room :测试标题");
+    // 同一下载向不同频道分发；原频道三次订阅仅发送两条。
+    EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #room :测试标题");
+    EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #other :测试标题");
     EXPECT_EQ(urls, (std::vector<std::string>{"first.example:8080/?q=title", "private.example/"}));
 }
 
