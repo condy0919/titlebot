@@ -2,21 +2,37 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <stdexcept>
+#include <utility>
+
 #include <boost/asio.hpp>
 
 namespace {
 namespace asio = boost::asio;
 
 class SchedulerTest : public testing::Test {
+public:
+    void Submit(std::string url, const std::string& target = "#room") {
+        scheduler->Submit(
+            {
+                .who = "alice",
+                .channel = target,
+                .protocol = "https",
+                .url = std::move(url),
+            },
+            [this, target](const std::string& title) {
+                delivered.push_back(target + " " + title);
+            });
+    }
+
 protected:
     asio::io_context io;
     asio::steady_timer release{io, tb::Clock::time_point::max()};
-    tb::Clock::time_point now{};
     std::vector<std::string> started;
     std::vector<std::string> delivered;
     std::shared_ptr<tb::FetchScheduler> scheduler = std::make_shared<tb::FetchScheduler>(
-        io.get_executor(),
-        [this](tb::PrivMsg msg) -> asio::awaitable<tb::FetchResult> {
+        io.get_executor(), [this](tb::PrivMsg msg) -> asio::awaitable<tb::FetchResult> {
             started.push_back(msg.url);
             boost::system::error_code ignored;
             co_await release.async_wait(asio::redirect_error(asio::use_awaitable, ignored));
@@ -30,15 +46,7 @@ protected:
                 co_return std::nullopt;
             }
             co_return msg.url;
-        },
-        [this] { return now; });
-
-    void Submit(std::string url, std::string target = "#room") {
-        scheduler->Submit({"alice", target, "https", url},
-                          [this, target](const std::string& title) {
-                              delivered.push_back(target + " " + title);
-                          });
-    }
+        });
 };
 
 TEST_F(SchedulerTest, SharesDownloadsAndSkipsHostAtCapacity) {
@@ -49,9 +57,9 @@ TEST_F(SchedulerTest, SharesDownloadsAndSkipsHostAtCapacity) {
     Submit("other/timeout");
     io.poll();
     EXPECT_EQ(started, (std::vector<std::string>{"slow/a", "SLOW.:443/b", "other/timeout"}));
-    // All three downloads span the same simulated interval. The queued job needs a free slot on the
-    // slow host.
-    now += std::chrono::milliseconds(7);
+    // Each of the three active downloads contributes at least this interval to elapsed.
+    constexpr auto interval = std::chrono::milliseconds(7);
+    asio::steady_timer(io, interval).wait();
     EXPECT_EQ(release.cancel(), 3u);
     io.poll();
     EXPECT_EQ(started.back(), "slow/c");
@@ -60,8 +68,8 @@ TEST_F(SchedulerTest, SharesDownloadsAndSkipsHostAtCapacity) {
     EXPECT_EQ(scheduler->stats().completed, 4u);
     EXPECT_EQ(scheduler->stats().failures.at(tb::FetchError::kTimeout), 1u);
     EXPECT_EQ(scheduler->stats().merged, 1u);
-    EXPECT_EQ(scheduler->stats().elapsed, std::chrono::milliseconds(21));
-    std::sort(delivered.begin(), delivered.end());
+    EXPECT_GE(scheduler->stats().elapsed, 3 * interval);
+    std::ranges::sort(delivered);
     EXPECT_EQ(delivered, (std::vector<std::string>{"#first slow/a", "#room SLOW.:443/b",
                                                    "#room slow/c", "#second slow/a"}));
 }
@@ -79,6 +87,24 @@ TEST_F(SchedulerTest, SeparatesCompletionOutcomes) {
     EXPECT_EQ(stats.no_title, 1u);
     EXPECT_EQ(stats.failures.at(tb::FetchError::kDecode), 1u);
     EXPECT_EQ(stats.failures.at(tb::FetchError::kTimeout), 1u);
+}
+
+TEST_F(SchedulerTest, CompletesImmediateFetchesFromTheExecutor) {
+    scheduler = std::make_shared<tb::FetchScheduler>(
+        io.get_executor(), [](tb::PrivMsg msg) -> asio::awaitable<tb::FetchResult> {
+            if (msg.url == "error") {
+                throw std::runtime_error("fetch failed");
+            }
+            co_return msg.url;
+        });
+    asio::post(io, [this] {
+        Submit("ok");
+        Submit("error");
+    });
+    io.run();
+    EXPECT_EQ(scheduler->stats().completed, 2u);
+    EXPECT_EQ(scheduler->stats().failures.at(tb::FetchError::kNetwork), 1u);
+    EXPECT_EQ(delivered, (std::vector<std::string>{"#room ok"}));
 }
 
 TEST_F(SchedulerTest, BoundsActiveAndWaitingWork) {
@@ -99,11 +125,18 @@ TEST_F(SchedulerTest, BoundsActiveAndWaitingWork) {
 }
 
 TEST_F(SchedulerTest, BoundsSubscribersForOneDownload) {
+    constexpr tb::Clock::time_point now{};
     tb::ReplyLimiter limiter;
     unsigned replies = 0;
     for (unsigned i = 0; i < 100; ++i) {
-        scheduler->Submit({"a", "#one", "https", "same/"},
-                          [&](const std::string&) { replies += limiter.Allow("#one", now); });
+        scheduler->Submit(
+            {
+                .who = "a",
+                .channel = "#one",
+                .protocol = "https",
+                .url = "same/",
+            },
+            [&](const std::string&) { replies += limiter.Allow("#one", now); });
     }
     io.poll();
     EXPECT_EQ(started.size(), 1u);
