@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <boost/beast/core/string.hpp>
 
 namespace {
 // HTTP chars that need quoting.
@@ -102,95 +103,19 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
     }
     const auto norm = normalize(std::string(rest));
 
-    std::string url;
-    bool https = false;
-    enum {
-        Other,
-        CharH,
-        CharT1,
-        CharT2,
-        CharP,
-        CharS,
-        Colon,
-        Slash1,
-        Slash2,
-        Url,
-    } state = Other;
-    for (char c : norm) {
-        switch (state) {
-        case Other:
-            https = false;
-            if (c == 'h' || c == 'H') {
-                state = CharH;
-            }
-            break;
-
-        case CharH:
-            state = (c == 't' || c == 'T') ? CharT1 : Other;
-            break;
-
-        case CharT1:
-            state = (c == 't' || c == 'T') ? CharT2 : Other;
-            break;
-
-        case CharT2:
-            state = (c == 'p' || c == 'P') ? CharP : Other;
-            break;
-
-        case CharP:
-            if (c == 's' || c == 'S') {
-                https = true;
-                state = CharS;
-            } else if (c == ':') {
-                state = Colon;
-            } else {
-                state = Other;
-            }
-            break;
-
-        case CharS:
-            state = (c == ':') ? Colon : Other;
-            break;
-
-        case Colon:
-            state = (c == '/') ? Slash1 : Other;
-            break;
-
-        case Slash1:
-            state = (c == '/') ? Slash2 : Other;
-            break;
-
-        case Slash2:
-            if (std::isalnum(static_cast<unsigned char>(c))) {
-                url.push_back(c);
-                state = Url;
-            } else {
-                state = Other;
-            }
-            break;
-
-        case Url:
-            if (static_cast<unsigned char>(c) < 128 && !is_tspecial(c)) {
-                url.push_back(c);
-            } else {
-                return PrivMsg{
-                    .who = std::string(who),
-                    .channel = std::string(target),
-                    .protocol = https ? "https" : "http",
-                    .url = std::move(url),
-                };
-            }
-            break;
+    for (auto pos = norm.find_first_of("hH"); pos != norm.npos; pos = norm.find_first_of("hH", pos + 1)) {
+        std::string_view tail(norm.data() + pos, norm.size() - pos);
+        bool secure = boost::beast::iequals(tail.substr(0, 8), "https://");
+        if (!secure && !boost::beast::iequals(tail.substr(0, 7), "http://")) {
+            continue;
         }
-    }
-
-    if (!url.empty()) {
-        return PrivMsg{
-            .who = std::string(who),
-            .channel = std::string(target),
-            .protocol = https ? "https" : "http",
-            .url = std::move(url),
-        };
+        tail.remove_prefix(secure ? 8 : 7);
+        if (tail.empty() || !std::isalnum(static_cast<unsigned char>(tail.front()))) {
+            continue;
+        }
+        auto end = std::ranges::find_if(tail, [](unsigned char c) { return c >= 128 || is_tspecial(c); });
+        return PrivMsg{std::string(who), std::string(target), secure ? "https" : "http",
+                       std::string(tail.begin(), end)};
     }
     return std::nullopt;
 }

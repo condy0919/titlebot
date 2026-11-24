@@ -100,3 +100,9 @@ TEST(Irc, ParsesOnlyMessageCommandParameters) {
     EXPECT_FALSE(tb::parse_privmsg(":a!b PRIVMSG  :https://example.org"));
     EXPECT_TRUE(tb::parse_privmsg(":a!b  PRIVMSG #r https://example.org"));
 }
+
+TEST(Irc, FindsOverlappingScheme) {
+    auto msg = tb::parse_privmsg(":a!b PRIVMSG #r :httpHtTpS://example.org");
+    ASSERT_TRUE(msg);
+    EXPECT_EQ(msg->protocol, "https");
+}
