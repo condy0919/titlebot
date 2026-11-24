@@ -57,6 +57,9 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
                                        std::string& location) {
     http::request<http::empty_body> request(http::verb::get, path, 11);
     request.set(http::field::host, authority);
+    request.set(http::field::user_agent, "titlebot/0.1");
+    request.set(http::field::accept, "text/html, application/xhtml+xml;q=0.9, */*;q=0.1");
+    request.keep_alive(false);
     request.set(http::field::accept_encoding, "gzip, deflate, identity");
     co_await http::async_write(stream, request, use_awaitable);
     boost::beast::flat_buffer buffer;
@@ -140,15 +143,16 @@ using Clock = std::chrono::steady_clock;
 asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::context& tls,
                                       const detail::FetchPolicy& policy, Clock::time_point deadline,
                                       std::string& location) {
+    const bool ipv6 = url.host_type() == boost::urls::host_type::ipv6;
     bool secure = url.scheme_id() == boost::urls::scheme::https;
     if ((!secure && url.scheme_id() != boost::urls::scheme::http) || url.has_userinfo() ||
         url.host().empty() || (url.has_port() && url.port_number() == 0) ||
-        url.encoded_host().find_first_not_of(
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-") !=
-            std::string_view::npos) {
+        (!ipv6 && url.encoded_host().find_first_not_of(
+                      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-") !=
+                      std::string_view::npos)) {
         co_return std::unexpected(FetchError::kInvalidUrl);
     }
-    auto host = url.host();
+    auto host = ipv6 ? url.host_ipv6_address().to_string() : url.host();
     std::string port = url.has_port() ? std::string(url.port()) : (secure ? "443" : "80");
     std::string authority(url.encoded_authority());
     std::string path(url.encoded_target());
@@ -169,7 +173,7 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
     };
     timer.async_wait(cancel);
     try {
-        auto answers = co_await resolver->async_resolve(tcp::v4(), host, port, use_awaitable);
+        auto answers = co_await resolver->async_resolve(host, port, use_awaitable);
         for (auto& answer : answers) {
             if (!policy.allow(answer.endpoint())) {
                 co_return std::unexpected(FetchError::kBlockedAddress);
@@ -193,7 +197,8 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         if (secure) {
             stream->set_verify_mode(asio::ssl::verify_peer);
             stream->set_verify_callback(asio::ssl::host_name_verification(host));
-            if (!SSL_set_tlsext_host_name(stream->native_handle(), host.c_str())) {
+            if (url.host_type() == boost::urls::host_type::name &&
+                !SSL_set_tlsext_host_name(stream->native_handle(), host.c_str())) {
                 co_return std::unexpected(FetchError::kNetwork);
             }
             co_await stream->async_handshake(asio::ssl::stream_base::client, use_awaitable);
@@ -247,7 +252,19 @@ asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::con
 }
 
 asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context& tls) {
-    detail::FetchPolicy policy{[](tcp::endpoint ep) { return IsPublic(ep.address().to_v4()); },
+    detail::FetchPolicy policy{[](tcp::endpoint ep) {
+                                   auto addr = ep.address();
+                                   if (addr.is_v4()) {
+                                       return IsPublic(addr.to_v4());
+                                   }
+                                   auto b = addr.to_v6().to_bytes();
+                                   // 仅接受全球单播，并排除协议分配、文档与 IPv4 隧道前缀。
+                                   return (b[0] & 0xe0) == 0x20 &&
+                                          !(b[0] == 0x20 && b[1] == 1 &&
+                                            (b[2] < 2 || (b[2] == 0xd && b[3] == 0xb8))) &&
+                                          !(b[0] == 0x20 && b[1] == 2) &&
+                                          !(b[0] == 0x3f && b[1] == 0xff && (b[2] & 0xf0) == 0);
+                               },
                                std::chrono::seconds(10), std::chrono::seconds(3)};
     return detail::FetchWithPolicy(std::move(msg), tls, std::move(policy));
 }

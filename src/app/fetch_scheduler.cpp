@@ -31,7 +31,9 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
             return;
         }
     }
-    std::string host = message.url.substr(0, message.url.find_first_of(":/?#"));
+    auto end =
+        message.url.starts_with('[') ? message.url.find(']') : message.url.find_first_of(":/?#");
+    std::string host = message.url.substr(0, end);
     std::ranges::transform(host, host.begin(), LowerAscii);
     if (host.ends_with('.')) {
         host.pop_back();

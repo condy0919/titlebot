@@ -1,8 +1,8 @@
 #include "irc.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <boost/beast/core/string.hpp>
+#include <cctype>
 
 namespace {
 // HTTP chars that need quoting.
@@ -17,8 +17,6 @@ inline constexpr bool is_tspecial(char c) {
     case ';':
     case '\\':
     case '\"':
-    case '[':
-    case ']':
     case '{':
     case '}':
     case ' ':
@@ -103,17 +101,20 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
     }
     const auto norm = normalize(std::string(rest));
 
-    for (auto pos = norm.find_first_of("hH"); pos != norm.npos; pos = norm.find_first_of("hH", pos + 1)) {
+    for (auto pos = norm.find_first_of("hH"); pos != norm.npos;
+         pos = norm.find_first_of("hH", pos + 1)) {
         std::string_view tail(norm.data() + pos, norm.size() - pos);
         bool secure = boost::beast::iequals(tail.substr(0, 8), "https://");
         if (!secure && !boost::beast::iequals(tail.substr(0, 7), "http://")) {
             continue;
         }
         tail.remove_prefix(secure ? 8 : 7);
-        if (tail.empty() || !std::isalnum(static_cast<unsigned char>(tail.front()))) {
+        if (tail.empty() ||
+            (tail.front() != '[' && !std::isalnum(static_cast<unsigned char>(tail.front())))) {
             continue;
         }
-        auto end = std::ranges::find_if(tail, [](unsigned char c) { return c >= 128 || is_tspecial(c); });
+        auto end =
+            std::ranges::find_if(tail, [](unsigned char c) { return c >= 128 || is_tspecial(c); });
         return PrivMsg{std::string(who), std::string(target), secure ? "https" : "http",
                        std::string(tail.begin(), end)};
     }

@@ -23,7 +23,8 @@ TEST(Fetcher, RejectsUnsupportedScheme) {
 
 TEST(Fetcher, RejectsNonPublicDestinations) {
     // 使用 IP 字面量，验证连接前的地址检查，无需外部 DNS 服务。
-    for (auto authority : {"127.0.0.1", "169.254.169.254", "10.0.0.1", "192.168.1.1"}) {
+    for (auto authority :
+         {"127.0.0.1", "169.254.169.254", "10.0.0.1", "192.168.1.1", "[::1]", "[2001:db8::1]"}) {
         EXPECT_EQ(Fetch("https", authority), std::unexpected(tb::FetchError::kBlockedAddress));
     }
 }
@@ -40,8 +41,13 @@ protected:
     asio::ssl::context client_tls{asio::ssl::context::tls_client};
     asio::ssl::context server_tls{asio::ssl::context::tls_server};
     std::vector<std::string> requests;
-    tb::detail::FetchPolicy policy{
-        [this](tcp::endpoint endpoint) { return endpoint == listener.local_endpoint(); }, 2s, 1s};
+    tb::detail::FetchPolicy policy{[this](tcp::endpoint endpoint) {
+                                       return endpoint == listener.local_endpoint() ||
+                                              (endpoint.address() ==
+                                                   asio::ip::address_v6::loopback() &&
+                                               endpoint.port() == listener.local_endpoint().port());
+                                   },
+                                   2s, 1s};
     std::string authority = "127.0.0.1:" + std::to_string(listener.local_endpoint().port());
 
     template <typename Stream>
@@ -155,6 +161,13 @@ std::string Deflate(const std::string& html) {
     }
     body.resize(size);
     return body;
+}
+
+TEST_F(FetcherLoopback, ReadsRawDeflate) {
+    auto wrapped = Deflate("<title>raw</title>");
+    auto raw = wrapped.substr(2, wrapped.size() - 6);
+    EXPECT_EQ(Run({HtmlResponse(raw, "Content-Encoding: deflate\r\n")}),
+              tb::FetchResult(std::string("raw")));
 }
 
 TEST_F(FetcherLoopback, DecodesDeclaredCharsetEntitiesAndWhitespace) {

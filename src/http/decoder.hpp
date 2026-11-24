@@ -27,6 +27,8 @@ private:
     ContentEncoding encoding_;
     z_stream stream_{};
     bool initialized_ = false;
+    std::string prefix_;
+    bool checked_wrapper_ = false;
     bool ended_ = false;
     std::size_t remaining_ = 512 * 1024;
 };
