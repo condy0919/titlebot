@@ -80,3 +80,17 @@ TEST(TitleParser, RecoversAfterTextAndShortComments) {
         EXPECT_EQ(result, "real") << prefix;
     }
 }
+
+TEST(TitleParser, IgnoresNestedTemplateMetadata) {
+    std::string prefix = "<template><template><meta charset='shift_jis'></template>"
+                         "<title>占位</title></template>";
+    tb::TitleParser only;
+    EXPECT_FALSE(only.parse(prefix.begin(), prefix.end()));
+    std::string html = prefix + "<meta charset='utf-8'><title>首页</title>";
+    for (size_t split = 0; split < html.size(); ++split) {
+        tb::TitleParser parser;
+        EXPECT_FALSE(parser.parse(html.begin(), html.begin() + split));
+        EXPECT_EQ(parser.parse(html.begin() + split, html.end()), "首页");
+        EXPECT_EQ(parser.DeclaredCharset(), "utf-8");
+    }
+}

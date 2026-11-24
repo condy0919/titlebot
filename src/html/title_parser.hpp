@@ -41,6 +41,7 @@ private:
     std::string tag_;
     std::string charset_;
     std::string raw_element_;
+    unsigned template_depth_ = 0;
     unsigned svg_depth_ = 0;
     unsigned dashes_ = 0;
     char quote_ = 0;

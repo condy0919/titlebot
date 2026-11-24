@@ -200,7 +200,13 @@ std::optional<std::string> TitleParser::consume(char ch) {
     } else if (!closing &&
                (boost::beast::iequals(name, "script") || boost::beast::iequals(name, "style"))) {
         raw_element_ = name;
-    } else if (!closing && !svg_depth_) {
+    } else if (!svg_depth_ && boost::beast::iequals(name, "template")) {
+        if (!closing) {
+            ++template_depth_;
+        } else if (template_depth_) {
+            --template_depth_;
+        }
+    } else if (!closing && !svg_depth_ && !template_depth_) {
         if (boost::beast::iequals(name, "title") && !tag.ends_with('/')) {
             state_ = State::kTitle;
         } else if (boost::beast::iequals(name, "meta") && charset_.empty()) {
