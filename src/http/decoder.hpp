@@ -2,8 +2,10 @@
 #define TITLEBOT_DECODER_HPP_
 #include "html/title_parser.hpp"
 #include <expected>
+#include <memory>
+#include <optional>
+#include <string>
 #include <string_view>
-#include <zlib.h>
 
 namespace tb {
 enum class ContentEncoding { kIdentity, kGzip, kDeflate, kRawDeflate };
@@ -25,11 +27,8 @@ public:
 
 private:
     ContentEncoding encoding_;
-    z_stream stream_{};
-    bool initialized_ = false;
-    std::string prefix_;
-    bool checked_wrapper_ = false;
-    bool ended_ = false;
+    struct InflateState;
+    std::unique_ptr<InflateState> inflater_;
     std::size_t remaining_ = 512 * 1024;
 };
 

@@ -1,24 +1,35 @@
 #include "decoder.hpp"
-#include <algorithm>
 #include <array>
 #include <limits>
+#include <zlib.h>
 
 namespace tb {
+struct ContentDecoder::InflateState {
+    explicit InflateState(int bits) : initialized(inflateInit2(&stream, bits) == Z_OK) {}
+    ~InflateState() {
+        if (initialized) {
+            inflateEnd(&stream);
+        }
+    }
+
+    z_stream stream{};
+    bool initialized;
+    std::string prefix;
+    bool checked_wrapper = false;
+    bool ended = false;
+};
+
 ContentDecoder::ContentDecoder(ContentEncoding encoding) : encoding_(encoding) {
     if (encoding != ContentEncoding::kIdentity) {
         int bits = encoding == ContentEncoding::kGzip ? MAX_WBITS + 16 : MAX_WBITS;
         if (encoding == ContentEncoding::kRawDeflate) {
             bits = -MAX_WBITS;
         }
-        initialized_ = inflateInit2(&stream_, bits) == Z_OK;
+        inflater_ = std::make_unique<InflateState>(bits);
     }
 }
 
-ContentDecoder::~ContentDecoder() {
-    if (initialized_) {
-        inflateEnd(&stream_);
-    }
-}
+ContentDecoder::~ContentDecoder() = default;
 
 std::expected<std::optional<std::string>, DecodeError>
 ContentDecoder::Consume(TitleParser& parser, std::string_view input, bool final) {
@@ -35,18 +46,20 @@ ContentDecoder::Consume(TitleParser& parser, std::string_view input, bool final)
     if (encoding_ == ContentEncoding::kIdentity) {
         return feed(input);
     }
-    if (!initialized_ || input.size() > std::numeric_limits<uInt>::max()) {
+    auto& state = *inflater_;
+    auto& stream = state.stream;
+    if (!state.initialized || input.size() > std::numeric_limits<uInt>::max()) {
         return std::unexpected(DecodeError::kInvalid);
     }
     std::string joined;
-    if (encoding_ == ContentEncoding::kDeflate && !checked_wrapper_) {
-        if (!prefix_.empty()) {
-            joined = std::move(prefix_);
+    if (encoding_ == ContentEncoding::kDeflate && !state.checked_wrapper) {
+        if (!state.prefix.empty()) {
+            joined = std::move(state.prefix);
             joined.append(input);
             input = joined;
         }
         if (input.size() < 2 && !final) {
-            prefix_ = input;
+            state.prefix = input;
             return std::nullopt;
         }
         if (input.size() < 2) {
@@ -55,41 +68,41 @@ ContentDecoder::Consume(TitleParser& parser, std::string_view input, bool final)
         const auto cmf = static_cast<unsigned char>(input[0]);
         const auto flg = static_cast<unsigned char>(input[1]);
         if ((cmf & 15) != Z_DEFLATED || cmf > 120 || ((cmf << 8) + flg) % 31 != 0) {
-            if (inflateReset2(&stream_, -MAX_WBITS) != Z_OK) {
+            if (inflateReset2(&stream, -MAX_WBITS) != Z_OK) {
                 return std::unexpected(DecodeError::kInvalid);
             }
         }
-        checked_wrapper_ = true;
+        state.checked_wrapper = true;
     }
-    stream_.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.data()));
-    stream_.avail_in = static_cast<uInt>(input.size());
+    stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.data()));
+    stream.avail_in = static_cast<uInt>(input.size());
     std::array<char, 4096> output;
-    while (!ended_ || (encoding_ == ContentEncoding::kGzip && stream_.avail_in)) {
-        if (ended_) {
-            if (inflateReset(&stream_) != Z_OK) {
+    while (!state.ended || (encoding_ == ContentEncoding::kGzip && stream.avail_in)) {
+        if (state.ended) {
+            if (inflateReset(&stream) != Z_OK) {
                 return std::unexpected(DecodeError::kInvalid);
             }
-            ended_ = false;
+            state.ended = false;
         }
-        stream_.next_out = reinterpret_cast<Bytef*>(output.data());
-        stream_.avail_out = output.size();
-        const int status = inflate(&stream_, Z_NO_FLUSH);
+        stream.next_out = reinterpret_cast<Bytef*>(output.data());
+        stream.avail_out = output.size();
+        const int status = inflate(&stream, Z_NO_FLUSH);
         if (status != Z_OK && status != Z_STREAM_END && status != Z_BUF_ERROR) {
             return std::unexpected(DecodeError::kInvalid);
         }
-        ended_ = status == Z_STREAM_END;
-        auto title = feed({output.data(), output.size() - stream_.avail_out});
+        state.ended = status == Z_STREAM_END;
+        auto title = feed({output.data(), output.size() - stream.avail_out});
         if (!title || *title) {
             return title;
         }
-        if (!stream_.avail_in && stream_.avail_out) {
+        if (!stream.avail_in && stream.avail_out) {
             break;
         }
         if (status == Z_BUF_ERROR) {
             return std::unexpected(DecodeError::kInvalid);
         }
     }
-    if ((final && !ended_) || stream_.avail_in) {
+    if ((final && !state.ended) || stream.avail_in) {
         return std::unexpected(DecodeError::kInvalid);
     }
     return std::nullopt;

@@ -55,7 +55,7 @@ target_link_libraries(titlebot PRIVATE PkgConfig::uchardet)
 # zlib
 find_package(ZLIB REQUIRED)
 target_link_libraries(titlebot
-  PUBLIC
+  PRIVATE
     ZLIB::ZLIB
 )
 
@@ -101,6 +101,7 @@ if(TITLEBOT_ENABLE_TESTS)
   target_link_libraries(titlebot_unittests
     PRIVATE
       titlebot
+      ZLIB::ZLIB
       GTest::gtest_main
   )
 
