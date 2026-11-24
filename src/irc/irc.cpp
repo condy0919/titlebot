@@ -125,8 +125,23 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
             }
             suffix.remove_prefix(close + 1);
         }
-        auto end = std::ranges::find_if(suffix,
-                                        [](unsigned char c) { return c >= 128 || is_tspecial(c); });
+        auto end = suffix.begin();
+        auto opening = end;
+        unsigned depth = 0;
+        for (; end != suffix.end(); ++end) {
+            if (*end == '(') {
+                if (depth++ == 0) {
+                    opening = end;
+                }
+            } else if (*end == ')' && depth) {
+                --depth;
+            } else if (static_cast<unsigned char>(*end) >= 128 || is_tspecial(*end)) {
+                break;
+            }
+        }
+        if (depth) {
+            end = opening;
+        }
         return PrivMsg{std::string(who), std::string(target), secure ? "https" : "http",
                        std::string(tail.begin(), end)};
     }

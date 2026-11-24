@@ -121,3 +121,12 @@ TEST(Irc, DistinguishesIpv6HostFromSurroundingBrackets) {
         EXPECT_EQ(msg->url, expected);
     }
 }
+
+TEST(Irc, KeepsBalancedPathParentheses) {
+    const std::string body =
+        " #r :看 (https://example.org/wiki/Go_(game)) https://example.org/next";
+    auto msg = tb::parse_privmsg(":alice!u@h PRIVMSG" + body);
+    ASSERT_TRUE(msg);
+    EXPECT_EQ(msg->url, "example.org/wiki/Go_(game)");
+    EXPECT_FALSE(tb::parse_privmsg(":alice!u@h NOTICE" + body));
+}
