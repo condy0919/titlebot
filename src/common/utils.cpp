@@ -8,11 +8,10 @@
 #include <cctype>
 #include <cerrno>
 #include <charconv>
+#include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
-
-#include <boost/scope_exit.hpp>
 
 namespace {
 inline constexpr std::array<std::tuple<const char*, unsigned>, 256> entity_names = {{
@@ -407,23 +406,21 @@ std::optional<std::string> utf8(const std::string& in, const std::string& charse
     if (auto valid = iconv(in, unicode, 1)) {
         return valid;
     }
-    uchardet_t ud = ::uchardet_new();
-    if (!ud) {
+    std::unique_ptr<uchardet, decltype(&::uchardet_delete)> detector(::uchardet_new(),
+                                                                     &::uchardet_delete);
+    if (!detector) {
         return std::nullopt;
     }
-    BOOST_SCOPE_EXIT(&ud) {
-        uchardet_delete(ud);
-    }
-    BOOST_SCOPE_EXIT_END
     if (sample.empty()) {
         sample = in;
     }
-    if (::uchardet_handle_data(ud, sample.data(), sample.size()) != 0 ||
-        (sample.find(in) == sample.npos && ::uchardet_handle_data(ud, in.data(), in.size()) != 0)) {
+    if (::uchardet_handle_data(detector.get(), sample.data(), sample.size()) != 0 ||
+        (sample.find(in) == sample.npos &&
+         ::uchardet_handle_data(detector.get(), in.data(), in.size()) != 0)) {
         return std::nullopt;
     }
-    ::uchardet_data_end(ud);
-    const char* guessed[] = {::uchardet_get_charset(ud)};
+    ::uchardet_data_end(detector.get());
+    const char* guessed[] = {::uchardet_get_charset(detector.get())};
     // Prefer legacy Chinese encodings when a short sample also fits the single-byte guess.
     const char* fallback[] = {"GB18030", "Big5", "EUC-JP", "EUC-KR", "SJIS"};
     std::string_view guess(guessed[0]);
