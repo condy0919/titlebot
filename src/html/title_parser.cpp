@@ -13,7 +13,8 @@ std::string TitleParser::DeclaredCharset() const {
     static const std::regex attribute(
         R"attr(([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>]+)))attr");
     static const std::regex charset(R"(charset\s*=\s*([\w.-]+))", std::regex::icase);
-    for (std::sregex_iterator it(head_.begin(), head_.end(), meta), end; it != end; ++it) {
+    for (std::sregex_iterator it(meta_tags_.begin(), meta_tags_.end(), meta), end; it != end;
+         ++it) {
         auto attrs = (*it)[1].str();
         std::string content, equiv;
         for (std::sregex_iterator a(attrs.begin(), attrs.end(), attribute); a != end; ++a) {
@@ -79,73 +80,85 @@ std::optional<std::string> TitleParser::ReadByte(char ch) {
 }
 
 std::optional<std::string> TitleParser::consume(char ch) {
-    switch (state_) {
-    case State::Other:
-        if (ch == '<') {
-            state_ = State::LeftAngleBracket;
-        }
-        break;
-
-    case State::LeftAngleBracket:
-        if (ch == 't' || ch == 'T') {
-            state_ = State::CharT1;
-        } else if (!std::isspace(static_cast<unsigned char>(ch))) {
-            state_ = State::Other;
-        }
-        break;
-
-    case State::CharT1:
-        state_ = (ch == 'i' || ch == 'I') ? State::CharI : State::Other;
-        break;
-
-    case State::CharI:
-        state_ = (ch == 't' || ch == 'T') ? State::CharT2 : State::Other;
-        break;
-
-    case State::CharT2:
-        state_ = (ch == 'l' || ch == 'L') ? State::CharL : State::Other;
-        break;
-
-    case State::CharL:
-        state_ = (ch == 'e' || ch == 'E') ? State::CharE : State::Other;
-        break;
-
-    case State::CharE:
-        if (quote_) {
-            if (ch == quote_) {
-                quote_ = 0;
-            }
-        } else if (ch == '>') {
-            state_ = State::RightAngleBracket;
-        } else if (std::isspace(static_cast<unsigned char>(ch))) {
-            attributes_ = true;
-        } else if (!attributes_) {
-            state_ = State::Other;
-        } else if (ch == '\'' || ch == '"') {
-            quote_ = ch;
-        }
-        break;
-
-    case State::RightAngleBracket:
+    if (state_ == State::kTitle) {
         if (ch == '>') {
-            auto end = title_.find_last_not_of(" \t\r\n\f");
             constexpr std::string_view close = "</title";
+            auto end = title_.find_last_not_of(" \t\r\n\f");
             if (end != title_.npos && end + 1 >= close.size()) {
                 auto start = end + 1 - close.size();
                 if (boost::beast::iequals(std::string_view(title_).substr(start, close.size()),
                                           close)) {
                     title_.resize(start);
-                    state_ = State::Other;
-                    attributes_ = false;
+                    state_ = State::kText;
                     return std::exchange(title_, {});
                 }
             }
         }
         title_.push_back(ch);
-        break;
+        return {};
     }
-
-    return std::nullopt;
+    if (state_ == State::kComment) {
+        if (ch == '>' && dashes_ == 2) {
+            state_ = State::kText;
+        }
+        dashes_ = ch == '-' ? std::min(2u, dashes_ + 1) : 0;
+        return {};
+    }
+    if (ch == '<' && !quote_) {
+        tag_.clear();
+        state_ = State::kTag;
+        return {};
+    }
+    if (state_ != State::kTag) {
+        return {};
+    }
+    if (ch != '>' || quote_) {
+        tag_ += ch;
+        if (raw_element_.empty()) {
+            if (!quote_ && (ch == '\'' || ch == '"')) {
+                quote_ = ch;
+            } else if (quote_ == ch) {
+                quote_ = 0;
+            }
+            if (tag_ == "!--") {
+                state_ = State::kComment;
+                dashes_ = 0;
+            }
+        }
+        return {};
+    }
+    state_ = State::kText;
+    std::string_view tag(tag_);
+    auto first = tag.find_first_not_of(" \t\r\n\f");
+    if (first == tag.npos) {
+        return {};
+    }
+    tag.remove_prefix(first);
+    bool closing = tag.starts_with('/');
+    if (closing) {
+        tag.remove_prefix(1);
+    }
+    auto name = tag.substr(0, tag.find_first_of(" \t\r\n\f/"));
+    if (!raw_element_.empty()) {
+        if (closing && boost::beast::iequals(name, raw_element_)) {
+            raw_element_.clear();
+        }
+    } else if (boost::beast::iequals(name, "svg")) {
+        if (closing && svg_depth_) {
+            --svg_depth_;
+        } else if (!closing && !tag.ends_with('/')) {
+            ++svg_depth_;
+        }
+    } else if (!closing &&
+               (boost::beast::iequals(name, "script") || boost::beast::iequals(name, "style"))) {
+        raw_element_ = name;
+    } else if (!closing && !svg_depth_) {
+        if (boost::beast::iequals(name, "title") && !tag.ends_with('/')) {
+            state_ = State::kTitle;
+        } else if (boost::beast::iequals(name, "meta") && head_.size() < 1024) {
+            meta_tags_ += "<" + tag_ + ">";
+        }
+    }
+    return {};
 }
-
 } // namespace tb

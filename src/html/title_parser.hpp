@@ -35,17 +35,13 @@ private:
     unsigned surrogate_ = 0;
     std::optional<std::string> consume(char ch);
 
-    enum class State {
-        Other,
-        LeftAngleBracket,  // < WS*
-        CharT1,            // t
-        CharI,             // i
-        CharT2,            // t
-        CharL,             // l
-        CharE,             // e WS*
-        RightAngleBracket, // >
-    } state_ = State::Other;
-    bool attributes_ = false;
+    enum class State { kText, kTag, kComment, kTitle };
+    State state_ = State::kText;
+    std::string tag_;
+    std::string meta_tags_;
+    std::string raw_element_;
+    unsigned svg_depth_ = 0;
+    unsigned dashes_ = 0;
     char quote_ = 0;
     std::string title_;
 };

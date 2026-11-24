@@ -46,3 +46,12 @@ TEST(TitleParser, ReadsDeclaredCharsetAcrossChunks) {
     }
     EXPECT_EQ(parser.DeclaredCharset(), "shift_jis");
 }
+
+TEST(TitleParser, SkipsNonDocumentTitles) {
+    std::string html =
+        "<!-- <title>comment</title> --><script>let x='<title>script</title>';</script>"
+        "<style><title>style</title></style><svg><svg/><title>icon</title></svg>"
+        "<span data-x='<title>attr</title>'></span><title /><<title>real</title>";
+    tb::TitleParser parser;
+    EXPECT_EQ(parser.parse(html.begin(), html.end()), "real");
+}
