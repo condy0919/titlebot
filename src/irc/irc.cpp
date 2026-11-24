@@ -7,7 +7,7 @@
 
 namespace {
 // HTTP chars that need quoting.
-inline constexpr bool is_tspecial(char c) {
+constexpr bool is_tspecial(char c) {
     switch (c) {
     case '(':
     case ')':
@@ -142,8 +142,12 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
         if (depth) {
             end = opening;
         }
-        return PrivMsg{std::string(who), std::string(target), secure ? "https" : "http",
-                       std::string(tail.begin(), end)};
+        return PrivMsg{
+            .who = std::string(who),
+            .channel = std::string(target),
+            .protocol = secure ? "https" : "http",
+            .url = std::string(tail.begin(), end),
+        };
     }
     return std::nullopt;
 }
