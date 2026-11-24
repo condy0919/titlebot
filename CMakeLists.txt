@@ -68,16 +68,13 @@ target_link_libraries(titlebot
 
 # Test
 if(TITLEBOT_ENABLE_TESTS)
-  find_package(GTest CONFIG QUIET)
-  if(NOT GTest_FOUND)
-    FetchContent_Declare(
-      googletest
-      GIT_REPOSITORY https://github.com/google/googletest.git
-      GIT_TAG v1.15.2
-      GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(googletest)
-  endif()
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.15.2
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(googletest)
 endif()
 
 ### Definitions

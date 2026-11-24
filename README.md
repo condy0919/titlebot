@@ -27,7 +27,7 @@ titlebot 仅解析 PRIVMSG 类型的消息，且仅解析消息中第一条 url�
 可选依赖:
 
 * [jemalloc](http://www.canonware.com/jemalloc/)
-* [GoogleTest](https://github.com/google/googletest)（用于单元测试）
+* [GoogleTest](https://github.com/google/googletest)（启用单元测试时由 CMake FetchContent 获取 v1.15.2）
 
 
 安装使用
