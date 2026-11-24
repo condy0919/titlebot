@@ -26,10 +26,10 @@ ctest --test-dir build --output-on-failure
 ## 连接 IRC
 
 ```sh
-./build/titlebot irc.example.org 6667 titlebot '#example,#dev'
+./build/titlebot -s irc.example.org -p 6667 -n titlebot '#example,#dev'
 ```
 
-四个参数依次为服务器、端口、机器人昵称和频道列表。多个频道用逗号分隔，在 shell 中用引号包住以 `#` 开头的参数。IRC 连接使用明文 TCP，请填写服务器的明文端口。机器人注册成功后自动加入频道。注册等待超过 30 秒会触发重连，连续失败时重试间隔逐步增加，最长为 60 秒。
+用必填选项 `-s`、`-p`、`-n` 分别指定 IRC 服务器、端口和机器人昵称。频道列表作为位置参数传入。多个频道用逗号分隔，在 shell 中用引号包住以 `#` 开头的参数。IRC 连接使用明文 TCP，请填写服务器的明文端口。机器人注册成功后自动加入频道。注册等待超过 30 秒会触发重连，连续失败时重试间隔逐步增加，最长为 60 秒。
 
 ## 抓取与诊断
 
