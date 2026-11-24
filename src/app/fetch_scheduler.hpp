@@ -11,23 +11,23 @@
 #include <vector>
 
 #include <boost/asio/any_io_executor.hpp>
+#include <boost/asio/awaitable.hpp>
 
 #include "http/fetcher.hpp"
 #include "irc/irc.hpp"
-#include "server.hpp"
 
 namespace tb {
 using Clock = std::chrono::steady_clock;
-using Now = std::function<Clock::time_point()>;
 
 /// The single-threaded IRC executor shares this download budget across sessions.
 class FetchScheduler : public std::enable_shared_from_this<FetchScheduler> {
 public:
+    using Fetch = std::function<boost::asio::awaitable<FetchResult>(PrivMsg)>;
     using Deliver = std::function<void(const std::string&)>;
 
     /// Create with std::make_shared<FetchScheduler>(executor, fetch) so active jobs can keep
-    /// the scheduler alive until their completion handlers run.
-    FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch, Now now = Clock::now);
+    /// the scheduler alive until their coroutines finish delivering results.
+    FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch);
 
     /// Queue a fetch and call deliver if it yields a title. For example, two accepted
     /// Submit(msg, deliver) calls for the same pending URL fetch it once and deliver twice.
@@ -70,7 +70,6 @@ private:
 
     boost::asio::any_io_executor executor_;
     Fetch fetch_;
-    Now now_;
     Clock::time_point next_report_;
     std::list<Job> jobs_;
     std::size_t active_ = 0;
