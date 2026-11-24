@@ -147,17 +147,31 @@ std::optional<std::string> TitleParser::consume(char ch) {
         return {};
     }
     if (ch != '>' || quote_) {
-        tag_ += ch;
+        if (tag_.empty()) {
+            if (std::isspace(static_cast<unsigned char>(ch))) {
+                return {};
+            }
+            if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '/' || ch == '!' ||
+                  ch == '?')) {
+                state_ = State::kText;
+                return {};
+            }
+        }
         if (raw_element_.empty()) {
-            if (!quote_ && (ch == '\'' || ch == '"')) {
-                quote_ = ch;
-            } else if (quote_ == ch) {
+            if (quote_ && quote_ == ch) {
                 quote_ = 0;
+            } else if (!quote_ && (ch == '\'' || ch == '"')) {
+                auto last = tag_.find_last_not_of(" \t\r\n\f");
+                if (last != tag_.npos && tag_[last] == '=') {
+                    quote_ = ch;
+                }
             }
-            if (tag_ == "!--") {
-                state_ = State::kComment;
-                dashes_ = 0;
-            }
+        }
+        tag_ += ch;
+        if (raw_element_.empty() && tag_ == "!--") {
+            state_ = State::kComment;
+            // 起始标记已提供两个连字符，兼容立即结束的短注释。
+            dashes_ = 2;
         }
         return {};
     }
@@ -167,7 +181,7 @@ std::optional<std::string> TitleParser::consume(char ch) {
     if (first == tag.npos) {
         return {};
     }
-    tag.remove_prefix(first);
+    tag = tag.substr(first, tag.find_last_not_of(" \t\r\n\f") - first + 1);
     bool closing = tag.starts_with('/');
     if (closing) {
         tag.remove_prefix(1);

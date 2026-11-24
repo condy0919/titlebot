@@ -67,3 +67,16 @@ TEST(TitleParser, KeepsFirstCharsetBeyondDetectionSample) {
     EXPECT_EQ(parser.sample().size(), 1024u);
     EXPECT_EQ(parser.DeclaredCharset(), "shift_jis");
 }
+
+TEST(TitleParser, RecoversAfterTextAndShortComments) {
+    for (std::string prefix : {"<noscript>1 < 2, it's ok</noscript>", "<!-->", "<!--->",
+                               "<title / >", "<!-- ordinary > <title>ignore</title> -->"}) {
+        auto html = prefix + "<title>real</title>";
+        tb::TitleParser parser;
+        std::optional<std::string> result;
+        for (auto it = html.begin(); it != html.end() && !result; ++it) {
+            result = parser.parse(it, it + 1);
+        }
+        EXPECT_EQ(result, "real") << prefix;
+    }
+}
