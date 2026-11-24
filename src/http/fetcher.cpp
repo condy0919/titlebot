@@ -63,10 +63,21 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     request.set(http::field::accept_encoding, "gzip, deflate, identity");
     co_await http::async_write(stream, request, use_awaitable);
     boost::beast::flat_buffer buffer;
-    http::response_parser<http::buffer_body> response;
-    response.header_limit(16384);
-    response.body_limit(512 * 1024);
-    co_await http::async_read_header(stream, buffer, response, use_awaitable);
+    std::optional<http::response_parser<http::buffer_body>> parser_storage;
+    for (;;) {
+        auto& parser = parser_storage.emplace();
+        parser.header_limit(16384);
+        parser.body_limit(512 * 1024);
+        co_await http::async_read_header(stream, buffer, parser, use_awaitable);
+        auto status = parser.get().result_int();
+        if (status == 101) {
+            co_return std::nullopt;
+        }
+        if (status < 100 || status >= 200) {
+            break;
+        }
+    }
+    auto& response = *parser_storage;
     switch (response.get().result_int()) {
     case 301:
     case 302:

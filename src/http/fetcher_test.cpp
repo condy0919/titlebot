@@ -56,14 +56,15 @@ protected:
         co_await asio::async_read_until(stream, asio::dynamic_buffer(request), "\r\n\r\n",
                                         asio::use_awaitable);
         requests.push_back(request.substr(0, request.find("\r\n")));
-        if (response.empty()) {
+        if (!response.empty()) {
+            co_await asio::async_write(stream, asio::buffer(response), asio::use_awaitable);
+        }
+        if (response.empty() || response == hints) {
             // 等待客户端因总时限关闭连接，然后继续处理下一条请求。
             char byte;
             boost::system::error_code ignored;
             co_await stream.async_read_some(asio::buffer(&byte, 1),
                                             asio::redirect_error(asio::use_awaitable, ignored));
-        } else {
-            co_await asio::async_write(stream, asio::buffer(response), asio::use_awaitable);
         }
     }
 
@@ -104,6 +105,7 @@ protected:
         return client.get();
     }
 
+    const std::string hints = "HTTP/1.1 103 Early Hints\r\n\r\n";
     const std::string ok = "HTTP/1.1 200 OK\r\nContent-Length: 17\r\n\r\n<title>OK</title>";
     std::string Redirect(std::string target) {
         return "HTTP/1.1 302 Found\r\nLocation: " + target + "\r\nContent-Length: 0\r\n\r\n";
@@ -127,6 +129,12 @@ TEST_F(FetcherLoopback, BoundsRedirectsAndResponseSizes) {
               std::unexpected(tb::FetchError::kResponseLimit));
     EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nX-Large: " + std::string(17000, 'x') + "\r\n\r\n"}),
               std::unexpected(tb::FetchError::kResponseLimit));
+}
+
+TEST_F(FetcherLoopback, ReadsFinalResponseAfterEarlyHints) {
+    EXPECT_EQ(Run({hints + ok}), tb::FetchResult(std::string("OK")));
+    policy.total_timeout = 100ms;
+    EXPECT_EQ(Run({hints}), std::unexpected(tb::FetchError::kTimeout));
 }
 
 TEST_F(FetcherLoopback, TimesOutAndCanFetchAgain) {
