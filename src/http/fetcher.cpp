@@ -9,6 +9,7 @@
 #include <boost/beast/http.hpp>
 #include <boost/url.hpp>
 
+#include "common/deadline.hpp"
 #include "common/utils.hpp"
 #include "decoder.hpp"
 #include "fetcher_internal.hpp"
@@ -155,6 +156,16 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
 }
 
 using Clock = std::chrono::steady_clock;
+asio::awaitable<void> CancelOnTimeout(asio::awaitable<bool> expired,
+                                      std::shared_ptr<tcp::resolver> resolver,
+                                      std::shared_ptr<asio::ssl::stream<tcp::socket>> stream) {
+    if (co_await std::move(expired)) {
+        resolver->cancel();
+        boost::system::error_code ignored;
+        stream->next_layer().close(ignored);
+    }
+}
+
 asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::context& tls,
                                       const detail::FetchPolicy& policy, Clock::time_point deadline,
                                       std::string& location) {
@@ -178,15 +189,9 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
     auto resolver = std::make_shared<tcp::resolver>(executor);
     auto stream = std::make_shared<asio::ssl::stream<tcp::socket>>(executor, tls);
     auto expires = std::min(deadline, Clock::now() + policy.connect_timeout);
-    asio::steady_timer timer(executor, expires);
-    auto cancel = [resolver, stream](boost::system::error_code ec) {
-        if (!ec) {
-            resolver->cancel();
-            boost::system::error_code ignored;
-            stream->next_layer().close(ignored);
-        }
-    };
-    timer.async_wait(cancel);
+    Deadline connect_timeout(executor, expires);
+    asio::co_spawn(executor, CancelOnTimeout(connect_timeout.Wait(), resolver, stream),
+                   asio::detached);
     try {
         auto answers = co_await resolver->async_resolve(host, port, use_awaitable);
         for (auto& answer : answers) {
@@ -221,14 +226,17 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         if (Clock::now() >= expires) {
             co_return std::unexpected(FetchError::kTimeout);
         }
-        timer.expires_at(deadline);
-        timer.async_wait(cancel);
+        connect_timeout.Cancel();
+        expires = deadline;
+        Deadline read_timeout(executor, expires);
+        asio::co_spawn(executor, CancelOnTimeout(read_timeout.Wait(), resolver, stream),
+                       asio::detached);
         if (secure) {
             co_return co_await ReadTitle(*stream, authority, path, location);
         }
         co_return co_await ReadTitle(stream->next_layer(), authority, path, location);
     } catch (const boost::system::system_error& error) {
-        if (Clock::now() >= timer.expiry()) {
+        if (Clock::now() >= expires) {
             co_return std::unexpected(FetchError::kTimeout);
         }
         if (error.code() == http::error::header_limit || error.code() == http::error::body_limit) {

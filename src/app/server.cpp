@@ -6,6 +6,7 @@
 
 #include <boost/asio.hpp>
 
+#include "common/deadline.hpp"
 #include "common/log.hpp"
 #include "fetch_scheduler.hpp"
 
@@ -121,6 +122,14 @@ bool SameNick(std::string_view a, std::string_view b) {
     return std::ranges::equal(a, b, {}, fold, fold);
 }
 
+asio::awaitable<void> CloseOnRegistrationTimeout(asio::awaitable<bool> expired,
+                                                 std::shared_ptr<Session> session) {
+    if (co_await std::move(expired)) {
+        boost::system::error_code ignored;
+        session->socket.close(ignored);
+    }
+}
+
 asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nick,
                                    std::string channels, std::shared_ptr<FetchScheduler> scheduler,
                                    std::chrono::milliseconds registration_timeout) {
@@ -128,13 +137,10 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
     Send(session, "NICK " + nick);
     Send(session, "USER " + nick + " 0 * :titlebot");
     bool registered = false;
-    asio::steady_timer registration(session->socket.get_executor(), registration_timeout);
-    registration.async_wait([session](boost::system::error_code ec) {
-        if (!ec) {
-            boost::system::error_code ignored;
-            session->socket.close(ignored);
-        }
-    });
+    auto executor = session->socket.get_executor();
+    Deadline registration(executor, Clock::now() + registration_timeout);
+    asio::co_spawn(executor, CloseOnRegistrationTimeout(registration.Wait(), session),
+                   asio::detached);
     std::string input;
     try {
         while (true) {
@@ -154,7 +160,7 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
             if (command == "PING") {
                 Send(session, "PONG " + std::string(params), true);
             } else if (command == "001") {
-                registration.cancel();
+                registration.Cancel();
                 registered = true;
                 nick = TakeIrcToken(params);
                 Send(session, "JOIN " + channels);
