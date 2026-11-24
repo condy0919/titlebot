@@ -19,7 +19,7 @@ titlebot 仅解析 PRIVMSG 类型的消息，且仅解析消息中第一条 url�
 * [make](http://www.gnu.org/software/make)
 * [cmake](http://www.cmake.org/)
 * [gcc](http://gcc.gnu.org) 需要能够使用 C++23 特性
-* [boost](http://www.boost.org/)
+* [Boost](https://www.boost.org/) 1.81 或更高版本，包含 Boost.URL 开发库
 * [zlib](http://www.zlib.net/)
 * [openssl](https://www.openssl.org)
 * [uchardet](https://github.com/BYVoid/uchardet)

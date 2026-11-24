@@ -9,7 +9,14 @@
 #include <string>
 
 namespace tb {
-enum class FetchError { kInvalidUrl, kBlockedAddress, kNetwork, kTimeout };
+enum class FetchError {
+    kInvalidUrl,
+    kBlockedAddress,
+    kNetwork,
+    kTimeout,
+    kRedirectLimit,
+    kResponseLimit
+};
 using FetchResult = std::expected<std::optional<std::string>, FetchError>;
 boost::asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, boost::asio::ssl::context& tls);
 } // namespace tb
