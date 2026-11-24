@@ -1,7 +1,8 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.20)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 project(titlebot
   VERSION 0.1.0
@@ -20,10 +21,10 @@ option(TITLEBOT_ENABLE_BENCHMARKS "Enable benchmarks" OFF)
 add_library(titlebot "")
 
 ### Compile options
-# Enable C++20 (Required)
+# Enable C++23 (Required)
 target_compile_features(titlebot
   PUBLIC
-    cxx_std_20
+    cxx_std_23
 )
 
 # Common GCC/Clang options
