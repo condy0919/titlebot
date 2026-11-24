@@ -1,16 +1,53 @@
 #include "server.hpp"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <boost/asio.hpp>
+
+#include "http/fetcher.hpp"
 
 namespace {
 namespace asio = boost::asio;
 using asio::use_awaitable;
 using asio::ip::tcp;
 
+// Each test owns its mock through its io_context, including during reconnects.
+struct MockFetch : asio::execution_context::service {
+    static inline asio::execution_context::id id;
+    explicit MockFetch(asio::execution_context& context) : service(context) {}
+    static MockFetch& For(const asio::any_io_executor& executor) {
+        return asio::use_service<MockFetch>(asio::query(executor, asio::execution::context));
+    }
+
+    MOCK_METHOD(asio::awaitable<tb::FetchResult>, Fetch, (tb::PrivMsg));
+
+    void shutdown() override {}
+};
+} // namespace
+
+namespace tb {
+asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context&) {
+    auto executor = co_await asio::this_coro::executor;
+    co_return co_await MockFetch::For(executor).Fetch(std::move(msg));
+}
+} // namespace tb
+
+namespace {
 class Server : public testing::Test {
 protected:
+    void RunExercise(asio::awaitable<void> exercise, std::chrono::seconds timeout) {
+        auto result = asio::co_spawn(io, std::move(exercise), asio::use_future);
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (result.wait_for(std::chrono::seconds(0)) != std::future_status::ready &&
+               io.run_one_until(deadline)) {
+        }
+        ASSERT_EQ(result.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+        EXPECT_NO_THROW(result.get());
+    }
+
     asio::io_context io;
 };
 
@@ -25,9 +62,6 @@ asio::awaitable<std::string> ReadLine(tcp::socket& peer, std::string& input) {
 asio::awaitable<void> ExerciseSession() {
     auto executor = co_await asio::this_coro::executor;
     tcp::acceptor listener(executor, {asio::ip::address_v4::loopback(), 0});
-    tcp::socket bot(executor);
-    co_await bot.async_connect(listener.local_endpoint(), use_awaitable);
-    auto peer = co_await listener.async_accept(use_awaitable);
     std::vector<std::string> urls;
     asio::steady_timer release(executor);
     release.expires_at(std::chrono::steady_clock::time_point::max());
@@ -39,13 +73,23 @@ asio::awaitable<void> ExerciseSession() {
         }
         co_return std::string("测试标题");
     };
-    asio::co_spawn(executor, tb::RunSession(std::move(bot), "titlebot", "#room", fetch),
+    EXPECT_CALL(MockFetch::For(executor), Fetch).Times(2).WillRepeatedly([&fetch](tb::PrivMsg msg) {
+        return fetch(std::move(msg));
+    });
+    asio::co_spawn(executor,
+                   tb::RunBot({
+                       .server = "127.0.0.1",
+                       .port = std::to_string(listener.local_endpoint().port()),
+                       .nick = "title[bot]",
+                       .channels = "#room",
+                   }),
                    asio::detached);
+    auto peer = co_await listener.async_accept(use_awaitable);
     std::string input;
-    EXPECT_EQ(co_await ReadLine(peer, input), "NICK titlebot");
-    EXPECT_EQ(co_await ReadLine(peer, input), "USER titlebot 0 * :titlebot");
+    EXPECT_EQ(co_await ReadLine(peer, input), "NICK title[bot]");
+    EXPECT_EQ(co_await ReadLine(peer, input), "USER title[bot] 0 * :titlebot");
     // After registration, fetch the first link and reply to the channel that sent it.
-    const std::string messages = ":irc  001  titlebot :welcome\r\n"
+    const std::string messages = ":irc  001  title[bot] :welcome\r\n"
                                  ":alice!user@host  PRIVMSG  #room "
                                  ":http://first.example:8080/?q=title https://second.example/\r\n";
     co_await asio::async_write(peer, asio::buffer(messages), use_awaitable);
@@ -55,7 +99,7 @@ asio::awaitable<void> ExerciseSession() {
                                  ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
                                  ":bob!b PRIVMSG #other :http://first.example:8080/?q=title\r\n"
                                  ":irc  PING  :keepalive\r\n"
-                                 ":bob!user@host PRIVMSG TitleBot :https://private.example/\r\n";
+                                 ":bob!user@host PRIVMSG Title{Bot} :https://private.example/\r\n";
     co_await asio::async_write(peer, asio::buffer(followup), use_awaitable);
     EXPECT_EQ(co_await ReadLine(peer, input), "PONG :keepalive");
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG bob :测试标题");
@@ -69,10 +113,7 @@ asio::awaitable<void> ExerciseSession() {
 }
 
 TEST_F(Server, RepliesToFirstLinkInChannel) {
-    auto test = asio::co_spawn(io, ExerciseSession(), asio::use_future);
-    io.run_for(std::chrono::seconds(3));
-    ASSERT_EQ(test.wait_for(std::chrono::seconds(0)), std::future_status::ready);
-    EXPECT_NO_THROW(test.get());
+    RunExercise(ExerciseSession(), std::chrono::seconds(3));
 }
 
 asio::awaitable<void> ExerciseReconnect() {
@@ -84,9 +125,16 @@ asio::awaitable<void> ExerciseReconnect() {
         co_await release.async_wait(asio::redirect_error(use_awaitable, ignored));
         co_return msg.url + "\n" + std::string(413, 'x') + "中";
     };
+    EXPECT_CALL(MockFetch::For(executor), Fetch).Times(3).WillRepeatedly([&fetch](tb::PrivMsg msg) {
+        return fetch(std::move(msg));
+    });
     asio::co_spawn(executor,
-                   tb::RunBot("127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
-                              "#r", fetch),
+                   tb::RunBot({
+                       .server = "127.0.0.1",
+                       .port = std::to_string(listener.local_endpoint().port()),
+                       .nick = "bot",
+                       .channels = "#r",
+                   }),
                    asio::detached);
     std::chrono::steady_clock::time_point disconnected;
     for (int generation = 0; generation < 2; ++generation) {
@@ -118,7 +166,7 @@ asio::awaitable<void> ExerciseReconnect() {
         std::vector<std::string> lines;
         lines.push_back(co_await ReadLine(peer, input));
         lines.push_back(co_await ReadLine(peer, input));
-        std::sort(lines.begin(), lines.end());
+        std::ranges::sort(lines);
         EXPECT_EQ(lines[0], "PRIVMSG #r :one " + std::string(413, 'x'));
         EXPECT_EQ(lines[1], "PRIVMSG #r :two " + std::string(413, 'x'));
         co_await asio::async_write(peer, asio::buffer(ping), use_awaitable);
@@ -127,39 +175,48 @@ asio::awaitable<void> ExerciseReconnect() {
 }
 
 TEST_F(Server, RejoinsAndIsolatesPendingReplies) {
-    std::exception_ptr error;
-    bool completed = false;
-    asio::co_spawn(io, ExerciseReconnect(), [&](std::exception_ptr result) {
-        error = result;
-        completed = true;
-        io.stop();
-    });
-    io.run_for(std::chrono::seconds(5));
-    ASSERT_TRUE(completed);
-    if (error) {
-        std::rethrow_exception(error);
-    }
+    RunExercise(ExerciseReconnect(), std::chrono::seconds(5));
 }
 
-TEST_F(Server, EndsUnregisteredSessionOnNicknameConflict) {
+TEST_F(Server, RetriesNicknameConflictsOnTheSameConnection) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
-    tcp::socket client(io);
-    client.connect(listener.local_endpoint());
-    auto peer = listener.accept();
-    auto result =
-        asio::co_spawn(io, tb::RunSession(std::move(client), "bot", "#room", {}), asio::use_future);
-    std::string conflict = ":irc  433  * bot :Nickname in use\r\n";
-    asio::write(peer, asio::buffer(conflict));
-    io.run_for(std::chrono::seconds(2));
-    ASSERT_EQ(result.wait_for(std::chrono::seconds(0)), std::future_status::ready);
-    EXPECT_FALSE(result.get());
+    asio::co_spawn(io,
+                   tb::RunBot({
+                       .server = "127.0.0.1",
+                       .port = std::to_string(listener.local_endpoint().port()),
+                       .nick = "bot",
+                       .channels = "#room",
+                   }),
+                   asio::detached);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        EXPECT_EQ(co_await ReadLine(peer, input), "NICK bot");
+        EXPECT_EQ(co_await ReadLine(peer, input), "USER bot 0 * :titlebot");
+        std::string conflict = ":irc 433 * bot :Nickname in use\r\n";
+        co_await asio::async_write(peer, asio::buffer(conflict), use_awaitable);
+        auto first = co_await ReadLine(peer, input);
+        EXPECT_TRUE(first.starts_with("NICK bot"));
+        auto suffix = std::stoul(first.substr(8));
+        EXPECT_LE(suffix, 65535u);
+        EXPECT_EQ(first, "NICK bot" + std::to_string(suffix));
+
+        conflict = ":irc 433 * " + first.substr(5) + " :Nickname in use\r\n";
+        co_await asio::async_write(peer, asio::buffer(conflict), use_awaitable);
+        auto next_nick = "bot" + std::to_string(suffix + 1);
+        EXPECT_EQ(co_await ReadLine(peer, input), "NICK " + next_nick);
+        auto welcome = ":irc 001 " + next_nick + " :Welcome\r\n";
+        co_await asio::async_write(peer, asio::buffer(welcome), use_awaitable);
+        EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #room");
+    };
+    RunExercise(exercise(), std::chrono::seconds(2));
 }
 
 TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     asio::co_spawn(io,
-                   tb::RunBot("127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
-                              "#r", {}, std::chrono::milliseconds(150)),
+                   tb::RunBot({"127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
+                               "#r", std::chrono::milliseconds(150)}),
                    asio::detached);
     auto exercise = [&]() -> asio::awaitable<void> {
         for (bool register_now : {false, true}) {
@@ -186,9 +243,6 @@ TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
             }
         }
     };
-    auto result = asio::co_spawn(io, exercise(), asio::use_future);
-    io.run_for(std::chrono::seconds(3));
-    ASSERT_EQ(result.wait_for(std::chrono::seconds(0)), std::future_status::ready);
-    EXPECT_NO_THROW(result.get());
+    RunExercise(exercise(), std::chrono::seconds(3));
 }
 } // namespace
