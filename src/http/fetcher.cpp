@@ -35,7 +35,7 @@ FetchResult FormatTitle(const std::string& title, const std::string& charset,
     if (!text) {
         return std::unexpected(FetchError::kDecode);
     }
-    auto decoded = unquote(text->c_str());
+    auto decoded = unquote(*text);
     std::string normalized;
     bool space = false;
     for (char ch : decoded) {

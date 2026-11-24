@@ -25,27 +25,7 @@ TEST(Utils, ConvertsToUtf8) {
     ASSERT_EQ(tb::utf8(std::string((char*)buf2)).value(), "  草榴社區  - powered by phpwind.net");
 }
 
-TEST(Utils, ParsesHttpChunks) {
-    const char* data = "22\r\n"
-                       "<html><body>it works</body></html>\r\n"
-                       "00\r\n"
-                       "\r\n";
-
-    tb::HttpChunk chunk;
-    tb::HttpChunk::Parser parser;
-    tb::HttpChunk::Parser::Status status;
-
-    const char* begin = data;
-    const char* end = data + std::strlen(data);
-    std::tie(status, begin) = parser.parse(chunk, begin, end);
-    ASSERT_EQ(status, tb::HttpChunk::Parser::Status::Good);
-    ASSERT_EQ(chunk.size(), 34);
-    ASSERT_EQ(chunk.data().size(), 34);
-    ASSERT_EQ(std::string(chunk.data().begin(), chunk.data().end()),
-               "<html><body>it works</body></html>");
-
-    std::tie(status, begin) = parser.parse(chunk, begin, end);
-    ASSERT_EQ(status, tb::HttpChunk::Parser::Status::Good);
-    ASSERT_EQ(chunk.size(), 0);
-    ASSERT_TRUE(chunk.data().empty());
+TEST(Utils, PreservesEmbeddedNullWhenDecodingEntities) {
+    const std::string input("a\0&AMP;&#128;", 13);
+    EXPECT_EQ(tb::unquote(input), std::string("a\0&€", 6));
 }
