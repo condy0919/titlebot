@@ -1,4 +1,5 @@
 #include "decoder.hpp"
+
 #include <array>
 #include <limits>
 #include <zlib.h>
@@ -6,6 +7,7 @@
 namespace tb {
 struct ContentDecoder::InflateState {
     explicit InflateState(int bits) : initialized(inflateInit2(&stream, bits) == Z_OK) {}
+
     ~InflateState() {
         if (initialized) {
             inflateEnd(&stream);

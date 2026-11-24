@@ -1,20 +1,34 @@
 #ifndef TITLEBOT_DECODER_HPP_
 #define TITLEBOT_DECODER_HPP_
-#include "html/title_parser.hpp"
+
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 
+#include "html/title_parser.hpp"
+
 namespace tb {
-enum class ContentEncoding { kIdentity, kGzip, kDeflate, kRawDeflate };
-enum class DecodeError { kInvalid, kLimit };
+enum class ContentEncoding : std::uint8_t {
+    kIdentity,
+    kGzip,
+    kDeflate,
+    kRawDeflate,
+};
+
+enum class DecodeError : std::uint8_t {
+    kInvalid,
+    kLimit,
+};
 
 class ContentDecoder {
 public:
     explicit ContentDecoder(ContentEncoding encoding = ContentEncoding::kIdentity);
+
     virtual ~ContentDecoder();
+
     ContentDecoder(const ContentDecoder&) = delete;
     ContentDecoder& operator=(const ContentDecoder&) = delete;
 
@@ -26,10 +40,11 @@ public:
     }
 
 private:
-    ContentEncoding encoding_;
     struct InflateState;
+
+    ContentEncoding encoding_;
     std::unique_ptr<InflateState> inflater_;
-    std::size_t remaining_ = 512 * 1024;
+    std::size_t remaining_ = 512UL * 1024;
 };
 
 class GzipDecoder : public ContentDecoder {
@@ -42,4 +57,5 @@ public:
     DeflateDecoder() : ContentDecoder(ContentEncoding::kRawDeflate) {}
 };
 } // namespace tb
-#endif
+
+#endif // TITLEBOT_DECODER_HPP_
