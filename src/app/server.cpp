@@ -13,6 +13,8 @@ struct Session {
     std::deque<std::string> queue;
     std::shared_ptr<FetchScheduler> scheduler;
     ReplyLimiter limiter;
+    Clock::time_point burst_until{};
+    unsigned burst = 0;
     bool writing = false;
 };
 
@@ -53,30 +55,50 @@ void Send(std::shared_ptr<Session> session, std::string line, bool priority = fa
     }
 }
 
-void Reply(const std::shared_ptr<Session>& session, const std::string& target, std::string_view title) {
+void Reply(const std::shared_ptr<Session>& session, const std::string& target,
+           std::string_view title) {
     if (!session->socket.is_open()) {
         return;
     }
     auto prefix = "PRIVMSG " + target + " :";
-    if (title.empty() || prefix.size() >= 510) {
+    if (title.empty() || prefix.size() >= 430) {
         return;
     }
-    auto limit = 510 - prefix.size();
+    auto limit = 430 - prefix.size();
     if (title.size() > limit) {
         while (limit && (static_cast<unsigned char>(title[limit]) & 192) == 128) {
             --limit;
         }
         title = title.substr(0, limit);
     }
-    if (!session->limiter.Allow(target, Clock::now())) {
+    if (title.empty()) {
+        return;
+    }
+    auto now = Clock::now();
+    if (now >= session->burst_until) {
+        session->burst_until = now + std::chrono::seconds(2);
+        session->burst = 0;
+    }
+    if (session->burst >= 8 || !session->limiter.Allow(target, now)) {
         session->scheduler->RecordReplyDrop();
         return;
     }
+    ++session->burst;
     auto line = std::move(prefix);
     for (char ch : title) {
         line += static_cast<unsigned char>(ch) < 32 || ch == 127 ? ' ' : ch;
     }
     Send(session, std::move(line));
+}
+
+bool SameNick(std::string_view a, std::string_view b) {
+    auto fold = [](unsigned char c) {
+        if (c >= 'A' && c <= ']') {
+            return c + 32;
+        }
+        return c == '^' ? static_cast<int>('~') : static_cast<int>(c);
+    };
+    return std::ranges::equal(a, b, {}, fold, fold);
 }
 
 asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nick,
@@ -93,15 +115,42 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
                 session->socket, asio::dynamic_buffer(input, 8192), "\r\n", use_awaitable);
             auto line = input.substr(0, count - 2);
             input.erase(0, count);
-            auto space = line.find(' ');
-            if (line.starts_with("PING ")) {
-                Send(session, "PONG " + line.substr(5), true);
-            } else if (space != line.npos && line.compare(space, 5, " 001 ") == 0) {
+            std::string_view command(line);
+            std::string_view source;
+            if (command.starts_with(':')) {
+                auto end = command.find(' ');
+                if (end == command.npos) {
+                    continue;
+                }
+                source = command.substr(1, end - 1);
+                command.remove_prefix(end + 1);
+            }
+            auto space = command.find(' ');
+            if (space == command.npos) {
+                continue;
+            }
+            auto params = command.substr(space + 1);
+            command = command.substr(0, space);
+            if (command == "PING") {
+                Send(session, "PONG " + std::string(params), true);
+            } else if (command == "001") {
                 registered = true;
+                nick = params.substr(0, params.find(' '));
                 Send(session, "JOIN " + channels);
-            } else if (!line.empty()) {
+            } else if (command == "433" && !registered) {
+                session->socket.close();
+                break;
+            } else if (command == "NICK" && SameNick(source.substr(0, source.find('!')), nick)) {
+                if (params.starts_with(':')) {
+                    params.remove_prefix(1);
+                }
+                nick = params;
+            } else if (command == "PRIVMSG") {
                 if (auto msg = parse_privmsg(line)) {
-                    auto target = msg->channel == nick ? msg->who : msg->channel;
+                    if (SameNick(msg->who, nick)) {
+                        continue;
+                    }
+                    auto target = SameNick(msg->channel, nick) ? msg->who : msg->channel;
                     scheduler->Submit(std::move(*msg), [weak = std::weak_ptr(session),
                                                         target](const std::string& title) {
                         if (auto owner = weak.lock()) {

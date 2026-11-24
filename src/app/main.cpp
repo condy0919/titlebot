@@ -5,7 +5,8 @@
 namespace asio = boost::asio;
 
 int main(int argc, char** argv) {
-    if (argc != 5 || std::string_view(argv[3]).find_first_of(" \r\n") != std::string_view::npos ||
+    if (argc != 5 || !*argv[1] || !*argv[2] || !*argv[3] || !*argv[4] ||
+        std::string_view(argv[3]).find_first_of(" \r\n") != std::string_view::npos ||
         std::string_view(argv[4]).find_first_of(" \r\n") != std::string_view::npos) {
         std::cerr << "Usage: titlebot SERVER PORT NICK CHANNEL[,CHANNEL...]\n";
         return 2;

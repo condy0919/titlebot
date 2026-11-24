@@ -47,8 +47,8 @@ asio::awaitable<void> ExerciseSession() {
     const std::string followup = ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
                                  ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
                                  ":bob!b PRIVMSG #other :http://first.example:8080/?q=title\r\n"
-                                 "PING :keepalive\r\n"
-                                 ":bob!user@host PRIVMSG titlebot :https://private.example/\r\n";
+                                 ":irc PING :keepalive\r\n"
+                                 ":bob!user@host PRIVMSG TitleBot :https://private.example/\r\n";
     co_await asio::async_write(peer, asio::buffer(followup), use_awaitable);
     EXPECT_EQ(co_await ReadLine(peer, input), "PONG :keepalive");
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG bob :测试标题");
@@ -74,7 +74,7 @@ asio::awaitable<void> ExerciseReconnect() {
     auto fetch = [&release](tb::PrivMsg msg) -> asio::awaitable<tb::FetchResult> {
         boost::system::error_code ignored;
         co_await release.async_wait(asio::redirect_error(use_awaitable, ignored));
-        co_return msg.url + "\n" + std::string(493, 'x') + "中";
+        co_return msg.url + "\n" + std::string(413, 'x') + "中";
     };
     asio::co_spawn(executor,
                    tb::RunBot("127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
@@ -111,8 +111,8 @@ asio::awaitable<void> ExerciseReconnect() {
         lines.push_back(co_await ReadLine(peer, input));
         lines.push_back(co_await ReadLine(peer, input));
         std::sort(lines.begin(), lines.end());
-        EXPECT_EQ(lines[0], "PRIVMSG #r :one " + std::string(493, 'x'));
-        EXPECT_EQ(lines[1], "PRIVMSG #r :two " + std::string(493, 'x'));
+        EXPECT_EQ(lines[0], "PRIVMSG #r :one " + std::string(413, 'x'));
+        EXPECT_EQ(lines[1], "PRIVMSG #r :two " + std::string(413, 'x'));
         co_await asio::async_write(peer, asio::buffer(ping), use_awaitable);
         EXPECT_EQ(co_await ReadLine(peer, input), "PONG :ready");
     }
