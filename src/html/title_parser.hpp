@@ -47,6 +47,7 @@ private:
 
     std::optional<std::string> ReadByte(char ch);
     std::optional<std::string> consume(char ch);
+    void HandleCompleteTag();
 
     std::string head_;
     int utf16_ = 0;

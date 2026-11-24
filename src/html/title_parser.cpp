@@ -9,67 +9,101 @@
 #include <boost/locale/utf.hpp>
 
 namespace tb {
-
 namespace {
-std::string MetaCharset(std::string_view attrs) {
-    constexpr std::string_view whitespace = " \t\r\n\f";
-    auto trim = [&] {
-        attrs.remove_prefix(std::min(attrs.size(), attrs.find_first_not_of(whitespace)));
-    };
-    std::string_view content, equiv;
-    auto label = [](std::string_view value) {
-        if (value.empty() || value.size() > 64 ||
-            value.find_first_not_of(
-                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-") !=
-                value.npos) {
-            return std::string{};
-        }
-        return std::string(value);
-    };
+constexpr std::string_view kHtmlWhitespace = " \t\r\n\f";
+
+// Advance the view past leading HTML whitespace, e.g. "  charset=utf-8" becomes "charset=utf-8".
+void SkipHtmlWhitespace(std::string_view& attrs) {
+    attrs.remove_prefix(std::min(attrs.size(), attrs.find_first_not_of(kHtmlWhitespace)));
+}
+
+// Accept up to 64 ASCII label characters and preserve their spelling. For example,
+// "Shift_JIS" is returned unchanged, while "Shift JIS" yields an empty string.
+std::string ParseCharsetLabel(std::string_view value) {
+    if (value.empty() || value.size() > 64 ||
+        value.find_first_not_of(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-") != value.npos) {
+        return {};
+    }
+    return std::string(value);
+}
+
+struct Attribute {
+    std::string_view name;
+    std::string_view value;
+};
+
+// Consume the next name=value pair, skipping valueless attributes and stray slashes.
+// For example, "disabled / charset='UTF-8'" yields {"charset", "UTF-8"} and exhausts attrs.
+// Both views refer to the original tag.
+std::optional<Attribute> NextAttribute(std::string_view& attrs) {
     while (!attrs.empty()) {
-        trim();
+        SkipHtmlWhitespace(attrs);
         if (attrs.empty()) {
             break;
         }
-        auto n = std::min(attrs.size(), attrs.find_first_of(" \t\r\n\f=/"));
-        auto key = attrs.substr(0, n);
+        // Read the attribute name. With no delimiter, the whole remaining view is the name.
+        const auto n = std::min(attrs.size(), attrs.find_first_of(" \t\r\n\f=/"));
+        const auto key = attrs.substr(0, n);
         attrs.remove_prefix(n);
-        trim();
+        SkipHtmlWhitespace(attrs);
         if (!attrs.starts_with('=')) {
+            // Ignore attributes without values. If a stray '/' stopped the name scan
+            // before it consumed anything, step past it so the next iteration advances.
             if (!n && !attrs.empty()) {
                 attrs.remove_prefix(1);
             }
             continue;
         }
         attrs.remove_prefix(1);
-        trim();
-        bool quoted = attrs.starts_with('"') || attrs.starts_with('\'');
-        char quote = quoted ? attrs.front() : 0;
+        SkipHtmlWhitespace(attrs);
+        // Quotes allow spaces inside values such as "text/html; charset=utf-8".
+        // Unquoted values end at whitespace. If no terminator is found, take the remainder.
+        const bool quoted = attrs.starts_with('"') || attrs.starts_with('\'');
+        const char quote = quoted ? attrs.front() : 0;
         if (quoted) {
             attrs.remove_prefix(1);
         }
-        auto end = quoted ? attrs.find(quote) : attrs.find_first_of(whitespace);
-        auto value = attrs.substr(0, end);
+        const auto end = quoted ? attrs.find(quote) : attrs.find_first_of(kHtmlWhitespace);
+        const auto value = attrs.substr(0, end);
         attrs.remove_prefix(value.size());
         if (quoted && !attrs.empty()) {
+            // Skip the matching closing quote before scanning the next attribute.
             attrs.remove_prefix(1);
         }
-        if (boost::beast::iequals(key, "charset")) {
-            auto result = label(value);
+        return Attribute{key, value};
+    }
+    return std::nullopt;
+}
+
+// Extract the encoding label declared by one <meta> tag. The caller passes only the
+// attributes: MetaCharset(" charset='UTF-8'") returns "UTF-8". An empty string means
+// this tag supplied no usable declaration, so later <meta> tags can still be checked.
+std::string MetaCharset(std::string_view attrs) {
+    // The legacy form needs both attributes. Keep views into the tag so they can appear
+    // in either order, e.g. content='text/html; charset=shift_jis' before http-equiv.
+    std::string_view content, equiv;
+    while (auto attr = NextAttribute(attrs)) {
+        // Attribute names are case-insensitive. A valid direct charset takes precedence
+        // over the legacy form, even if content and http-equiv were seen first.
+        if (boost::beast::iequals(attr->name, "charset")) {
+            auto result = ParseCharsetLabel(attr->value);
             if (!result.empty()) {
                 return result;
             }
-        } else if (boost::beast::iequals(key, "content")) {
-            content = value;
-        } else if (boost::beast::iequals(key, "http-equiv")) {
-            equiv = value;
+        } else if (boost::beast::iequals(attr->name, "content")) {
+            content = attr->value;
+        } else if (boost::beast::iequals(attr->name, "http-equiv")) {
+            equiv = attr->value;
         }
     }
-    auto semi = content.find(';');
+    // Interpret content as a MIME type with parameters only for http-equiv="Content-Type".
+    // Start at the semicolon so param_list sees "; charset=shift_jis" after "text/html".
+    const auto semi = content.find(';');
     if (boost::beast::iequals(equiv, "content-type") && semi != content.npos) {
         for (auto [key, value] : boost::beast::http::param_list(content.substr(semi))) {
             if (boost::beast::iequals(key, "charset")) {
-                return label(value);
+                return ParseCharsetLabel(value);
             }
         }
     }
@@ -177,11 +211,16 @@ std::optional<std::string> TitleParser::consume(char ch) {
         }
         return {};
     }
+    HandleCompleteTag();
+    return {};
+}
+
+void TitleParser::HandleCompleteTag() {
     state_ = State::kText;
     std::string_view tag(tag_);
     auto first = tag.find_first_not_of(" \t\r\n\f");
     if (first == tag.npos) {
-        return {};
+        return;
     }
     tag = tag.substr(first, tag.find_last_not_of(" \t\r\n\f") - first + 1);
     bool closing = tag.starts_with('/');
@@ -215,6 +254,5 @@ std::optional<std::string> TitleParser::consume(char ch) {
             charset_ = MetaCharset(tag.substr(name.size()));
         }
     }
-    return {};
 }
 } // namespace tb

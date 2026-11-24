@@ -49,6 +49,13 @@ TEST_F(TitleParser, ReadsDeclaredCharsetAcrossChunks) {
     EXPECT_EQ(parser.DeclaredCharset(), "shift_jis");
 }
 
+TEST_F(TitleParser, FindsDirectCharsetAfterValuelessAttributes) {
+    const std::string html = "<meta disabled / content='text/html; charset=shift_jis' "
+                             "http-equiv=Content-Type charset = 'UTF-8'>";
+    parser.parse(html.begin(), html.end());
+    EXPECT_EQ(parser.DeclaredCharset(), "UTF-8");
+}
+
 TEST_F(TitleParser, SkipsNonDocumentTitles) {
     std::string html =
         "<!-- <title>comment</title> --><script>let x='<title>script</title>';</script>"
