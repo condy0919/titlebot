@@ -16,7 +16,7 @@ using asio::ip::tcp;
 
 // Each test owns its mock through its io_context, including during reconnects.
 struct MockFetch : asio::execution_context::service {
-    static inline asio::execution_context::id id;
+    static inline asio::execution_context::id id; // NOLINT
     explicit MockFetch(asio::execution_context& context) : service(context) {}
     static MockFetch& For(const asio::any_io_executor& executor) {
         return asio::use_service<MockFetch>(asio::query(executor, asio::execution::context));
@@ -215,8 +215,13 @@ TEST_F(Server, RetriesNicknameConflictsOnTheSameConnection) {
 TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     asio::co_spawn(io,
-                   tb::RunBot({"127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
-                               "#r", std::chrono::milliseconds(150)}),
+                   tb::RunBot({
+                       .server = "127.0.0.1",
+                       .port = std::to_string(listener.local_endpoint().port()),
+                       .nick = "bot",
+                       .channels = "#r",
+                       .registration_timeout = std::chrono::milliseconds(150),
+                   }),
                    asio::detached);
     auto exercise = [&]() -> asio::awaitable<void> {
         for (bool register_now : {false, true}) {
