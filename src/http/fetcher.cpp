@@ -34,11 +34,11 @@ bool IsPublic(asio::ip::address_v4 address) {
 
 FetchResult FormatTitle(const std::string& title, const std::string& charset,
                         std::string_view sample) {
-    auto text = utf8(title, charset, sample);
+    auto text = convert_to_utf8(title, charset, sample);
     if (!text) {
         return std::unexpected(FetchError::kDecode);
     }
-    auto decoded = unquote(*text);
+    auto decoded = decode_html_entities(*text);
     std::string normalized;
     bool space = false;
     for (char ch : decoded) {

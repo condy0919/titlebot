@@ -284,7 +284,7 @@ inline constexpr std::array<std::tuple<const char*, unsigned>, 256> entity_names
     {"euro", 8364},
 }};
 
-inline constexpr std::string toutf8(unsigned ch) {
+inline constexpr std::string encode_utf8_code_point(unsigned ch) {
     if (ch >= 0x10000) {
         return {static_cast<char>(0xf0 | (ch >> 18)), static_cast<char>(0x80 | ((ch >> 12) & 63)),
                 static_cast<char>(0x80 | ((ch >> 6) & 63)), static_cast<char>(0x80 | (ch & 63))};
@@ -306,7 +306,8 @@ inline constexpr std::string toutf8(unsigned ch) {
     return buf;
 }
 
-std::optional<std::string> iconv(const std::string& s, const char* encodings[], std::size_t n) {
+std::optional<std::string> try_source_encodings(const std::string& s, const char* encodings[],
+                                                std::size_t n) {
     // Copy the string to a buffer as `iconv` requires a non-const char pointer.
     std::string in_buf(s);
     std::string buf(2048, ' ');
@@ -343,7 +344,7 @@ std::optional<std::string> iconv(const std::string& s, const char* encodings[], 
 } // namespace
 
 namespace tb {
-std::string unquote(std::string_view text) {
+std::string decode_html_entities(std::string_view text) {
     if (text.empty()) {
         return {};
     }
@@ -377,7 +378,8 @@ std::string unquote(std::string_view text) {
                     0x2c6,  0x2030, 0x160,  0x2039, 0x152,  141,    0x17d,  143,
                     144,    0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
                     0x2dc,  0x2122, 0x161,  0x203a, 0x153,  157,    0x17e,  0x178};
-                out += toutf8(code >= 128 && code <= 159 ? replacements[code - 128] : code);
+                out += encode_utf8_code_point(code >= 128 && code <= 159 ? replacements[code - 128]
+                                                                         : code);
             } else {
                 out.append(s, end + 1);
             }
@@ -386,7 +388,7 @@ std::string unquote(std::string_view text) {
                 std::find_if(entity_names.begin(), entity_names.end(),
                              [name](const auto& entity) { return std::get<0>(entity) == name; });
             if (it != entity_names.end()) {
-                out += toutf8(std::get<1>(*it));
+                out += encode_utf8_code_point(std::get<1>(*it));
             } else {
                 out.append(s, end + 1);
             }
@@ -396,14 +398,14 @@ std::string unquote(std::string_view text) {
     return out;
 }
 
-std::optional<std::string> utf8(const std::string& in, const std::string& charset,
-                                std::string_view sample) {
+std::optional<std::string> convert_to_utf8(const std::string& in, const std::string& charset,
+                                           std::string_view sample) {
     const char* declared[] = {charset.c_str()};
     if (!charset.empty()) {
-        return iconv(in, declared, 1);
+        return try_source_encodings(in, declared, 1);
     }
     const char* unicode[] = {"UTF-8"};
-    if (auto valid = iconv(in, unicode, 1)) {
+    if (auto valid = try_source_encodings(in, unicode, 1)) {
         return valid;
     }
     std::unique_ptr<uchardet, decltype(&::uchardet_delete)> detector(::uchardet_new(),
@@ -425,14 +427,14 @@ std::optional<std::string> utf8(const std::string& in, const std::string& charse
     const char* fallback[] = {"GB18030", "Big5", "EUC-JP", "EUC-KR", "SJIS"};
     std::string_view guess(guessed[0]);
     if (sample.size() < 64 && (guess.starts_with("WINDOWS-") || guess.starts_with("ISO-8859"))) {
-        if (auto text = iconv(in, fallback, std::size(fallback))) {
+        if (auto text = try_source_encodings(in, fallback, std::size(fallback))) {
             return text;
         }
     }
-    if (auto text = iconv(in, guessed, 1)) {
+    if (auto text = try_source_encodings(in, guessed, 1)) {
         return text;
     }
-    return iconv(in, fallback, std::size(fallback));
+    return try_source_encodings(in, fallback, std::size(fallback));
 }
 
 } // namespace tb
