@@ -424,7 +424,7 @@ std::optional<std::string> utf8(const std::string& in, const std::string& charse
     }
     ::uchardet_data_end(ud);
     const char* guessed[] = {::uchardet_get_charset(ud)};
-    // 短样本的单字节猜测若同时符合旧中文编码，保留项目原有的优先顺序。
+    // Prefer legacy Chinese encodings when a short sample also fits the single-byte guess.
     const char* fallback[] = {"GB18030", "Big5", "EUC-JP", "EUC-KR", "SJIS"};
     std::string_view guess(guessed[0]);
     if (sample.size() < 64 && (guess.starts_with("WINDOWS-") || guess.starts_with("ISO-8859"))) {

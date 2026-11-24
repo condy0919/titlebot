@@ -22,7 +22,7 @@ TEST(Fetcher, RejectsUnsupportedScheme) {
 }
 
 TEST(Fetcher, RejectsNonPublicDestinations) {
-    // 使用 IP 字面量，验证连接前的地址检查，无需外部 DNS 服务。
+    // Use IP literals to test address checks before connecting, without external DNS.
     for (auto authority :
          {"127.0.0.1", "169.254.169.254", "10.0.0.1", "192.168.1.1", "[::1]", "[2001:db8::1]"}) {
         EXPECT_EQ(Fetch("https", authority), std::unexpected(tb::FetchError::kBlockedAddress));
@@ -60,7 +60,8 @@ protected:
             co_await asio::async_write(stream, asio::buffer(response), asio::use_awaitable);
         }
         if (response.empty() || response == hints) {
-            // 等待客户端因总时限关闭连接，然后继续处理下一条请求。
+            // Wait for the client deadline to close this connection before serving the next
+            // request.
             char byte;
             boost::system::error_code ignored;
             co_await stream.async_read_some(asio::buffer(&byte, 1),
@@ -113,7 +114,8 @@ protected:
 };
 
 TEST_F(FetcherLoopback, ResolvesRelativeReferencesAndRechecksDestinations) {
-    // 查询和片段与当前 URL 合并，传给服务器的请求中应省略片段。
+    // Resolve the query and fragment against the current URL. Omit the fragment from the request
+    // target.
     EXPECT_EQ(Run({Redirect("../next?q=1#fragment"), Redirect("?q=2"), ok}),
               tb::FetchResult(std::string("OK")));
     EXPECT_EQ(requests, (std::vector<std::string>{"GET /a/start HTTP/1.1", "GET /next?q=1 HTTP/1.1",
@@ -149,7 +151,8 @@ TEST_F(FetcherLoopback, VerifiesTrustAndHostForEachTlsConnection) {
     server_tls.use_certificate_chain_file(fixture);
     server_tls.use_private_key_file(fixture, asio::ssl::context::pem);
     auto localhost = "localhost:" + std::to_string(listener.local_endpoint().port());
-    // 同一张证书依次覆盖不受信任、受信但主机名不符、完全匹配三个场景。
+    // Reuse one certificate to test untrusted, trusted with a hostname mismatch, and fully verified
+    // connections.
     EXPECT_EQ(Run({ok}, "https", localhost), std::unexpected(tb::FetchError::kNetwork));
     client_tls.load_verify_file(fixture);
     EXPECT_EQ(Run({ok}, "https"), std::unexpected(tb::FetchError::kNetwork));
@@ -192,7 +195,7 @@ TEST_F(FetcherLoopback, DistinguishesMissingTitleFromInvalidOrOversizedContent) 
     const std::string coding = "Content-Encoding: deflate\r\n";
     auto body = Deflate("<html>no title</html>");
     EXPECT_EQ(Run({HtmlResponse(body, coding)}), tb::FetchResult(std::nullopt));
-    // 截除校验尾部或传入损坏数据，应报告解码失败。
+    // Both a truncated checksum and corrupt input should produce a decode error.
     body.pop_back();
     EXPECT_EQ(Run({HtmlResponse(body, coding)}), std::unexpected(tb::FetchError::kDecode));
     EXPECT_EQ(Run({HtmlResponse("broken", coding)}), std::unexpected(tb::FetchError::kDecode));
@@ -201,7 +204,8 @@ TEST_F(FetcherLoopback, DistinguishesMissingTitleFromInvalidOrOversizedContent) 
 }
 
 TEST_F(FetcherLoopback, ReturnsCompleteTitleBeforeBodyEnds) {
-    // 服务端只发前缀；若客户端等待剩余正文，则会收到截断错误。
+    // Send only the prefix. A client that waits for the rest of the body will see a truncation
+    // error.
     EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 8192\r\n\r\n<title>early</title>"}),
               tb::FetchResult(std::string("early")));
 }

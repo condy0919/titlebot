@@ -6,9 +6,11 @@
 #include <string_view>
 
 namespace tb {
-/// 返回 rest 中第一个 ASCII 空格之前的字段视图，并从 rest 中移除该字段和紧随其后的所有空格。
-/// 若没有空格，则返回整个字段并清空 rest。若以空格开头，则返回空字段并跳过开头的空格。
-/// 例如，若 rest 为 `"PRIVMSG  #room :你好"`，则返回 `"PRIVMSG"`，rest 变为 `"#room :你好"`。
+/// Return a view of the field before the first ASCII space in rest. Remove the field and any
+/// following spaces from rest. A leading space yields an empty field. With no space, consume all of
+/// rest.
+/// For example, given `"PRIVMSG  #room :hello"`, return `"PRIVMSG"` and leave `"#room :hello"` in
+/// rest.
 std::string_view TakeIrcToken(std::string_view& rest);
 
 struct PrivMsg {

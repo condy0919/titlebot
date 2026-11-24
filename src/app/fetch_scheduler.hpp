@@ -13,7 +13,7 @@ namespace tb {
 using Clock = std::chrono::steady_clock;
 using Now = std::function<Clock::time_point()>;
 
-/// 仅由 IRC 的单线程执行器调用，跨会话共用下载额度。
+/// The single-threaded IRC executor shares this download budget across sessions.
 class FetchScheduler : public std::enable_shared_from_this<FetchScheduler> {
 public:
     FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch, Now now = Clock::now);
@@ -57,7 +57,7 @@ private:
     Stats stats_;
 };
 
-/// 按 IRC 目标计数；固定窗口只保留尚未过期的记录。
+/// Track a fixed window for each IRC target and discard expired entries.
 class ReplyLimiter {
 public:
     bool Allow(std::string target, Clock::time_point now);

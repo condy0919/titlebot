@@ -29,7 +29,8 @@ TEST(TitleParser, HandlesWhitespace) {
 TEST(TitleParser, RequiresCompleteClosingTagAtEverySplit) {
     const std::string html =
         "<titlebar>ignored</titlebar><TITLE data-label='>'>中文 < 3 &amp; A</TiTlE  >";
-    // 穷举切分点，覆盖多字节字符、属性引号和结束标签内部。
+    // Try every split point, including splits inside multibyte characters, quoted attributes and
+    // closing tags.
     for (size_t split = 0; split < html.size(); ++split) {
         tb::TitleParser parser;
         ASSERT_FALSE(parser.parse(html.begin(), html.begin() + split));

@@ -170,7 +170,7 @@ std::optional<std::string> TitleParser::consume(char ch) {
         tag_ += ch;
         if (raw_element_.empty() && tag_ == "!--") {
             state_ = State::kComment;
-            // 起始标记已提供两个连字符，兼容立即结束的短注释。
+            // Count the two opening dashes so a short comment can close immediately.
             dashes_ = 2;
         }
         return {};

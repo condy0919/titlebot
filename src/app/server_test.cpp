@@ -37,13 +37,13 @@ asio::awaitable<void> ExerciseSession() {
     std::string input;
     EXPECT_EQ(co_await ReadLine(peer, input), "NICK titlebot");
     EXPECT_EQ(co_await ReadLine(peer, input), "USER titlebot 0 * :titlebot");
-    // 注册成功后模拟频道消息，验证只抓取首个链接且回到原频道。
+    // After registration, fetch the first link and reply to the channel that sent it.
     const std::string messages = ":irc  001  titlebot :welcome\r\n"
                                  ":alice!user@host  PRIVMSG  #room "
                                  ":http://first.example:8080/?q=title https://second.example/\r\n";
     co_await asio::async_write(peer, asio::buffer(messages), use_awaitable);
     EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #room");
-    // 首次抓取仍在等待时，心跳和私聊应能独立完成。
+    // Heartbeats and private messages should still work while the first fetch is pending.
     const std::string followup = ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
                                  ":bob!b PRIVMSG #room :http://first.example:8080/?q=title\r\n"
                                  ":bob!b PRIVMSG #other :http://first.example:8080/?q=title\r\n"
@@ -54,7 +54,8 @@ asio::awaitable<void> ExerciseSession() {
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG bob :测试标题");
     release.cancel();
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #room :测试标题");
-    // 同一下载向不同频道分发；原频道三次订阅仅发送两条。
+    // One download serves both channels. Only two of the original channel's three subscriptions get
+    // replies.
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #room :测试标题");
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #other :测试标题");
     EXPECT_EQ(urls, (std::vector<std::string>{"first.example:8080/?q=title", "private.example/"}));
@@ -101,11 +102,11 @@ asio::awaitable<void> ExerciseReconnect() {
         co_await asio::async_write(peer, asio::buffer(ping), use_awaitable);
         EXPECT_EQ(co_await ReadLine(peer, input), "PONG :ready");
         if (generation == 0) {
-            // 关闭第一条连接，让它的抓取跨过下一次注册。
+            // Close the first connection so its fetch remains pending across the next registration.
             disconnected = std::chrono::steady_clock::now();
             continue;
         }
-        // 同时释放两次新抓取与旧抓取，验证回复边界和旧会话隔离。
+        // Release the old fetch with both new ones to check reply boundaries and session isolation.
         EXPECT_EQ(release.cancel(), 3u);
         std::vector<std::string> lines;
         lines.push_back(co_await ReadLine(peer, input));

@@ -47,7 +47,8 @@ TEST_F(SchedulerTest, SharesDownloadsAndSkipsHostAtCapacity) {
     Submit("other/timeout");
     io.poll();
     EXPECT_EQ(started, (std::vector<std::string>{"slow/a", "SLOW.:443/b", "other/timeout"}));
-    // 三个下载共享同一段模拟耗时；释放慢主机的额度后，排队任务才能开始。
+    // All three downloads span the same simulated interval. The queued job needs a free slot on the
+    // slow host.
     now += std::chrono::milliseconds(7);
     EXPECT_EQ(release.cancel(), 3u);
     io.poll();
@@ -109,7 +110,7 @@ TEST_F(SchedulerTest, BoundsSubscribersForOneDownload) {
     EXPECT_EQ(replies, 2u);
     EXPECT_EQ(scheduler->stats().queue_drops, 28u);
     EXPECT_EQ(scheduler->stats().merged, 71u);
-    // 其他频道有独立额度，到达窗口边界后原频道恢复。
+    // Each channel has its own quota. The original channel can send again when its window expires.
     EXPECT_TRUE(limiter.Allow("#two", now));
     EXPECT_FALSE(limiter.Allow("#ONE", now + std::chrono::milliseconds(1999)));
     EXPECT_TRUE(limiter.Allow("#one", now + std::chrono::seconds(2)));

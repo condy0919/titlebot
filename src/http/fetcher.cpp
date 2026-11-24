@@ -237,7 +237,7 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
 
 asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::context& tls,
                                                      FetchPolicy policy) {
-    // parse_uri 返回视图，解析所用的字符串必须覆盖复制过程。
+    // parse_uri returns a view. Keep the source string alive until the URL has been copied.
     auto deadline = Clock::now() + policy.total_timeout;
     boost::urls::url current;
     const std::string original = msg.protocol + "://" + msg.url;
@@ -269,7 +269,8 @@ asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context& tls) {
                                        return IsPublic(addr.to_v4());
                                    }
                                    auto b = addr.to_v6().to_bytes();
-                                   // 仅接受全球单播，并排除协议分配、文档与 IPv4 隧道前缀。
+                                   // Allow only global unicast. Exclude protocol assignments,
+                                   // documentation and IPv4 tunnel prefixes.
                                    return (b[0] & 0xe0) == 0x20 &&
                                           !(b[0] == 0x20 && b[1] == 1 &&
                                             (b[2] < 2 || (b[2] == 0xd && b[3] == 0xb8))) &&
