@@ -78,6 +78,12 @@ FetchContent_MakeAvailable(spdlog)
 target_link_libraries(titlebot PRIVATE spdlog::spdlog)
 
 find_package(Boost 1.81 CONFIG REQUIRED COMPONENTS url)
+# No old APIs compatible.
+target_compile_definitions(titlebot_session PUBLIC
+  BOOST_ASIO_NO_DEPRECATED
+  BOOST_ASIO_NO_TS_EXECUTORS
+  BOOST_ASIO_NO_DYNAMIC_BUFFER_V1
+)
 target_link_libraries(titlebot_session PUBLIC Boost::headers OpenSSL::SSL
   PRIVATE Boost::url spdlog::spdlog Threads::Threads)
 target_link_libraries(titlebot PUBLIC titlebot_session PRIVATE Boost::url)
