@@ -1,10 +1,11 @@
 #include "fetcher.hpp"
-#include "fetcher_internal.hpp"
-#include <boost/asio/ssl.hpp>
 
 #include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 #include <gtest/gtest.h>
 #include <zlib.h>
+
+#include "fetcher_internal.hpp"
 
 namespace {
 tb::FetchResult Fetch(std::string protocol, std::string url) {
@@ -158,6 +159,7 @@ TEST_F(FetcherLoopback, VerifiesTrustAndHostForEachTlsConnection) {
     EXPECT_EQ(Run({ok}, "https"), std::unexpected(tb::FetchError::kNetwork));
     EXPECT_EQ(Run({ok}, "https", localhost), tb::FetchResult(std::string("OK")));
 }
+
 std::string HtmlResponse(const std::string& body, const std::string& headers) {
     return "HTTP/1.1 200 OK\r\n" + headers + "Content-Length: " + std::to_string(body.size()) +
            "\r\n\r\n" + body;

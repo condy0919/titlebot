@@ -1,6 +1,7 @@
 #ifndef TITLEBOT_TITLE_PARSER_HPP_
 #define TITLEBOT_TITLE_PARSER_HPP_
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,22 +22,31 @@ public:
     std::string_view sample() const {
         return head_;
     }
+
     std::string DeclaredCharset() const {
         return charset_;
     }
+
     bool unicode_bom() const {
         return utf16_ || head_.starts_with("\xef\xbb\xbf");
     }
 
 private:
+    enum class State : std::uint8_t {
+        kText,
+        kTag,
+        kComment,
+        kTitle,
+    };
+
     std::optional<std::string> ReadByte(char ch);
+    std::optional<std::string> consume(char ch);
+
     std::string head_;
     int utf16_ = 0;
     int first_byte_ = -1;
     unsigned surrogate_ = 0;
-    std::optional<std::string> consume(char ch);
 
-    enum class State { kText, kTag, kComment, kTitle };
     State state_ = State::kText;
     std::string tag_;
     std::string charset_;
@@ -49,4 +59,4 @@ private:
 };
 } // namespace tb
 
-#endif
+#endif // TITLEBOT_TITLE_PARSER_HPP_

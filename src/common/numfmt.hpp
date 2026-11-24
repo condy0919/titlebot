@@ -1,5 +1,6 @@
 #ifndef TITLEBOT_NUMFMT_HPP_
 #define TITLEBOT_NUMFMT_HPP_
+
 #include <format>
 #include <string>
 
@@ -17,4 +18,4 @@ inline std::string numfmt(double sz) {
 }
 } // namespace tb
 
-#endif
+#endif // TITLEBOT_NUMFMT_HPP_

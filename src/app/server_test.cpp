@@ -1,4 +1,5 @@
 #include "server.hpp"
+
 #include <boost/asio.hpp>
 #include <gtest/gtest.h>
 
@@ -68,6 +69,7 @@ TEST(Server, RepliesToFirstLinkInChannel) {
     ASSERT_EQ(test.wait_for(std::chrono::seconds(0)), std::future_status::ready);
     EXPECT_NO_THROW(test.get());
 }
+
 asio::awaitable<void> ExerciseReconnect() {
     auto executor = co_await asio::this_coro::executor;
     tcp::acceptor listener(executor, {asio::ip::address_v4::loopback(), 0});
@@ -134,6 +136,7 @@ TEST(Server, RejoinsAndIsolatesPendingReplies) {
         std::rethrow_exception(error);
     }
 }
+
 TEST(Server, EndsUnregisteredSessionOnNicknameConflict) {
     asio::io_context io;
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
@@ -148,6 +151,7 @@ TEST(Server, EndsUnregisteredSessionOnNicknameConflict) {
     ASSERT_EQ(result.wait_for(std::chrono::seconds(0)), std::future_status::ready);
     EXPECT_FALSE(result.get());
 }
+
 TEST(Server, ReconnectsAfterRegistrationDeadline) {
     asio::io_context io;
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});

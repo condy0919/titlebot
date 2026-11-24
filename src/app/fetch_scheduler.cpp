@@ -1,4 +1,5 @@
 #include "fetch_scheduler.hpp"
+
 #include <algorithm>
 #include <boost/asio/co_spawn.hpp>
 #include <iostream>
@@ -8,6 +9,7 @@ namespace {
 constexpr std::size_t kMaxActive = 8;
 constexpr std::size_t kPerHost = 2;
 constexpr std::size_t kQueue = 64;
+
 char LowerAscii(char ch) {
     return ch >= 'A' && ch <= 'Z' ? static_cast<char>(ch + ('a' - 'A')) : ch;
 }

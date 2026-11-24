@@ -1,15 +1,17 @@
-#include "common/utils.hpp"
-#include "decoder.hpp"
-#include "fetcher_internal.hpp"
-#include "html/title_parser.hpp"
-#include <boost/algorithm/string/trim.hpp>
+#include "fetcher.hpp"
 
+#include <boost/algorithm/string/trim.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/url.hpp>
 #include <chrono>
+
+#include "common/utils.hpp"
+#include "decoder.hpp"
+#include "fetcher_internal.hpp"
+#include "html/title_parser.hpp"
 
 namespace tb {
 namespace {
@@ -150,6 +152,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     } while (!response.is_done());
     co_return std::nullopt;
 }
+
 using Clock = std::chrono::steady_clock;
 asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::context& tls,
                                       const detail::FetchPolicy& policy, Clock::time_point deadline,

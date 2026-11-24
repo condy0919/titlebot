@@ -1,8 +1,7 @@
 #include "utils.hpp"
 
-#include <string>
-
 #include <gtest/gtest.h>
+#include <string>
 
 TEST(Utils, UnquotesEntities) {
     ASSERT_EQ(tb::unquote("&amp;"), "&");

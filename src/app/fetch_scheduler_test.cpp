@@ -1,4 +1,5 @@
 #include "fetch_scheduler.hpp"
+
 #include <boost/asio.hpp>
 #include <gtest/gtest.h>
 

@@ -1,11 +1,11 @@
 #include "decoder.hpp"
-#include "html/title_parser.hpp"
 
 #include <fstream>
-
 #include <gtest/gtest.h>
 #include <ios>
 #include <memory>
+
+#include "html/title_parser.hpp"
 
 using namespace std::string_literals;
 

@@ -1,13 +1,14 @@
 #ifndef TITLEBOT_FETCH_SCHEDULER_HPP_
 #define TITLEBOT_FETCH_SCHEDULER_HPP_
 
-#include "server.hpp"
 #include <boost/asio/any_io_executor.hpp>
 #include <chrono>
 #include <list>
 #include <map>
 #include <memory>
 #include <vector>
+
+#include "server.hpp"
 
 namespace tb {
 using Clock = std::chrono::steady_clock;
@@ -16,8 +17,10 @@ using Now = std::function<Clock::time_point()>;
 /// The single-threaded IRC executor shares this download budget across sessions.
 class FetchScheduler : public std::enable_shared_from_this<FetchScheduler> {
 public:
-    FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch, Now now = Clock::now);
     using Deliver = std::function<void(const std::string&)>;
+
+    FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch, Now now = Clock::now);
+
     void Submit(PrivMsg message, Deliver deliver);
     void RecordReplyDrop();
     void Report() const;
@@ -33,6 +36,7 @@ public:
         std::size_t peak_queue = 0;
         std::chrono::milliseconds elapsed{};
     };
+
     const Stats& stats() const {
         return stats_;
     }
@@ -44,9 +48,11 @@ private:
         std::vector<Deliver> replies;
         bool running = false;
     };
+
     void Pump();
     void Complete(std::list<Job>::iterator job, Clock::time_point start, const FetchResult& result);
     void MaybeReport();
+
     boost::asio::any_io_executor executor_;
     Fetch fetch_;
     Now now_;
@@ -68,7 +74,9 @@ private:
         Clock::time_point expires;
         unsigned sent;
     };
+
     std::list<Window> windows_;
 };
 } // namespace tb
-#endif
+
+#endif // TITLEBOT_FETCH_SCHEDULER_HPP_

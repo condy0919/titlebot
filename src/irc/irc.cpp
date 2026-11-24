@@ -44,7 +44,8 @@ std::string_view TakeIrcToken(std::string_view& rest) {
 }
 
 // Strip IRC formatting before looking for links. For the color parameter syntax, see
-// https://modern.ircdocs.horse/formatting#color and https://modern.ircdocs.horse/formatting#hex-color
+// https://modern.ircdocs.horse/formatting#color and
+// https://modern.ircdocs.horse/formatting#hex-color
 std::string normalize(const std::string& s) {
     std::string out;
     for (size_t i = 0; i < s.size();) {

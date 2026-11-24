@@ -1,13 +1,16 @@
 #include "server.hpp"
-#include "fetch_scheduler.hpp"
+
 #include <boost/asio.hpp>
 #include <deque>
 #include <iostream>
+
+#include "fetch_scheduler.hpp"
 
 namespace tb {
 namespace {
 namespace asio = boost::asio;
 using asio::use_awaitable;
+
 struct Session {
     asio::ip::tcp::socket socket;
     std::deque<std::string> queue;
