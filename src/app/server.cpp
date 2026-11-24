@@ -9,10 +9,12 @@
 #include <random>
 
 #include <boost/asio.hpp>
+#include <boost/asio/ssl/context.hpp>
 
 #include "common/deadline.hpp"
 #include "common/log.hpp"
 #include "fetch_scheduler.hpp"
+#include "http/fetcher.hpp"
 
 namespace tb {
 namespace {
@@ -283,27 +285,22 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
 
 } // namespace
 
-asio::awaitable<bool> RunSession(asio::ip::tcp::socket socket, std::string nick,
-                                 std::string channels, Fetch fetch) {
-    auto scheduler = std::make_shared<FetchScheduler>(socket.get_executor(), std::move(fetch));
-    return ServeSession(std::move(socket), std::move(nick), std::move(channels),
-                        std::move(scheduler), std::chrono::seconds(30));
-}
-
-asio::awaitable<void> RunBot(std::string host, std::string port, std::string nick,
-                             std::string channels, Fetch fetch,
-                             std::chrono::milliseconds registration_timeout) {
+asio::awaitable<void> RunBot(BotConfig config) {
+    auto tls = std::make_shared<asio::ssl::context>(asio::ssl::context::tls_client);
+    tls->set_default_verify_paths();
     auto executor = co_await asio::this_coro::executor;
-    auto scheduler = std::make_shared<FetchScheduler>(executor, std::move(fetch));
+    auto scheduler = std::make_shared<FetchScheduler>(
+        executor, [tls](PrivMsg msg) { return FetchTitle(std::move(msg), *tls); });
     asio::ip::tcp::resolver resolver(executor);
     unsigned delay = 1;
     while (true) {
         try {
-            auto endpoints = co_await resolver.async_resolve(host, port, asio::use_awaitable);
+            auto endpoints =
+                co_await resolver.async_resolve(config.server, config.port, asio::use_awaitable);
             asio::ip::tcp::socket socket(executor);
             co_await asio::async_connect(socket, endpoints, asio::use_awaitable);
-            if (co_await ServeSession(std::move(socket), nick, channels, scheduler,
-                                      registration_timeout)) {
+            if (co_await ServeSession(std::move(socket), config.nick, config.channels, scheduler,
+                                      config.registration_timeout)) {
                 delay = 1;
             }
         } catch (const boost::system::system_error& ex) {

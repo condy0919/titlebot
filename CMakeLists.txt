@@ -79,7 +79,7 @@ find_package(Boost 1.81 CONFIG REQUIRED COMPONENTS url)
 target_link_libraries(titlebot PUBLIC Boost::headers PRIVATE Boost::url)
 add_executable(titlebot_cli src/app/main.cpp)
 set_target_properties(titlebot_cli PROPERTIES OUTPUT_NAME titlebot)
-target_link_libraries(titlebot_cli PRIVATE titlebot)
+target_link_libraries(titlebot_cli PRIVATE titlebot spdlog::spdlog)
 
 # Test
 if(TITLEBOT_ENABLE_TESTS)

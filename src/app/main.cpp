@@ -1,10 +1,12 @@
 #include <argp.h>
 
-#include <iostream>
+#include <exception>
 #include <string_view>
+#include <utility>
 
 #include <boost/asio.hpp>
 
+#include "common/log.hpp"
 #include "server.hpp"
 
 namespace asio = boost::asio;
@@ -98,19 +100,25 @@ int main(int argc, char** argv) {
     if (argp_parse(&kParser, argc, argv, 0, nullptr, &args) != 0) {
         return 2;
     }
+
     try {
         asio::io_context io;
-        asio::ssl::context tls(asio::ssl::context::tls_client);
-        tls.set_default_verify_paths();
-        auto run = asio::co_spawn(
-            io,
-            tb::RunBot(args.server, args.port, args.nick, args.channels,
-                       [&tls](tb::PrivMsg msg) { return tb::FetchTitle(std::move(msg), tls); }),
-            asio::use_future);
+        tb::BotConfig config{
+            .server = args.server,
+            .port = args.port,
+            .nick = args.nick,
+            .channels = args.channels,
+        };
+        asio::co_spawn(io, tb::RunBot(std::move(config)), [](const std::exception_ptr& error) {
+            if (error) {
+                std::rethrow_exception(error);
+            }
+        });
         io.run();
-        run.get();
     } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
+        TB_LOG_ERROR("Bot failed: {}", e.what());
         return 1;
     }
+
+    return 0;
 }
