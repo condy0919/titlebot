@@ -82,3 +82,10 @@ TEST(Irc, ParsesPrivmsg) {
     ASSERT_EQ(msg.value().protocol, "http");
     ASSERT_EQ(msg.value().url, "2016.sina.cn/zq/abc.html");
 }
+
+TEST(Irc, PreservesUnicodeMessageBoundaries) {
+    EXPECT_EQ(tb::normalize("测试"), "测试");
+    auto msg = tb::parse_privmsg(":a!b PRIVMSG #r :https://example.org（测试v2）");
+    ASSERT_TRUE(msg);
+    EXPECT_EQ(msg->url, "example.org");
+}

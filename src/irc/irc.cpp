@@ -107,7 +107,7 @@ std::string normalize(const std::string& s) {
     }
 
     // Remove format prefix.
-    std::erase_if(out, [](char c) { return !std::isprint(static_cast<unsigned char>(c)); });
+    std::erase_if(out, [](char c) { return (static_cast<unsigned char>(c) < 32 && c != '\t') || c == 127; });
     return out;
 }
 
@@ -219,7 +219,7 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
             break;
 
         case Url:
-            if (!is_tspecial(c)) {
+            if (static_cast<unsigned char>(c) < 128 && !is_tspecial(c)) {
                 url.push_back(c);
             } else {
                 return PrivMsg{
