@@ -55,8 +55,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
 
     // Build the per-host concurrency key: EXAMPLE.org.:8080/path and example.org/x
     // share a quota.
-    auto end =
-        message.url.starts_with('[') ? message.url.find(']') : message.url.find_first_of(":/?#");
+    auto end = message.url.find_first_of(":/?#");
     std::string host = message.url.substr(0, end);
     for (char& ch : host) {
         ch = std::tolower(ch, std::locale::classic());
