@@ -1,5 +1,5 @@
 #include "title_parser.hpp"
-#include <boost/algorithm/string/case_conv.hpp>
+#include <algorithm>
 #include <boost/beast/core/string.hpp>
 #include <boost/beast/http/rfc7230.hpp>
 #include <boost/locale/utf.hpp>

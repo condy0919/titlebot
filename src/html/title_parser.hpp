@@ -1,10 +1,9 @@
 #ifndef TITLEBOT_TITLE_PARSER_HPP_
 #define TITLEBOT_TITLE_PARSER_HPP_
 
-#include <functional>
-#include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace tb {
 class TitleParser {
