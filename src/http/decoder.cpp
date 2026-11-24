@@ -1,80 +1,68 @@
 #include "decoder.hpp"
-
-#include <utility>
-#include <vector>
+#include <algorithm>
+#include <array>
+#include <limits>
 
 namespace tb {
-GzipDecoder::GzipDecoder() {
-    strm_.zalloc = Z_NULL;
-    strm_.zfree = Z_NULL;
-    strm_.opaque = Z_NULL;
-    strm_.avail_in = 0;
-    strm_.next_in = Z_NULL;
-    ::inflateInit2(&strm_, 16 + MAX_WBITS);
-}
-
-std::vector<char> GzipDecoder::decode(const char* s, std::size_t size) {
-    data_.clear();
-
-    int err = Z_OK;
-    char out[2048];
-    strm_.next_in = (unsigned char*)s;
-    strm_.avail_in = size;
-    while (strm_.avail_in > 0 && err != Z_STREAM_END) {
-        strm_.avail_out = sizeof(out);
-        strm_.next_out = (unsigned char*)out;
-        err = ::inflate(&strm_, Z_NO_FLUSH);
-        switch (err) {
-        case Z_NEED_DICT:
-        case Z_DATA_ERROR:
-        case Z_MEM_ERROR:
-            return {};
+ContentDecoder::ContentDecoder(ContentEncoding encoding) : encoding_(encoding) {
+    if (encoding != ContentEncoding::kIdentity) {
+        int bits = encoding == ContentEncoding::kGzip ? MAX_WBITS + 16 : MAX_WBITS;
+        if (encoding == ContentEncoding::kRawDeflate) {
+            bits = -MAX_WBITS;
         }
-
-        const int sz = static_cast<int>(sizeof(out) - strm_.avail_out);
-        data_.insert(data_.end(), out, out + sz);
+        initialized_ = inflateInit2(&stream_, bits) == Z_OK;
     }
-    return data_;
 }
 
-GzipDecoder::~GzipDecoder() {
-    ::inflateEnd(&strm_);
+ContentDecoder::~ContentDecoder() {
+    if (initialized_) {
+        inflateEnd(&stream_);
+    }
 }
 
-DeflateDecoder::DeflateDecoder() {
-    strm_.zalloc = Z_NULL;
-    strm_.zfree = Z_NULL;
-    strm_.opaque = Z_NULL;
-    strm_.avail_in = 0;
-    strm_.next_in = Z_NULL;
-    ::inflateInit2(&strm_, -MAX_WBITS);
-}
-
-std::vector<char> DeflateDecoder::decode(const char* s, std::size_t size) {
-    data_.clear();
-
-    int err = Z_OK;
-    char out[2048];
-    strm_.next_in = (unsigned char*)s;
-    strm_.avail_in = size;
-    while (strm_.avail_in > 0 && err != Z_STREAM_END) {
-        strm_.avail_out = sizeof(out);
-        strm_.next_out = (unsigned char*)out;
-        err = inflate(&strm_, Z_NO_FLUSH);
-        switch (err) {
-        case Z_NEED_DICT:
-        case Z_DATA_ERROR:
-        case Z_MEM_ERROR:
-            return {};
+std::expected<std::optional<std::string>, DecodeError>
+ContentDecoder::Consume(TitleParser& parser, std::string_view input, bool final) {
+    auto feed =
+        [&](std::string_view bytes) -> std::expected<std::optional<std::string>, DecodeError> {
+        auto prefix = bytes.substr(0, remaining_);
+        remaining_ -= prefix.size();
+        auto title = parser.parse(prefix.begin(), prefix.end());
+        if (!title && bytes.size() != prefix.size()) {
+            return std::unexpected(DecodeError::kLimit);
         }
-
-        const int sz = static_cast<int>(sizeof(out) - strm_.avail_out);
-        data_.insert(data_.end(), out, out + sz);
+        return title;
+    };
+    if (encoding_ == ContentEncoding::kIdentity) {
+        return feed(input);
     }
-    return data_;
-}
-
-DeflateDecoder::~DeflateDecoder() {
-    ::inflateEnd(&strm_);
+    if (!initialized_ || input.size() > std::numeric_limits<uInt>::max()) {
+        return std::unexpected(DecodeError::kInvalid);
+    }
+    stream_.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.data()));
+    stream_.avail_in = static_cast<uInt>(input.size());
+    std::array<char, 4096> output;
+    while (!ended_) {
+        stream_.next_out = reinterpret_cast<Bytef*>(output.data());
+        stream_.avail_out = output.size();
+        const int status = inflate(&stream_, Z_NO_FLUSH);
+        if (status != Z_OK && status != Z_STREAM_END && status != Z_BUF_ERROR) {
+            return std::unexpected(DecodeError::kInvalid);
+        }
+        ended_ = status == Z_STREAM_END;
+        auto title = feed({output.data(), output.size() - stream_.avail_out});
+        if (!title || *title) {
+            return title;
+        }
+        if (!stream_.avail_in && stream_.avail_out) {
+            break;
+        }
+        if (status == Z_BUF_ERROR) {
+            return std::unexpected(DecodeError::kInvalid);
+        }
+    }
+    if ((final && !ended_) || stream_.avail_in) {
+        return std::unexpected(DecodeError::kInvalid);
+    }
+    return std::nullopt;
 }
 } // namespace tb

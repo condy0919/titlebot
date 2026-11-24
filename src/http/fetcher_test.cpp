@@ -4,6 +4,7 @@
 
 #include <boost/asio.hpp>
 #include <gtest/gtest.h>
+#include <zlib.h>
 
 namespace {
 tb::FetchResult Fetch(std::string protocol, std::string url) {
@@ -139,5 +140,48 @@ TEST_F(FetcherLoopback, VerifiesTrustAndHostForEachTlsConnection) {
     client_tls.load_verify_file(fixture);
     EXPECT_EQ(Run({ok}, "https"), std::unexpected(tb::FetchError::kNetwork));
     EXPECT_EQ(Run({ok}, "https", localhost), tb::FetchResult(std::string("OK")));
+}
+std::string HtmlResponse(const std::string& body, const std::string& headers) {
+    return "HTTP/1.1 200 OK\r\n" + headers + "Content-Length: " + std::to_string(body.size()) +
+           "\r\n\r\n" + body;
+}
+
+std::string Deflate(const std::string& html) {
+    uLongf size = compressBound(html.size());
+    std::string body(size, '\0');
+    if (compress(reinterpret_cast<Bytef*>(body.data()), &size,
+                 reinterpret_cast<const Bytef*>(html.data()), html.size()) != Z_OK) {
+        throw std::runtime_error("fixture compression failed");
+    }
+    body.resize(size);
+    return body;
+}
+
+TEST_F(FetcherLoopback, DecodesDeclaredCharsetEntitiesAndWhitespace) {
+    std::string html = "<title>  Caf\xe9\t&amp;\n &#x1F642;  </title>";
+    auto response = HtmlResponse(
+        Deflate(html),
+        "Content-Type: text/html; charset=\"iso-8859-1\"\r\nContent-Encoding: deflate\r\n");
+    EXPECT_EQ(Run({response}), tb::FetchResult(std::string("Café & 🙂")));
+    EXPECT_EQ(Run({HtmlResponse(html, "Content-Type: text/plain\r\n")}),
+              tb::FetchResult(std::nullopt));
+}
+
+TEST_F(FetcherLoopback, DistinguishesMissingTitleFromInvalidOrOversizedContent) {
+    const std::string coding = "Content-Encoding: deflate\r\n";
+    auto body = Deflate("<html>no title</html>");
+    EXPECT_EQ(Run({HtmlResponse(body, coding)}), tb::FetchResult(std::nullopt));
+    // 截除校验尾部或传入损坏数据，应报告解码失败。
+    body.pop_back();
+    EXPECT_EQ(Run({HtmlResponse(body, coding)}), std::unexpected(tb::FetchError::kDecode));
+    EXPECT_EQ(Run({HtmlResponse("broken", coding)}), std::unexpected(tb::FetchError::kDecode));
+    EXPECT_EQ(Run({HtmlResponse(Deflate(std::string(524289, 'x')), coding)}),
+              std::unexpected(tb::FetchError::kResponseLimit));
+}
+
+TEST_F(FetcherLoopback, ReturnsCompleteTitleBeforeBodyEnds) {
+    // 服务端只发前缀；若客户端等待剩余正文，则会收到截断错误。
+    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 8192\r\n\r\n<title>early</title>"}),
+              tb::FetchResult(std::string("early")));
 }
 } // namespace

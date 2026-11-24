@@ -1,6 +1,8 @@
 #include "common/utils.hpp"
+#include "decoder.hpp"
 #include "fetcher_internal.hpp"
 #include "html/title_parser.hpp"
+#include <boost/algorithm/string/trim.hpp>
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -27,12 +29,34 @@ bool IsPublic(asio::ip::address_v4 address) {
            !(b[0] == 203 && b[1] == 0 && b[2] == 113);
 }
 
+FetchResult FormatTitle(const std::string& title, const std::string& charset) {
+    auto text = utf8(title, charset);
+    if (!text) {
+        return std::unexpected(FetchError::kDecode);
+    }
+    auto decoded = unquote(text->c_str());
+    std::string normalized;
+    bool space = false;
+    for (char ch : decoded) {
+        if (std::isspace(static_cast<unsigned char>(ch))) {
+            space = !normalized.empty();
+        } else {
+            if (space) {
+                normalized += ' ';
+                space = false;
+            }
+            normalized += ch;
+        }
+    }
+    return normalized;
+}
+
 template <class Stream>
 asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, std::string path,
                                        std::string& location) {
     http::request<http::empty_body> request(http::verb::get, path, 11);
     request.set(http::field::host, authority);
-    request.set(http::field::accept_encoding, "identity");
+    request.set(http::field::accept_encoding, "gzip, deflate, identity");
     co_await http::async_write(stream, request, use_awaitable);
     boost::beast::flat_buffer buffer;
     http::response_parser<http::buffer_body> response;
@@ -54,26 +78,57 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     if (response.get().result() != http::status::ok) {
         co_return std::nullopt;
     }
+    auto type = response.get()[http::field::content_type];
+    auto separator = type.find(';');
+    auto mime = boost::algorithm::trim_copy(std::string(type.substr(0, separator)));
+    if (!mime.empty() && !boost::beast::iequals(mime, "text/html") &&
+        !boost::beast::iequals(mime, "application/xhtml+xml")) {
+        co_return std::nullopt;
+    }
+    std::string charset;
+    if (separator != type.npos) {
+        for (const auto& [key, value] : http::param_list(type.substr(separator))) {
+            if (boost::beast::iequals(key, "charset")) {
+                charset = value;
+                break;
+            }
+        }
+    }
+    auto coding = response.get()[http::field::content_encoding];
+    ContentEncoding encoding = ContentEncoding::kIdentity;
+    if (boost::beast::iequals(coding, "gzip")) {
+        encoding = ContentEncoding::kGzip;
+    } else if (boost::beast::iequals(coding, "deflate")) {
+        encoding = ContentEncoding::kDeflate;
+    } else if (!coding.empty() && !boost::beast::iequals(coding, "identity")) {
+        co_return std::unexpected(FetchError::kDecode);
+    }
+    ContentDecoder decoder(encoding);
     TitleParser parser;
     std::array<char, 4096> block;
-    while (!response.is_done()) {
+    do {
         auto& body = response.get().body();
         body.data = block.data();
         body.size = block.size();
         boost::system::error_code ec;
-        co_await http::async_read_some(stream, buffer, response,
-                                       asio::redirect_error(use_awaitable, ec));
+        if (!response.is_done()) {
+            co_await http::async_read_some(stream, buffer, response,
+                                           asio::redirect_error(use_awaitable, ec));
+        }
         if (ec && ec != http::error::need_buffer) {
             throw boost::system::system_error(ec);
         }
-        if (auto title = parser.parse(block.begin(), block.end() - body.size)) {
-            auto text = utf8(*title);
-            if (text) {
-                co_return unquote(text->c_str());
-            }
-            co_return std::nullopt;
+        auto title =
+            decoder.Consume(parser, {block.data(), block.size() - body.size}, response.is_done());
+        if (!title) {
+            co_return std::unexpected(title.error() == DecodeError::kLimit
+                                          ? FetchError::kResponseLimit
+                                          : FetchError::kDecode);
         }
-    }
+        if (*title) {
+            co_return FormatTitle(**title, charset);
+        }
+    } while (!response.is_done());
     co_return std::nullopt;
 }
 using Clock = std::chrono::steady_clock;

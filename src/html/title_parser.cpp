@@ -1,4 +1,7 @@
 #include "title_parser.hpp"
+#include <boost/beast/core/string.hpp>
+#include <cctype>
+#include <utility>
 
 namespace tb {
 
@@ -13,7 +16,7 @@ std::optional<std::string> TitleParser::consume(char ch) {
     case State::LeftAngleBracket:
         if (ch == 't' || ch == 'T') {
             state_ = State::CharT1;
-        } else if (!std::isspace(ch)) {
+        } else if (!std::isspace(static_cast<unsigned char>(ch))) {
             state_ = State::Other;
         }
         break;
@@ -35,15 +38,37 @@ std::optional<std::string> TitleParser::consume(char ch) {
         break;
 
     case State::CharE:
-        state_ = (ch == '>') ? State::RightAngleBracket : State::CharE;
+        if (quote_) {
+            if (ch == quote_) {
+                quote_ = 0;
+            }
+        } else if (ch == '>') {
+            state_ = State::RightAngleBracket;
+        } else if (std::isspace(static_cast<unsigned char>(ch))) {
+            attributes_ = true;
+        } else if (!attributes_) {
+            state_ = State::Other;
+        } else if (ch == '\'' || ch == '"') {
+            quote_ = ch;
+        }
         break;
 
     case State::RightAngleBracket:
-        if (ch != '<') {
-            title_.push_back(ch);
-        } else {
-            return std::move(title_);
+        if (ch == '>') {
+            auto end = title_.find_last_not_of(" \t\r\n\f");
+            constexpr std::string_view close = "</title";
+            if (end != title_.npos && end + 1 >= close.size()) {
+                auto start = end + 1 - close.size();
+                if (boost::beast::iequals(std::string_view(title_).substr(start, close.size()),
+                                          close)) {
+                    title_.resize(start);
+                    state_ = State::Other;
+                    attributes_ = false;
+                    return std::exchange(title_, {});
+                }
+            }
         }
+        title_.push_back(ch);
         break;
     }
 
@@ -51,16 +76,3 @@ std::optional<std::string> TitleParser::consume(char ch) {
 }
 
 } // namespace tb
-
-// TitleParser::TitleParser() : state_(TOKEN_OTHER) {}
-
-// TitleParser::TitleParser(std::function<void(std::string)> fn)
-//     : state_(TOKEN_OTHER), callback_(std::move(fn)) {}
-
-// void TitleParser::setCallback(std::function<void(std::string)> fn) {
-//     callback_ = std::move(fn);
-// }
-
-// void TitleParser::setCharsetDecoder(std::unique_ptr<iconvpp::converter> p) {
-//     conv_ptr_ = std::move(p);
-// }

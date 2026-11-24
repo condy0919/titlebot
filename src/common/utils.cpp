@@ -4,6 +4,8 @@
 #include <array>
 #include <cctype>
 #include <cstdio>
+#include <charconv>
+#include <cerrno>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -16,7 +18,7 @@
 #include <boost/scope_exit.hpp>
 
 namespace {
-inline constexpr std::array<std::tuple<const char*, unsigned>, 251> entity_names = {{
+inline constexpr std::array<std::tuple<const char*, unsigned>, 252> entity_names = {{
     {"nbsp", 160},
     {"iexcl", 161},
     {"cent", 162},
@@ -246,6 +248,7 @@ inline constexpr std::array<std::tuple<const char*, unsigned>, 251> entity_names
     {"diams", 9830},
     {"quot", 34},
     {"amp", 38},
+    {"apos", 39},
     {"lt", 60},
     {"gt", 62},
     /* Latin Extended-A */
@@ -310,6 +313,10 @@ inline constexpr bool is_tspecial(char c) {
 }
 
 inline constexpr std::string toutf8(unsigned ch) {
+    if (ch >= 0x10000) {
+        return {static_cast<char>(0xf0 | (ch >> 18)), static_cast<char>(0x80 | ((ch >> 12) & 63)),
+                static_cast<char>(0x80 | ((ch >> 6) & 63)), static_cast<char>(0x80 | (ch & 63))};
+    }
     char buf[4];
     if (ch >= 0x800) {
         buf[0] = static_cast<char>(0xe0 | ((ch >> 12) & 0x0f));
@@ -358,13 +365,13 @@ std::optional<std::string> iconv(const std::string& s, const char* encodings[], 
             char* dst_ptr = &buf[0];
             std::size_t dst_sz = buf.size();
             std::size_t ret = ::iconv(conv, &src_ptr, &src_sz, &dst_ptr, &dst_sz);
-            if (ret == (std::size_t)-1) {
+            out.append(buf.data(), buf.size() - dst_sz);
+            if (ret == static_cast<std::size_t>(-1) && errno != E2BIG) {
                 break;
             }
-            out.append(buf.c_str(), buf.size() - dst_sz);
         }
-
-        if (!out.empty()) {
+        ::iconv_close(conv);
+        if (src_sz == 0) {
             return out;
         }
     }
@@ -698,44 +705,42 @@ HttpChunk::Parser::Status HttpChunk::Parser::consume(HttpChunk& chunk, char c) {
 std::string unquote(const char* s) {
     std::string out;
     while (*s) {
-        if (*s == '&') {
-            ++s;
-
-            const char* end = std::strchr(s, ';');
-            if (!end) {
-                return out;
-            }
-
-            if (*s == '#') {
-                ++s;
-
-                int id, n;
-                if (*s == 'x' || *s == 'X') {
-                    n = std::sscanf(s + 1, "%x", &id);
-                } else {
-                    n = std::sscanf(s, "%u", &id);
-                }
-
-                if (n != 1) {
-                    return out;
-                }
-                out += std::to_string(id);
-            } else {
-                auto iter = std::find_if(entity_names.begin(), entity_names.end(),
-                                         [sv = std::string_view(s, end)](const auto& tp) {
-                                             return std::get<0>(tp) == sv;
-                                         });
-                if (iter != entity_names.end()) {
-                    out += toutf8(std::get<1>(*iter));
-                }
-            }
-
-            s = end + 1;
-        } else {
+        if (*s != '&') {
             out += *s++;
+            continue;
         }
+        const char* end = s + 1;
+        while (std::isalnum(static_cast<unsigned char>(*end)) || *end == '#') {
+            ++end;
+        }
+        if (*end != ';') {
+            out += *s++;
+            continue;
+        }
+        std::string_view name(s + 1, end);
+        if (name.starts_with('#')) {
+            name.remove_prefix(1);
+            bool hex = name.starts_with('x') || name.starts_with('X');
+            name.remove_prefix(hex ? 1 : 0);
+            unsigned code = 0;
+            auto parsed = std::from_chars(name.data(), end, code, hex ? 16 : 10);
+            if (parsed.ec == std::errc{} && parsed.ptr == end && code && code <= 0x10ffff &&
+                !(code >= 0xd800 && code <= 0xdfff)) {
+                out += toutf8(code);
+            } else {
+                out.append(s, end + 1);
+            }
+        } else {
+            auto it = std::find_if(entity_names.begin(), entity_names.end(),
+                                   [name](const auto& entity) { return std::get<0>(entity) == name; });
+            if (it != entity_names.end()) {
+                out += toutf8(std::get<1>(*it));
+            } else {
+                out.append(s, end + 1);
+            }
+        }
+        s = end + 1;
     }
-
     return out;
 }
 
@@ -753,31 +758,34 @@ std::string make_request(const std::string& host, const std::string& uri) {
     return req;
 }
 
-std::optional<std::string> utf8(const std::string& in) {
-    // predefined encodings + encoding guessed from `uchardet`
-    const char* encodings[] = {
-        "", "GB18030", "Big5", "EUCTW", "EUCJP", "EUCKR", "CP949", "SJIS", "UTF-8",
-    };
-
+std::optional<std::string> utf8(const std::string& in, const std::string& charset) {
+    const char* declared[] = {charset.c_str()};
+    if (!charset.empty()) {
+        return iconv(in, declared, 1);
+    }
+    const char* unicode[] = {"UTF-8"};
+    if (auto valid = iconv(in, unicode, 1)) {
+        return valid;
+    }
+    // 短标题的统计探测可能将繁体中文误判为单字节编码，优先沿用项目的东亚编码顺序。
+    const char* encodings[] = {"GB18030", "Big5", "EUC-TW", "EUC-JP", "EUC-KR", "CP949", "SJIS"};
+    if (auto text = iconv(in, encodings, std::size(encodings))) {
+        return text;
+    }
     uchardet_t ud = ::uchardet_new();
+    if (!ud) {
+        return std::nullopt;
+    }
     BOOST_SCOPE_EXIT(&ud) {
         uchardet_delete(ud);
     }
     BOOST_SCOPE_EXIT_END
-
-    // Guess encoding via uchardet. If failed, guess with predefined encoding list.
     if (::uchardet_handle_data(ud, in.data(), in.size()) != 0) {
-        return iconv(in, encodings, std::size(encodings));
+        return std::nullopt;
     }
-
-    // No need to convert for UTF-8 and ASCII strings.
-    const char* encoding = ::uchardet_get_charset(ud);
-    if (::strncasecmp(encoding, "utf-8", 5) == 0 || ::strncasecmp(encoding, "ascii", 5) == 0) {
-        return in;
-    }
-
-    encodings[0] = encoding;
-    return iconv(in, encodings, std::size(encodings));
+    ::uchardet_data_end(ud);
+    const char* guessed[] = {::uchardet_get_charset(ud)};
+    return iconv(in, guessed, 1);
 }
 
 std::tuple<std::string, std::string, std::string> parse_url(const std::string& url) {

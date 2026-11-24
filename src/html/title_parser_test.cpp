@@ -25,3 +25,14 @@ TEST(TitleParser, HandlesWhitespace) {
     tb::TitleParser parser;
     ASSERT_EQ(parser.parse(s.begin(), s.end()).value(), "facebook");
 }
+
+TEST(TitleParser, RequiresCompleteClosingTagAtEverySplit) {
+    const std::string html =
+        "<titlebar>ignored</titlebar><TITLE data-label='>'>中文 < 3 &amp; A</TiTlE  >";
+    // 穷举切分点，覆盖多字节字符、属性引号和结束标签内部。
+    for (size_t split = 0; split < html.size(); ++split) {
+        tb::TitleParser parser;
+        ASSERT_FALSE(parser.parse(html.begin(), html.begin() + split));
+        EXPECT_EQ(parser.parse(html.begin() + split, html.end()), "中文 < 3 &amp; A");
+    }
+}

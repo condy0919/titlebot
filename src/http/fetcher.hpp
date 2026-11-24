@@ -15,6 +15,7 @@ enum class FetchError {
     kNetwork,
     kTimeout,
     kRedirectLimit,
+    kDecode,
     kResponseLimit
 };
 using FetchResult = std::expected<std::optional<std::string>, FetchError>;
