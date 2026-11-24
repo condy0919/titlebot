@@ -1,5 +1,5 @@
 #include "decoder.hpp"
-#include "title_parser.hpp"
+#include "html/title_parser.hpp"
 
 #include <fstream>
 
@@ -10,7 +10,7 @@
 using namespace std::string_literals;
 
 TEST(Decoder, ReadsGzipTitle) {
-    const std::string path = TITLEBOT_PROJ_ROOT + "/assets/bilibili.html.gz"s;
+    const std::string path = TITLEBOT_PROJ_ROOT + "/tests/fixtures/bilibili.html.gz"s;
 
     tb::TitleParser tparser;
     std::unique_ptr<tb::ContentDecoder> decoder = std::make_unique<tb::GzipDecoder>();

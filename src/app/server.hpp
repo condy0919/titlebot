@@ -1,5 +1,5 @@
-#include "mobot.hpp"
-#include "fetcher.hpp"
+#include "irc/mobot.hpp"
+#include "http/fetcher.hpp"
 
 class Server {
 public:

@@ -17,8 +17,13 @@ include(FetchContent)
 option(TITLEBOT_ENABLE_TESTS "Enable tests" ON)
 option(TITLEBOT_ENABLE_BENCHMARKS "Enable benchmarks" OFF)
 
-# Sources for the library are specified at the end
-add_library(titlebot "")
+add_library(titlebot
+  src/irc/irc.cpp
+  src/http/decoder.cpp
+  src/html/title_parser.cpp
+  src/common/utils.cpp
+)
+target_include_directories(titlebot PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 ### Compile options
 # Enable C++23 (Required)
@@ -75,30 +80,13 @@ if(TITLEBOT_ENABLE_TESTS)
     GIT_SHALLOW TRUE
   )
   FetchContent_MakeAvailable(googletest)
-endif()
 
-### Definitions
-
-### Includes
-
-### Sources
-target_sources(titlebot
-  PRIVATE
-    # ${CMAKE_CURRENT_SOURCE_DIR}/src/connection.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/decoder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/irc.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/title_parser.cpp
-)
-
-# Tests
-if(TITLEBOT_ENABLE_TESTS)
   add_executable(titlebot_unittests
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/decoder_unittest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/numfmt_unittest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils_unittest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/irc_unittest.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/title_parser_unittest.cpp
+    src/http/decoder_test.cpp
+    src/common/numfmt_test.cpp
+    src/common/utils_test.cpp
+    src/irc/irc_test.cpp
+    src/html/title_parser_test.cpp
   )
 
   target_compile_definitions(titlebot_unittests

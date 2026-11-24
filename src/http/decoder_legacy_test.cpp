@@ -1,6 +1,6 @@
 #define CATCH_CONFIG_MAIN
-#include "../src/decoder.hpp"
-#include "../src/title_parser.hpp"
+#include "decoder.hpp"
+#include "html/title_parser.hpp"
 #include <catch.hpp>
 #include <iostream>
 #include <fstream>

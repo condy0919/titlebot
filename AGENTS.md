@@ -4,7 +4,7 @@
 
 titlebot 为 IRC 用户获取网页标题。处理聊天输入时，仅解析 `PRIVMSG`，每条消息只取第一个 URL。修改解析行为时，用具体的 IRC 消息或 HTML 样本说明输入和预期结果。
 
-- `src/irc.cpp` 负责 IRC 文本规范化和消息解析，`src/title_parser.cpp` 负责从网页内容提取标题。
+- `src/irc/irc.cpp` 负责 IRC 文本规范化和消息解析，`src/html/title_parser.cpp` 负责从网页内容提取标题。
 - 顶层 CMake 的 `titlebot` 目标是库，当前编译 `irc.cpp`、`title_parser.cpp`、`decoder.cpp` 和 `utils.cpp`。修改 `main.cpp`、连接或抓取代码时，需另行验证涉及的调用路径，默认构建未覆盖这些源文件。
 - 构建目标、语言标准和依赖以顶层 `CMakeLists.txt` 为准。README 中的部署脚本说明属于旧版流程。
 
@@ -18,7 +18,7 @@ cmake --build build --parallel
 (cd build && ctest --output-on-failure)
 ```
 
-修复缺陷先复现，再运行相关测试和完整测试套件。行为变更在对应的 `src/*_unittest.cpp` 中添加 GoogleTest 用例。网页内容优先使用内联样本或 `assets/` 中的本地文件，使测试可重复运行。解析器的回归用例应覆盖触发问题的输入，例如截断命令或缺少分隔符的消息。用中文注释解释难以从样本或断言看出的测试意图。
+修复缺陷先复现，再运行相关测试和完整测试套件。源码命名为 `xxx.hpp` 或 `xxx.cpp`，对应的 GoogleTest 用例放在同一目录的 `xxx_test.cpp` 中。网页内容优先使用内联样本或 `tests/fixtures/` 中的本地文件，使测试可重复运行。解析器的回归用例应覆盖触发问题的输入，例如截断命令或缺少分隔符的消息。用中文注释解释难以从样本或断言看出的测试意图。
 
 ## 实现与协作
 

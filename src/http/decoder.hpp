@@ -1,14 +1,14 @@
 #ifndef TITLEBOT_DECODER_HPP_
 #define TITLEBOT_DECODER_HPP_
 
-#include "title_parser.hpp"
+#include "html/title_parser.hpp"
 
 #include <iterator>
 #include <memory>
 #include <optional>
 #include <vector>
 
-#include "utils.hpp"
+#include "common/utils.hpp"
 
 #include <zlib.h>
 
