@@ -147,4 +147,41 @@ TEST(Server, EndsUnregisteredSessionOnNicknameConflict) {
     ASSERT_EQ(result.wait_for(std::chrono::seconds(0)), std::future_status::ready);
     EXPECT_FALSE(result.get());
 }
+TEST(Server, ReconnectsAfterRegistrationDeadline) {
+    asio::io_context io;
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    asio::co_spawn(io,
+                   tb::RunBot("127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
+                              "#r", {}, std::chrono::milliseconds(150)),
+                   asio::detached);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        for (bool register_now : {false, true}) {
+            auto peer = co_await listener.async_accept(use_awaitable);
+            std::string input;
+            EXPECT_EQ(co_await ReadLine(peer, input), "NICK bot");
+            EXPECT_EQ(co_await ReadLine(peer, input), "USER bot 0 * :titlebot");
+            if (register_now) {
+                std::string welcome = ":irc 001 bot :welcome\r\n";
+                co_await asio::async_write(peer, asio::buffer(welcome), use_awaitable);
+                EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #r");
+                asio::steady_timer wait(io, std::chrono::milliseconds(200));
+                co_await wait.async_wait(use_awaitable);
+            }
+            std::string ping = "PING :test\r\n";
+            co_await asio::async_write(peer, asio::buffer(ping), use_awaitable);
+            EXPECT_EQ(co_await ReadLine(peer, input), "PONG :test");
+            if (!register_now) {
+                char byte;
+                boost::system::error_code ec;
+                co_await peer.async_read_some(asio::buffer(&byte, 1),
+                                              asio::redirect_error(use_awaitable, ec));
+                EXPECT_EQ(ec, asio::error::eof);
+            }
+        }
+    };
+    auto result = asio::co_spawn(io, exercise(), asio::use_future);
+    io.run_for(std::chrono::seconds(3));
+    ASSERT_EQ(result.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_NO_THROW(result.get());
+}
 } // namespace

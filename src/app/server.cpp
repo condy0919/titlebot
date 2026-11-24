@@ -102,12 +102,19 @@ bool SameNick(std::string_view a, std::string_view b) {
 }
 
 asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nick,
-                                   std::string channels,
-                                   std::shared_ptr<FetchScheduler> scheduler) {
+                                   std::string channels, std::shared_ptr<FetchScheduler> scheduler,
+                                   std::chrono::milliseconds registration_timeout) {
     auto session = std::make_shared<Session>(Session{std::move(socket), {}, scheduler, {}});
     Send(session, "NICK " + nick);
     Send(session, "USER " + nick + " 0 * :titlebot");
     bool registered = false;
+    asio::steady_timer registration(session->socket.get_executor(), registration_timeout);
+    registration.async_wait([session](boost::system::error_code ec) {
+        if (!ec) {
+            boost::system::error_code ignored;
+            session->socket.close(ignored);
+        }
+    });
     std::string input;
     try {
         while (true) {
@@ -127,6 +134,7 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
             if (command == "PING") {
                 Send(session, "PONG " + std::string(params), true);
             } else if (command == "001") {
+                registration.cancel();
                 registered = true;
                 nick = TakeIrcToken(params);
                 Send(session, "JOIN " + channels);
@@ -169,11 +177,12 @@ asio::awaitable<bool> RunSession(asio::ip::tcp::socket socket, std::string nick,
                                  std::string channels, Fetch fetch) {
     auto scheduler = std::make_shared<FetchScheduler>(socket.get_executor(), std::move(fetch));
     return ServeSession(std::move(socket), std::move(nick), std::move(channels),
-                        std::move(scheduler));
+                        std::move(scheduler), std::chrono::seconds(30));
 }
 
 asio::awaitable<void> RunBot(std::string host, std::string port, std::string nick,
-                             std::string channels, Fetch fetch) {
+                             std::string channels, Fetch fetch,
+                             std::chrono::milliseconds registration_timeout) {
     auto executor = co_await asio::this_coro::executor;
     auto scheduler = std::make_shared<FetchScheduler>(executor, std::move(fetch));
     asio::ip::tcp::resolver resolver(executor);
@@ -183,7 +192,8 @@ asio::awaitable<void> RunBot(std::string host, std::string port, std::string nic
             auto endpoints = co_await resolver.async_resolve(host, port, asio::use_awaitable);
             asio::ip::tcp::socket socket(executor);
             co_await asio::async_connect(socket, endpoints, asio::use_awaitable);
-            if (co_await ServeSession(std::move(socket), nick, channels, scheduler)) {
+            if (co_await ServeSession(std::move(socket), nick, channels, scheduler,
+                                      registration_timeout)) {
                 delay = 1;
             }
         } catch (const boost::system::system_error&) {
