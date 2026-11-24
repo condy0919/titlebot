@@ -15,7 +15,6 @@ include(CTest)
 include(FetchContent)
 
 option(TITLEBOT_ENABLE_TESTS "Enable tests" ON)
-option(TITLEBOT_ENABLE_BENCHMARKS "Enable benchmarks" OFF)
 
 add_library(titlebot
   src/app/fetch_scheduler.cpp
@@ -50,15 +49,8 @@ find_package(Threads REQUIRED)
 target_link_libraries(titlebot PRIVATE Threads::Threads)
 
 # uchardet
-pkg_search_module(uchardet REQUIRED uchardet)
-target_include_directories(titlebot
-  PUBLIC
-    ${uchardet_INCLUDE_DIRS}
-)
-target_link_libraries(titlebot
-  PUBLIC
-    ${uchardet_LIBRARIES}
-)
+pkg_check_modules(uchardet REQUIRED IMPORTED_TARGET uchardet)
+target_link_libraries(titlebot PRIVATE PkgConfig::uchardet)
 
 # zlib
 find_package(ZLIB REQUIRED)
