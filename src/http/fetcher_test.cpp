@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 #include <zlib.h>
 
+#include <algorithm>
+
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 
@@ -26,10 +28,15 @@ TEST_F(Fetcher, RejectsUnsupportedScheme) {
     EXPECT_EQ(Fetch("file", "example.org"), std::unexpected(tb::FetchError::kInvalidUrl));
 }
 
+TEST_F(Fetcher, RejectsIpv6Literals) {
+    for (auto authority : {"[::1]", "[2001:db8::1]"}) {
+        EXPECT_EQ(Fetch("https", authority), std::unexpected(tb::FetchError::kInvalidUrl));
+    }
+}
+
 TEST_F(Fetcher, RejectsNonPublicDestinations) {
     // Use IP literals to test address checks before connecting, without external DNS.
-    for (auto authority :
-         {"127.0.0.1", "169.254.169.254", "10.0.0.1", "192.168.1.1", "[::1]", "[2001:db8::1]"}) {
+    for (auto authority : {"127.0.0.1", "169.254.169.254", "10.0.0.1", "192.168.1.1"}) {
         EXPECT_EQ(Fetch("https", authority), std::unexpected(tb::FetchError::kBlockedAddress));
     }
 }
@@ -118,6 +125,33 @@ protected:
     }
 };
 
+TEST_F(FetcherLoopback, FetchesHostnameOverIpv6) {
+    boost::system::error_code ec;
+    listener.close();
+    listener.open(tcp::v6(), ec);
+    if (ec == asio::error::address_family_not_supported) {
+        GTEST_SKIP() << ec.message();
+    }
+    ASSERT_FALSE(ec) << ec.message();
+    listener.bind({asio::ip::address_v6::loopback(), 0}, ec);
+    if (ec == boost::system::errc::address_not_available) {
+        GTEST_SKIP() << ec.message();
+    }
+    ASSERT_FALSE(ec) << ec.message();
+    listener.listen();
+    auto port = std::to_string(listener.local_endpoint().port());
+    auto endpoints = tcp::resolver(io).resolve("localhost", port);
+    if (std::none_of(endpoints.begin(), endpoints.end(), [](const auto& answer) {
+            return answer.endpoint().address() == asio::ip::address_v6::loopback();
+        })) {
+        GTEST_SKIP() << "localhost has no IPv6 loopback address";
+    }
+    policy.allow = [this](tcp::endpoint ep) {
+        return ep.address().is_loopback() && ep.port() == listener.local_endpoint().port();
+    };
+    EXPECT_EQ(Run({ok}, "http", "localhost:" + port), tb::FetchResult(std::string("OK")));
+}
+
 TEST_F(FetcherLoopback, ResolvesRelativeReferencesAndRechecksDestinations) {
     // Resolve the query and fragment against the current URL. Omit the fragment from the request
     // target.
@@ -126,6 +160,7 @@ TEST_F(FetcherLoopback, ResolvesRelativeReferencesAndRechecksDestinations) {
     EXPECT_EQ(requests, (std::vector<std::string>{"GET /a/start HTTP/1.1", "GET /next?q=1 HTTP/1.1",
                                                   "GET /next?q=2 HTTP/1.1"}));
     EXPECT_EQ(Run({Redirect("//127.0.0.2/")}), std::unexpected(tb::FetchError::kBlockedAddress));
+    EXPECT_EQ(Run({Redirect("http://[::1]/")}), std::unexpected(tb::FetchError::kInvalidUrl));
     EXPECT_EQ(Run({Redirect("file:///tmp/title")}), std::unexpected(tb::FetchError::kInvalidUrl));
 }
 

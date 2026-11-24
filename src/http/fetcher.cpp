@@ -169,16 +169,15 @@ asio::awaitable<void> CancelOnTimeout(asio::awaitable<bool> expired,
 asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::context& tls,
                                       const detail::FetchPolicy& policy, Clock::time_point deadline,
                                       std::string& location) {
-    const bool ipv6 = url.host_type() == boost::urls::host_type::ipv6;
     bool secure = url.scheme_id() == boost::urls::scheme::https;
     if ((!secure && url.scheme_id() != boost::urls::scheme::http) || url.has_userinfo() ||
         url.host().empty() || (url.has_port() && url.port_number() == 0) ||
-        (!ipv6 && url.encoded_host().find_first_not_of(
-                      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-") !=
-                      std::string_view::npos)) {
+        url.encoded_host().find_first_not_of(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-") !=
+            std::string_view::npos) {
         co_return std::unexpected(FetchError::kInvalidUrl);
     }
-    auto host = ipv6 ? url.host_ipv6_address().to_string() : url.host();
+    auto host = url.host();
     std::string port = url.has_port() ? std::string(url.port()) : (secure ? "443" : "80");
     std::string authority(url.encoded_authority());
     std::string path(url.encoded_target());

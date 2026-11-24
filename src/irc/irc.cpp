@@ -4,7 +4,6 @@
 #include <cctype>
 
 #include <boost/beast/core/string.hpp>
-#include <boost/url/ipv6_address.hpp>
 
 namespace {
 // HTTP chars that need quoting.
@@ -120,22 +119,13 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
             continue;
         }
         tail.remove_prefix(secure ? 8 : 7);
-        if (tail.empty() ||
-            (tail.front() != '[' && !std::isalnum(static_cast<unsigned char>(tail.front())))) {
+        if (tail.empty() || !std::isalnum(static_cast<unsigned char>(tail.front()))) {
             continue;
         }
-        auto suffix = tail;
-        if (tail.starts_with('[')) {
-            auto close = tail.find(']');
-            if (close == tail.npos || !boost::urls::parse_ipv6_address(tail.substr(1, close - 1))) {
-                continue;
-            }
-            suffix.remove_prefix(close + 1);
-        }
-        auto end = suffix.begin();
+        auto end = tail.begin();
         auto opening = end;
         unsigned depth = 0;
-        for (; end != suffix.end(); ++end) {
+        for (; end != tail.end(); ++end) {
             if (*end == '(') {
                 if (depth++ == 0) {
                     opening = end;

@@ -114,10 +114,11 @@ TEST_F(Irc, FindsOverlappingScheme) {
     EXPECT_EQ(msg->protocol, "https");
 }
 
-TEST_F(Irc, DistinguishesIpv6HostFromSurroundingBrackets) {
+TEST_F(Irc, SkipsIpv6LiteralsAndAcceptsBracketedLinks) {
+    EXPECT_FALSE(tb::parse_privmsg(":a!b PRIVMSG #r :http://[2001:db8::1]:8080/a"));
     for (const auto& [text, expected] :
          {std::pair{"[https://example.org/path]", "example.org/path"},
-          {"[http://[2001:db8::1]:8080/a]", "[2001:db8::1]:8080/a"},
+          {"http://[2001:db8::1]/ https://example.org", "example.org"},
           {"https://[bad https://example.org", "example.org"}}) {
         auto msg = tb::parse_privmsg(std::string(":a!b PRIVMSG #r :") + text);
         ASSERT_TRUE(msg);
