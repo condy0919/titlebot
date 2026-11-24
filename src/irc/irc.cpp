@@ -32,82 +32,33 @@ inline constexpr bool is_tspecial(char c) {
 
 namespace tb {
 std::string normalize(const std::string& s) {
-    const auto in = [](char ch, char from, char to) { return ch >= from && ch <= to; };
-
-    enum {
-        NORMAL,
-        PREFIX_0x3,
-        COLOR_FG_1,
-        COLOR_FG_2,
-        COMMA,
-        COLOR_BG_1,
-    } state = NORMAL;
     std::string out;
-    for (char c : s) {
-        switch (state) {
-        case NORMAL:
-            if (c == '\x03') {
-                state = PREFIX_0x3;
-            } else {
-                out += c;
+    for (size_t i = 0; i < s.size();) {
+        auto c = static_cast<unsigned char>(s[i++]);
+        if (c == 3 || c == 4) {
+            const size_t width = c == 3 ? 2 : 6;
+            auto digits = [&](size_t pos) {
+                size_t n = 0;
+                while (pos + n < s.size() && n < width) {
+                    auto ch = static_cast<unsigned char>(s[pos + n]);
+                    if (!(c == 3 ? std::isdigit(ch) : std::isxdigit(ch))) {
+                        break;
+                    }
+                    ++n;
+                }
+                return c == 4 && n != width ? size_t{0} : n;
+            };
+            auto foreground = digits(i);
+            i += foreground;
+            if (foreground && i < s.size() && s[i] == ',') {
+                if (auto background = digits(i + 1)) {
+                    i += 1 + background;
+                }
             }
-            break;
-
-        case PREFIX_0x3:
-            if (!in(c, '0', '9')) {
-                out += c;
-                state = NORMAL;
-            } else {
-                state = COLOR_FG_1;
-            }
-            break;
-
-        case COLOR_FG_1:
-            if (in(c, '0', '9')) {
-                state = COLOR_FG_2;
-            } else if (c == ',') {
-                state = COMMA;
-            } else {
-                out += c;
-                state = NORMAL;
-            }
-            break;
-
-        case COLOR_FG_2:
-            if (c == ',') {
-                state = COMMA;
-            } else {
-                out += c;
-                state = NORMAL;
-            }
-            break;
-
-        case COMMA:
-            if (in(c, '0', '9')) {
-                state = COLOR_BG_1;
-            } else {
-                out += ',';
-                out += c;
-                state = NORMAL;
-            }
-            break;
-
-        case COLOR_BG_1:
-            if (in(c, '0', '9')) {
-                state = NORMAL;
-            } else {
-                out += c;
-            }
-            break;
+        } else if ((c >= 32 && c != 127) || c == '\t') {
+            out.push_back(static_cast<char>(c));
         }
     }
-
-    if (state == COMMA) {
-        out += ',';
-    }
-
-    // Remove format prefix.
-    std::erase_if(out, [](char c) { return (static_cast<unsigned char>(c) < 32 && c != '\t') || c == 127; });
     return out;
 }
 

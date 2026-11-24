@@ -89,3 +89,8 @@ TEST(Irc, PreservesUnicodeMessageBoundaries) {
     ASSERT_TRUE(msg);
     EXPECT_EQ(msg->url, "example.org");
 }
+
+TEST(Irc, BoundsColorParameters) {
+    EXPECT_EQ(tb::normalize("\x03" "04,2https://2016.example"), "https://2016.example");
+    EXPECT_EQ(tb::normalize("\x03" "4\x03" "12text"), "text");
+}
