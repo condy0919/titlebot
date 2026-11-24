@@ -22,7 +22,9 @@ public:
     std::string_view sample() const {
         return head_;
     }
-    std::string DeclaredCharset() const;
+    std::string DeclaredCharset() const {
+        return charset_;
+    }
     bool unicode_bom() const {
         return utf16_ || head_.starts_with("\xef\xbb\xbf");
     }
@@ -38,7 +40,7 @@ private:
     enum class State { kText, kTag, kComment, kTitle };
     State state_ = State::kText;
     std::string tag_;
-    std::string meta_tags_;
+    std::string charset_;
     std::string raw_element_;
     unsigned svg_depth_ = 0;
     unsigned dashes_ = 0;

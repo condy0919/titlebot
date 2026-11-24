@@ -421,7 +421,8 @@ std::optional<std::string> utf8(const std::string& in, const std::string& charse
     if (sample.empty()) {
         sample = in;
     }
-    if (::uchardet_handle_data(ud, sample.data(), sample.size()) != 0) {
+    if (::uchardet_handle_data(ud, sample.data(), sample.size()) != 0 ||
+        (sample.find(in) == sample.npos && ::uchardet_handle_data(ud, in.data(), in.size()) != 0)) {
         return std::nullopt;
     }
     ::uchardet_data_end(ud);

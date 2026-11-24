@@ -1,45 +1,79 @@
 #include "title_parser.hpp"
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/beast/core/string.hpp>
+#include <boost/beast/http/rfc7230.hpp>
 #include <boost/locale/utf.hpp>
 #include <cctype>
-#include <regex>
 #include <utility>
 
 namespace tb {
 
-std::string TitleParser::DeclaredCharset() const {
-    static const std::regex meta(R"(<meta\s+([^<>]*)>)", std::regex::icase);
-    static const std::regex attribute(
-        R"attr(([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>]+)))attr");
-    static const std::regex charset(R"(charset\s*=\s*([\w.-]+))", std::regex::icase);
-    for (std::sregex_iterator it(meta_tags_.begin(), meta_tags_.end(), meta), end; it != end;
-         ++it) {
-        auto attrs = (*it)[1].str();
-        std::string content, equiv;
-        for (std::sregex_iterator a(attrs.begin(), attrs.end(), attribute); a != end; ++a) {
-            auto name = boost::algorithm::to_lower_copy((*a)[1].str());
-            auto value = (*a)[2].matched   ? (*a)[2].str()
-                         : (*a)[3].matched ? (*a)[3].str()
-                                           : (*a)[4].str();
-            if (name == "charset") {
-                return value;
-            }
-            if (name == "http-equiv") {
-                equiv = value;
-            }
-            if (name == "content") {
-                content = value;
-            }
+namespace {
+std::string MetaCharset(std::string_view attrs) {
+    constexpr std::string_view whitespace = " \t\r\n\f";
+    auto trim = [&] {
+        attrs.remove_prefix(std::min(attrs.size(), attrs.find_first_not_of(whitespace)));
+    };
+    std::string_view content, equiv;
+    auto label = [](std::string_view value) {
+        if (value.empty() || value.size() > 64 ||
+            value.find_first_not_of(
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-") !=
+                value.npos) {
+            return std::string{};
         }
-        std::smatch match;
-        if (boost::beast::iequals(equiv, "content-type") &&
-            std::regex_search(content, match, charset)) {
-            return match[1].str();
+        return std::string(value);
+    };
+    while (!attrs.empty()) {
+        trim();
+        if (attrs.empty()) {
+            break;
+        }
+        auto n = std::min(attrs.size(), attrs.find_first_of(" \t\r\n\f=/"));
+        auto key = attrs.substr(0, n);
+        attrs.remove_prefix(n);
+        trim();
+        if (!attrs.starts_with('=')) {
+            if (!n && !attrs.empty()) {
+                attrs.remove_prefix(1);
+            }
+            continue;
+        }
+        attrs.remove_prefix(1);
+        trim();
+        bool quoted = attrs.starts_with('"') || attrs.starts_with('\'');
+        char quote = quoted ? attrs.front() : 0;
+        if (quoted) {
+            attrs.remove_prefix(1);
+        }
+        auto end = quoted ? attrs.find(quote) : attrs.find_first_of(whitespace);
+        auto value = attrs.substr(0, end);
+        attrs.remove_prefix(value.size());
+        if (quoted && !attrs.empty()) {
+            attrs.remove_prefix(1);
+        }
+        if (boost::beast::iequals(key, "charset")) {
+            auto result = label(value);
+            if (!result.empty()) {
+                return result;
+            }
+        } else if (boost::beast::iequals(key, "content")) {
+            content = value;
+        } else if (boost::beast::iequals(key, "http-equiv")) {
+            equiv = value;
+        }
+    }
+    auto semi = content.find(';');
+    if (boost::beast::iequals(equiv, "content-type") && semi != content.npos) {
+        for (auto [key, value] : boost::beast::http::param_list(content.substr(semi))) {
+            if (boost::beast::iequals(key, "charset")) {
+                return label(value);
+            }
         }
     }
     return {};
 }
+} // namespace
 
 std::optional<std::string> TitleParser::ReadByte(char ch) {
     if (head_.size() < 1024) {
@@ -155,8 +189,8 @@ std::optional<std::string> TitleParser::consume(char ch) {
     } else if (!closing && !svg_depth_) {
         if (boost::beast::iequals(name, "title") && !tag.ends_with('/')) {
             state_ = State::kTitle;
-        } else if (boost::beast::iequals(name, "meta") && head_.size() < 1024) {
-            meta_tags_ += "<" + tag_ + ">";
+        } else if (boost::beast::iequals(name, "meta") && charset_.empty()) {
+            charset_ = MetaCharset(tag.substr(name.size()));
         }
     }
     return {};

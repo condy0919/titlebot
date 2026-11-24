@@ -55,3 +55,15 @@ TEST(TitleParser, SkipsNonDocumentTitles) {
     tb::TitleParser parser;
     EXPECT_EQ(parser.parse(html.begin(), html.end()), "real");
 }
+
+TEST(TitleParser, KeepsFirstCharsetBeyondDetectionSample) {
+    std::string html =
+        std::string(1500, ' ') +
+        "<meta data-info='a>b' charset='shift_jis'><meta charset='utf-8'><title>x</title>";
+    tb::TitleParser parser;
+    for (auto it = html.begin(); it != html.end(); ++it) {
+        parser.parse(it, it + 1);
+    }
+    EXPECT_EQ(parser.sample().size(), 1024u);
+    EXPECT_EQ(parser.DeclaredCharset(), "shift_jis");
+}
