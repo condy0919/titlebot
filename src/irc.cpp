@@ -136,10 +136,7 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
         return std::nullopt;
     }
 
-    // The magic number equals to " PRIVMSG". Although unaligned access can lead
-    // to additional penalty.
-    const std::uint64_t magic_privmsg = 0x47534d5649525020;
-    if (*(std::uint64_t*)&*privmsg_start != magic_privmsg) {
+    if (s.compare(privmsg_start - s.begin(), 9, " PRIVMSG ") != 0) {
         return std::nullopt;
     }
 
