@@ -8,8 +8,10 @@ jobs:
       - name: 安装构建依赖
         run: |
           apt-get update
-          apt-get install -y ca-certificates git cmake make g++-14 pkg-config libboost-url-dev libuchardet-dev zlib1g-dev libssl-dev
+          apt-get install -y ca-certificates git git-lfs cmake make g++-14 pkg-config libboost-url-dev libuchardet-dev zlib1g-dev libssl-dev
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - name: 构建并运行测试
         env:
           CXX: g++-14
