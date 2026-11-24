@@ -2,7 +2,10 @@
 
 #include <gtest/gtest.h>
 
-TEST(Irc, NormalizesFormatting) {
+namespace {
+class Irc : public testing::Test {};
+
+TEST_F(Irc, NormalizesFormatting) {
     // \x3 0 1 hello => hello
     ASSERT_EQ(tb::normalize("\x3\x30\x31hello"), "hello");
     // \x3 0 1 , => ,
@@ -17,7 +20,7 @@ TEST(Irc, NormalizesFormatting) {
     ASSERT_EQ(tb::normalize("\x3\x39\x39,98world\x3"), "world");
 }
 
-TEST(Irc, ParsesPrivmsg) {
+TEST_F(Irc, ParsesPrivmsg) {
     auto msg = tb::parse_privmsg(
         ":condy!~condy@unaffiliated/condy PRIVMSG #linuxba :http://www.baidu.com");
     ASSERT_TRUE(msg.has_value());
@@ -82,14 +85,14 @@ TEST(Irc, ParsesPrivmsg) {
     ASSERT_EQ(msg.value().url, "2016.sina.cn/zq/abc.html");
 }
 
-TEST(Irc, PreservesUnicodeMessageBoundaries) {
+TEST_F(Irc, PreservesUnicodeMessageBoundaries) {
     EXPECT_EQ(tb::normalize("测试"), "测试");
     auto msg = tb::parse_privmsg(":a!b PRIVMSG #r :https://example.org（测试v2）");
     ASSERT_TRUE(msg);
     EXPECT_EQ(msg->url, "example.org");
 }
 
-TEST(Irc, BoundsColorParameters) {
+TEST_F(Irc, BoundsColorParameters) {
     EXPECT_EQ(tb::normalize("\x03"
                             "04,2https://2016.example"),
               "https://2016.example");
@@ -99,19 +102,19 @@ TEST(Irc, BoundsColorParameters) {
               "text");
 }
 
-TEST(Irc, ParsesOnlyMessageCommandParameters) {
+TEST_F(Irc, ParsesOnlyMessageCommandParameters) {
     EXPECT_FALSE(tb::parse_privmsg(":server NOTICE nick :see https://example.org"));
     EXPECT_FALSE(tb::parse_privmsg(":a!b PRIVMSG  :https://example.org"));
     EXPECT_TRUE(tb::parse_privmsg(":a!b  PRIVMSG #r https://example.org"));
 }
 
-TEST(Irc, FindsOverlappingScheme) {
+TEST_F(Irc, FindsOverlappingScheme) {
     auto msg = tb::parse_privmsg(":a!b PRIVMSG #r :httpHtTpS://example.org");
     ASSERT_TRUE(msg);
     EXPECT_EQ(msg->protocol, "https");
 }
 
-TEST(Irc, DistinguishesIpv6HostFromSurroundingBrackets) {
+TEST_F(Irc, DistinguishesIpv6HostFromSurroundingBrackets) {
     for (const auto& [text, expected] :
          {std::pair{"[https://example.org/path]", "example.org/path"},
           {"[http://[2001:db8::1]:8080/a]", "[2001:db8::1]:8080/a"},
@@ -122,7 +125,7 @@ TEST(Irc, DistinguishesIpv6HostFromSurroundingBrackets) {
     }
 }
 
-TEST(Irc, KeepsBalancedPathParentheses) {
+TEST_F(Irc, KeepsBalancedPathParentheses) {
     const std::string body =
         " #r :看 (https://example.org/wiki/Go_(game)) https://example.org/next";
     auto msg = tb::parse_privmsg(":alice!u@h PRIVMSG" + body);
@@ -130,3 +133,4 @@ TEST(Irc, KeepsBalancedPathParentheses) {
     EXPECT_EQ(msg->url, "example.org/wiki/Go_(game)");
     EXPECT_FALSE(tb::parse_privmsg(":alice!u@h NOTICE" + body));
 }
+} // namespace

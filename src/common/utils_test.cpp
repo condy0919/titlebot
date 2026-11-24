@@ -3,14 +3,17 @@
 #include <gtest/gtest.h>
 #include <string>
 
-TEST(Utils, UnquotesEntities) {
+namespace {
+class Utils : public testing::Test {};
+
+TEST_F(Utils, UnquotesEntities) {
     ASSERT_EQ(tb::unquote("&amp;"), "&");
     ASSERT_EQ(tb::unquote("&lt;"), "<");
     ASSERT_EQ(tb::unquote("&mu;"), "μ");
     ASSERT_EQ(tb::unquote("template&lt;T&gt; foo"), "template<T> foo");
 }
 
-TEST(Utils, ConvertsToUtf8) {
+TEST_F(Utils, ConvertsToUtf8) {
     ASSERT_EQ(tb::utf8("fjalsdjflkds123123").value(), "fjalsdjflkds123123");
 
     unsigned char buf1[] =
@@ -23,15 +26,16 @@ TEST(Utils, ConvertsToUtf8) {
     ASSERT_EQ(tb::utf8(std::string((char*)buf2)).value(), "  草榴社區  - powered by phpwind.net");
 }
 
-TEST(Utils, PreservesEmbeddedNullWhenDecodingEntities) {
+TEST_F(Utils, PreservesEmbeddedNullWhenDecodingEntities) {
     const std::string input("a\0&AMP;&#128;", 13);
     EXPECT_EQ(tb::unquote(input), std::string("a\0&€", 6));
 }
 
-TEST(Utils, DetectsTitleBeyondAsciiSample) {
+TEST_F(Utils, DetectsTitleBeyondAsciiSample) {
     const std::string title =
         "\xa4\xb3\xa4\xec\xa4\xcf\xc6\xfc\xcb\xdc\xb8\xec\xa4\xc7\xbd\xf1\xa4\xab\xa4\xec\xa4\xbf"
         "\xa5\xda\xa1\xbc\xa5\xb8\xa4\xce\xa5\xbf\xa5\xa4\xa5\xc8\xa5\xeb\xa4\xc7\xa4\xb9\xa1\xa3";
     EXPECT_EQ(tb::utf8(title, {}, std::string(1024, ' ')),
               "これは日本語で書かれたページのタイトルです。");
 }
+} // namespace

@@ -8,21 +8,24 @@
 #include "fetcher_internal.hpp"
 
 namespace {
-tb::FetchResult Fetch(std::string protocol, std::string url) {
-    boost::asio::io_context io;
-    boost::asio::ssl::context tls(boost::asio::ssl::context::tls_client);
-    auto result = boost::asio::co_spawn(
-        io, tb::FetchTitle({"alice", "#test", std::move(protocol), std::move(url)}, tls),
-        boost::asio::use_future);
-    io.run();
-    return result.get();
-}
+class Fetcher : public testing::Test {
+protected:
+    tb::FetchResult Fetch(std::string protocol, std::string url) {
+        boost::asio::io_context io;
+        boost::asio::ssl::context tls(boost::asio::ssl::context::tls_client);
+        auto result = boost::asio::co_spawn(
+            io, tb::FetchTitle({"alice", "#test", std::move(protocol), std::move(url)}, tls),
+            boost::asio::use_future);
+        io.run();
+        return result.get();
+    }
+};
 
-TEST(Fetcher, RejectsUnsupportedScheme) {
+TEST_F(Fetcher, RejectsUnsupportedScheme) {
     EXPECT_EQ(Fetch("file", "example.org"), std::unexpected(tb::FetchError::kInvalidUrl));
 }
 
-TEST(Fetcher, RejectsNonPublicDestinations) {
+TEST_F(Fetcher, RejectsNonPublicDestinations) {
     // Use IP literals to test address checks before connecting, without external DNS.
     for (auto authority :
          {"127.0.0.1", "169.254.169.254", "10.0.0.1", "192.168.1.1", "[::1]", "[2001:db8::1]"}) {

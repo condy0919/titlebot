@@ -8,6 +8,11 @@ namespace asio = boost::asio;
 using asio::use_awaitable;
 using asio::ip::tcp;
 
+class Server : public testing::Test {
+protected:
+    asio::io_context io;
+};
+
 asio::awaitable<std::string> ReadLine(tcp::socket& peer, std::string& input) {
     auto count =
         co_await asio::async_read_until(peer, asio::dynamic_buffer(input), "\r\n", use_awaitable);
@@ -62,8 +67,7 @@ asio::awaitable<void> ExerciseSession() {
     EXPECT_EQ(urls, (std::vector<std::string>{"first.example:8080/?q=title", "private.example/"}));
 }
 
-TEST(Server, RepliesToFirstLinkInChannel) {
-    asio::io_context io;
+TEST_F(Server, RepliesToFirstLinkInChannel) {
     auto test = asio::co_spawn(io, ExerciseSession(), asio::use_future);
     io.run_for(std::chrono::seconds(3));
     ASSERT_EQ(test.wait_for(std::chrono::seconds(0)), std::future_status::ready);
@@ -121,8 +125,7 @@ asio::awaitable<void> ExerciseReconnect() {
     }
 }
 
-TEST(Server, RejoinsAndIsolatesPendingReplies) {
-    asio::io_context io;
+TEST_F(Server, RejoinsAndIsolatesPendingReplies) {
     std::exception_ptr error;
     bool completed = false;
     asio::co_spawn(io, ExerciseReconnect(), [&](std::exception_ptr result) {
@@ -137,8 +140,7 @@ TEST(Server, RejoinsAndIsolatesPendingReplies) {
     }
 }
 
-TEST(Server, EndsUnregisteredSessionOnNicknameConflict) {
-    asio::io_context io;
+TEST_F(Server, EndsUnregisteredSessionOnNicknameConflict) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     tcp::socket client(io);
     client.connect(listener.local_endpoint());
@@ -152,8 +154,7 @@ TEST(Server, EndsUnregisteredSessionOnNicknameConflict) {
     EXPECT_FALSE(result.get());
 }
 
-TEST(Server, ReconnectsAfterRegistrationDeadline) {
-    asio::io_context io;
+TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     asio::co_spawn(io,
                    tb::RunBot("127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",

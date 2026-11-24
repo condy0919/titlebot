@@ -2,31 +2,33 @@
 
 #include <gtest/gtest.h>
 
-TEST(TitleParser, ReadsTitle) {
-    const std::string s = "before <title>this is title</title> after";
+namespace {
+class TitleParser : public testing::Test {
+protected:
     tb::TitleParser parser;
+};
+
+TEST_F(TitleParser, ReadsTitle) {
+    const std::string s = "before <title>this is title</title> after";
     ASSERT_EQ(parser.parse(s.begin(), s.end()).value(), "this is title");
 }
 
-TEST(TitleParser, HandlesMissingTitle) {
+TEST_F(TitleParser, HandlesMissingTitle) {
     const std::string s = "<head>nothing</head>";
-    tb::TitleParser parser;
     ASSERT_FALSE(parser.parse(s.begin(), s.end()).has_value());
 }
 
-TEST(TitleParser, HandlesAttributes) {
+TEST_F(TitleParser, HandlesAttributes) {
     const std::string s = "<title itemprop=\"name\">twitter</title>";
-    tb::TitleParser parser;
     ASSERT_EQ(parser.parse(s.begin(), s.end()).value(), "twitter");
 }
 
-TEST(TitleParser, HandlesWhitespace) {
+TEST_F(TitleParser, HandlesWhitespace) {
     const std::string s = "<  title >facebook</title>";
-    tb::TitleParser parser;
     ASSERT_EQ(parser.parse(s.begin(), s.end()).value(), "facebook");
 }
 
-TEST(TitleParser, RequiresCompleteClosingTagAtEverySplit) {
+TEST_F(TitleParser, RequiresCompleteClosingTagAtEverySplit) {
     const std::string html =
         "<titlebar>ignored</titlebar><TITLE data-label='>'>中文 < 3 &amp; A</TiTlE  >";
     // Try every split point, including splits inside multibyte characters, quoted attributes and
@@ -38,8 +40,7 @@ TEST(TitleParser, RequiresCompleteClosingTagAtEverySplit) {
     }
 }
 
-TEST(TitleParser, ReadsDeclaredCharsetAcrossChunks) {
-    tb::TitleParser parser;
+TEST_F(TitleParser, ReadsDeclaredCharsetAcrossChunks) {
     std::string html =
         "<meta content='text/html; charset=shift_jis' http-equiv='Content-Type'><title>x</title>";
     for (auto it = html.begin(); it != html.end(); ++it) {
@@ -48,20 +49,18 @@ TEST(TitleParser, ReadsDeclaredCharsetAcrossChunks) {
     EXPECT_EQ(parser.DeclaredCharset(), "shift_jis");
 }
 
-TEST(TitleParser, SkipsNonDocumentTitles) {
+TEST_F(TitleParser, SkipsNonDocumentTitles) {
     std::string html =
         "<!-- <title>comment</title> --><script>let x='<title>script</title>';</script>"
         "<style><title>style</title></style><svg><svg/><title>icon</title></svg>"
         "<span data-x='<title>attr</title>'></span><title /><<title>real</title>";
-    tb::TitleParser parser;
     EXPECT_EQ(parser.parse(html.begin(), html.end()), "real");
 }
 
-TEST(TitleParser, KeepsFirstCharsetBeyondDetectionSample) {
+TEST_F(TitleParser, KeepsFirstCharsetBeyondDetectionSample) {
     std::string html =
         std::string(1500, ' ') +
         "<meta data-info='a>b' charset='shift_jis'><meta charset='utf-8'><title>x</title>";
-    tb::TitleParser parser;
     for (auto it = html.begin(); it != html.end(); ++it) {
         parser.parse(it, it + 1);
     }
@@ -69,7 +68,7 @@ TEST(TitleParser, KeepsFirstCharsetBeyondDetectionSample) {
     EXPECT_EQ(parser.DeclaredCharset(), "shift_jis");
 }
 
-TEST(TitleParser, RecoversAfterTextAndShortComments) {
+TEST_F(TitleParser, RecoversAfterTextAndShortComments) {
     for (std::string prefix : {"<noscript>1 < 2, it's ok</noscript>", "<!-->", "<!--->",
                                "<title / >", "<!-- ordinary > <title>ignore</title> -->"}) {
         auto html = prefix + "<title>real</title>";
@@ -82,7 +81,7 @@ TEST(TitleParser, RecoversAfterTextAndShortComments) {
     }
 }
 
-TEST(TitleParser, IgnoresNestedTemplateMetadata) {
+TEST_F(TitleParser, IgnoresNestedTemplateMetadata) {
     std::string prefix = "<template><template><meta charset='shift_jis'></template>"
                          "<title>占位</title></template>";
     tb::TitleParser only;
@@ -95,3 +94,4 @@ TEST(TitleParser, IgnoresNestedTemplateMetadata) {
         EXPECT_EQ(parser.DeclaredCharset(), "utf-8");
     }
 }
+} // namespace
