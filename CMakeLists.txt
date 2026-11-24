@@ -68,15 +68,16 @@ target_link_libraries(titlebot
 
 # Test
 if(TITLEBOT_ENABLE_TESTS)
-  # libdoctest.a and libdoctest_with_main.a will be built
-  FetchContent_Declare(
-    doctest
-    GIT_REPOSITORY https://github.com/doctest/doctest
-    GIT_TAG        v2.4.11
-    GIT_SHALLOW    true
-    GIT_PROGRESS   true
-  )
-  FetchContent_MakeAvailable(doctest)
+  find_package(GTest CONFIG QUIET)
+  if(NOT GTest_FOUND)
+    FetchContent_Declare(
+      googletest
+      GIT_REPOSITORY https://github.com/google/googletest.git
+      GIT_TAG v1.15.2
+      GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(googletest)
+  endif()
 endif()
 
 ### Definitions
@@ -111,8 +112,9 @@ if(TITLEBOT_ENABLE_TESTS)
   target_link_libraries(titlebot_unittests
     PRIVATE
       titlebot
-      doctest::doctest_with_main
+      GTest::gtest_main
   )
 
-  add_test(NAME titlebot_unittests COMMAND titlebot_unittests)
+  include(GoogleTest)
+  gtest_discover_tests(titlebot_unittests)
 endif()

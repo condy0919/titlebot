@@ -3,13 +3,13 @@
 
 #include <fstream>
 
-#include <doctest/doctest.h>
+#include <gtest/gtest.h>
 #include <ios>
 #include <memory>
 
 using namespace std::string_literals;
 
-TEST_CASE("GzipDecoder") {
+TEST(Decoder, ReadsGzipTitle) {
     const std::string path = TITLEBOT_PROJ_ROOT + "/assets/bilibili.html.gz"s;
 
     tb::TitleParser tparser;
@@ -25,6 +25,6 @@ TEST_CASE("GzipDecoder") {
         }
     }
 
-    REQUIRE(found.has_value());
-    REQUIRE_EQ(found.value(), "奥巴马演唱蹲妹单曲《Call me maybe》@柚子木字幕组_哔哩哔哩_bilibili"); // NOLINT
+    ASSERT_TRUE(found.has_value());
+    ASSERT_EQ(found.value(), "奥巴马演唱蹲妹单曲《Call me maybe》@柚子木字幕组_哔哩哔哩_bilibili"); // NOLINT
 }

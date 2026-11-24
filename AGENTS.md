@@ -10,7 +10,7 @@ titlebot 为 IRC 用户获取网页标题。处理聊天输入时，仅解析 `P
 
 ## 构建与验证
 
-使用 C++23（`-std=c++23`），以服务器的 Debian g++ 14.2.0 和配套 libstdc++ 为兼容基线。构建需要 CMake 3.20 或更高版本，并安装 pkg-config、uchardet、zlib 和 OpenSSL 开发包。开启测试时，CMake 通过 FetchContent 获取 doctest v2.4.11，首次配置需要能访问依赖源或提供本地副本。
+使用 C++23（`-std=c++23`），以服务器的 Debian g++ 14.2.0 和配套 libstdc++ 为兼容基线。构建需要 CMake 3.20 或更高版本，并安装 pkg-config、uchardet、zlib 和 OpenSSL 开发包。开启测试时，CMake 优先使用系统安装的 GoogleTest，也可以通过 FetchContent 获取 v1.15.2。
 
 ```sh
 cmake -S . -B build -DTITLEBOT_ENABLE_TESTS=ON
@@ -18,7 +18,7 @@ cmake --build build --parallel
 (cd build && ctest --output-on-failure)
 ```
 
-修复缺陷先复现，再运行相关测试和完整测试套件。行为变更在对应的 `src/*_unittest.cpp` 中添加 doctest 用例。网页内容优先使用内联样本或 `assets/` 中的本地文件，使测试可重复运行。解析器的回归用例应覆盖触发问题的输入，例如截断命令或缺少分隔符的消息。用中文注释解释难以从样本或断言看出的测试意图。
+修复缺陷先复现，再运行相关测试和完整测试套件。行为变更在对应的 `src/*_unittest.cpp` 中添加 GoogleTest 用例。网页内容优先使用内联样本或 `assets/` 中的本地文件，使测试可重复运行。解析器的回归用例应覆盖触发问题的输入，例如截断命令或缺少分隔符的消息。用中文注释解释难以从样本或断言看出的测试意图。
 
 ## 实现与协作
 
