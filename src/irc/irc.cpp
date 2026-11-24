@@ -1,9 +1,10 @@
 #include "irc.hpp"
 
 #include <algorithm>
+#include <cctype>
+
 #include <boost/beast/core/string.hpp>
 #include <boost/url/ipv6_address.hpp>
-#include <cctype>
 
 namespace {
 // HTTP chars that need quoting.

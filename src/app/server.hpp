@@ -1,9 +1,10 @@
 #ifndef TITLEBOT_SERVER_HPP_
 #define TITLEBOT_SERVER_HPP_
 
-#include <boost/asio/ip/tcp.hpp>
 #include <chrono>
 #include <functional>
+
+#include <boost/asio/ip/tcp.hpp>
 
 #include "http/fetcher.hpp"
 

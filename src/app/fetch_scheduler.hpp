@@ -1,12 +1,13 @@
 #ifndef TITLEBOT_FETCH_SCHEDULER_HPP_
 #define TITLEBOT_FETCH_SCHEDULER_HPP_
 
-#include <boost/asio/any_io_executor.hpp>
 #include <chrono>
 #include <list>
 #include <map>
 #include <memory>
 #include <vector>
+
+#include <boost/asio/any_io_executor.hpp>
 
 #include "server.hpp"
 

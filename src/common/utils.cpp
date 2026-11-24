@@ -1,16 +1,18 @@
 #include "utils.hpp"
 
+#include <iconv.h>
+#include <uchardet/uchardet.h>
+
 #include <algorithm>
 #include <array>
-#include <boost/scope_exit.hpp>
 #include <cctype>
 #include <cerrno>
 #include <charconv>
-#include <iconv.h>
 #include <optional>
 #include <string>
 #include <tuple>
-#include <uchardet/uchardet.h>
+
+#include <boost/scope_exit.hpp>
 
 namespace {
 inline constexpr std::array<std::tuple<const char*, unsigned>, 256> entity_names = {{

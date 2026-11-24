@@ -1,8 +1,9 @@
 #include "fetch_scheduler.hpp"
 
 #include <algorithm>
-#include <boost/asio/co_spawn.hpp>
 #include <iostream>
+
+#include <boost/asio/co_spawn.hpp>
 
 namespace tb {
 namespace {

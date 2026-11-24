@@ -1,12 +1,13 @@
 #ifndef TITLEBOT_FETCHER_HPP_
 #define TITLEBOT_FETCHER_HPP_
 
-#include <boost/asio/awaitable.hpp>
-#include <boost/asio/ssl/context.hpp>
 #include <cstdint>
 #include <expected>
 #include <optional>
 #include <string>
+
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/ssl/context.hpp>
 
 #include "irc/irc.hpp"
 

@@ -60,15 +60,17 @@ ForEachMacros:
   - foreach
   - Q_FOREACH
   - BOOST_FOREACH
-IncludeBlocks:   Preserve
+IncludeBlocks:   Regroup
 IncludeCategories:
-  - Regex:           '^"(llvm|llvm-c|clang|clang-c)/'
+  - Regex:           '^<.*[.]h>$'
+    Priority:        1
+  - Regex:           '^<[a-zA-Z0-9_]+>$'
     Priority:        2
-  - Regex:           '^(<|"(gtest|gmock|isl|json)/)'
+  - Regex:           '^<'
     Priority:        3
   - Regex:           '.*'
-    Priority:        1
-IncludeIsMainRegex: '(Test)?$'
+    Priority:        4
+IncludeIsMainRegex: '(_test)?$'
 IndentCaseLabels: false
 IndentPPDirectives: None
 IndentWidth:     4

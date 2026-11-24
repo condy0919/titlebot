@@ -24,6 +24,7 @@ cmake --build build --parallel
 
 - 只修改与任务相关的文件，保留工作区已有改动。先检查实际调用方和测试，再决定是否修改接口。涉及多种可行设计时，在计划中说明影响范围、取舍与验证方式。示意图使用 Mermaid。
 - 格式和 include 排序遵循 `.clang-format`，沿用所在模块的命名约定，例如 `tb::PrivMsg` 和 `tb::parse_privmsg`。头文件使用 include guard 并直接包含所需依赖。控制语句使用花括号。
+- `#include` 依次分为对应头文件（`foo.cpp` 和 `foo_test.cpp` 的 `foo.hpp`）、C 系统头及其他以尖括号引用的 `.h`、C++ 标准库、其他第三方库、项目头文件。各组内按字母顺序排列，非空组之间空一行。例如 `<iconv.h>`、`<uchardet/uchardet.h>` 在 `<algorithm>` 之前，`<boost/scope_exit.hpp>` 在标准库之后。见 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html#Names_and_Order_of_Includes)。
 - 新增需要返回错误原因的 C++ 接口使用 `std::expected<T, Error>`，无返回值时使用 `std::expected<void, Error>`。失败用 `std::unexpected(error)` 返回，Error 只表示失败。调用方先检查结果，再访问值或错误；资源由 RAII 管理。系统调用和第三方接口在项目边界转换。
 - 保持现有错误语义。例如 `parse_privmsg` 通过 `std::nullopt` 表示没有可处理的消息。比较协议文本时检查长度，避免依赖主机字节序或未对齐的整数读取。
 - 新增或修改的代码注释（包括函数接口注释和测试注释）使用英文。新增的 Markdown 文档使用中文。

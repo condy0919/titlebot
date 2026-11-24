@@ -1,8 +1,9 @@
 #include "decoder.hpp"
 
+#include <zlib.h>
+
 #include <array>
 #include <limits>
-#include <zlib.h>
 
 namespace tb {
 struct ContentDecoder::InflateState {

@@ -1,7 +1,8 @@
 #include "decoder.hpp"
 
-#include <fstream>
 #include <gtest/gtest.h>
+
+#include <fstream>
 #include <ios>
 #include <memory>
 

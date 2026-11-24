@@ -1,7 +1,8 @@
 #include "fetch_scheduler.hpp"
 
-#include <boost/asio.hpp>
 #include <gtest/gtest.h>
+
+#include <boost/asio.hpp>
 
 namespace {
 namespace asio = boost::asio;

@@ -1,6 +1,7 @@
 #include "utils.hpp"
 
 #include <gtest/gtest.h>
+
 #include <string>
 
 namespace {

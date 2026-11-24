@@ -1,11 +1,12 @@
 #include "title_parser.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <utility>
+
 #include <boost/beast/core/string.hpp>
 #include <boost/beast/http/rfc7230.hpp>
 #include <boost/locale/utf.hpp>
-#include <cctype>
-#include <utility>
 
 namespace tb {
 

@@ -1,12 +1,13 @@
 #include "fetcher.hpp"
 
+#include <chrono>
+
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/url.hpp>
-#include <chrono>
 
 #include "common/utils.hpp"
 #include "decoder.hpp"

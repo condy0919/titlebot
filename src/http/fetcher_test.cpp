@@ -1,9 +1,10 @@
 #include "fetcher.hpp"
 
-#include <boost/asio.hpp>
-#include <boost/asio/ssl.hpp>
 #include <gtest/gtest.h>
 #include <zlib.h>
+
+#include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 
 #include "fetcher_internal.hpp"
 

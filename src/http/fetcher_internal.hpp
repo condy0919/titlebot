@@ -1,9 +1,10 @@
 #ifndef TITLEBOT_FETCHER_INTERNAL_HPP_
 #define TITLEBOT_FETCHER_INTERNAL_HPP_
 
-#include <boost/asio/ip/tcp.hpp>
 #include <chrono>
 #include <functional>
+
+#include <boost/asio/ip/tcp.hpp>
 
 #include "fetcher.hpp"
 

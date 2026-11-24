@@ -1,7 +1,8 @@
-#include "server.hpp"
+#include <iostream>
 
 #include <boost/asio.hpp>
-#include <iostream>
+
+#include "server.hpp"
 
 namespace asio = boost::asio;
 

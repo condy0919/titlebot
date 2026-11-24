@@ -1,8 +1,9 @@
 #include "server.hpp"
 
-#include <boost/asio.hpp>
 #include <deque>
 #include <iostream>
+
+#include <boost/asio.hpp>
 
 #include "fetch_scheduler.hpp"
 
