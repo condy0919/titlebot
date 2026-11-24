@@ -99,11 +99,16 @@ if(TITLEBOT_ENABLE_TESTS)
     src/app/fetch_scheduler_test.cpp
     src/http/fetcher_test.cpp
     src/http/decoder_test.cpp
+    src/common/deadline_test.cpp
+    src/common/log_test.cpp
     src/common/numfmt_test.cpp
     src/common/utils_test.cpp
     src/irc/irc_test.cpp
     src/html/title_parser_test.cpp
   )
+
+  set_source_files_properties(src/common/log_test.cpp PROPERTIES
+    COMPILE_DEFINITIONS SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
   target_compile_definitions(titlebot_unittests
     PUBLIC
@@ -114,6 +119,7 @@ if(TITLEBOT_ENABLE_TESTS)
     PRIVATE
       titlebot
       ZLIB::ZLIB
+      spdlog::spdlog
       GTest::gtest_main
   )
 
