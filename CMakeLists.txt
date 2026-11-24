@@ -66,6 +66,15 @@ target_link_libraries(titlebot
     OpenSSL::SSL
 )
 
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG v1.17.0
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(spdlog)
+target_link_libraries(titlebot PRIVATE spdlog::spdlog)
+
 find_package(Boost 1.81 CONFIG REQUIRED COMPONENTS url)
 target_link_libraries(titlebot PUBLIC Boost::headers PRIVATE Boost::url)
 add_executable(titlebot_cli src/app/main.cpp)

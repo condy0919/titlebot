@@ -10,7 +10,7 @@ titlebot 是一个 IRC 网页标题机器人。它从每条 `PRIVMSG` 中提取�
 
 ## 构建与测试
 
-项目使用 C++23，以 Debian g++ 14.2.0 和配套 libstdc++ 为兼容基线。构建需要 CMake 3.20 或更高版本、pkg-config、Boost 1.81 或更高版本（含 Boost.URL），以及 uchardet、zlib 和 OpenSSL 开发包。
+项目使用 C++23，以 Debian g++ 14.2.0 和配套 libstdc++ 为兼容基线。构建需要 CMake 3.20 或更高版本、pkg-config、Boost 1.81 或更高版本（含 Boost.URL），以及 uchardet、zlib 和 OpenSSL 开发包。首次配置时，CMake 通过 FetchContent 获取 spdlog v1.17.0。
 
 在 Debian trixie 上，可用下面的命令安装依赖。构建命令从仓库根目录执行。
 

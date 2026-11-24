@@ -10,7 +10,7 @@ titlebot 为 IRC 用户获取网页标题。处理聊天输入时，仅解析 `P
 
 ## 构建与验证
 
-使用 C++23（`-std=c++23`），以服务器的 Debian g++ 14.2.0 和配套 libstdc++ 为兼容基线。构建需要 CMake 3.20 或更高版本，并安装 pkg-config、Boost 1.81 或更高版本（含 Boost.URL）、uchardet、zlib 和 OpenSSL 开发包。开启测试时，CMake 通过 FetchContent 获取固定版本的 GoogleTest v1.15.2。
+使用 C++23（`-std=c++23`），以服务器的 Debian g++ 14.2.0 和配套 libstdc++ 为兼容基线。构建需要 CMake 3.20 或更高版本，并安装 pkg-config、Boost 1.81 或更高版本（含 Boost.URL）、uchardet、zlib 和 OpenSSL 开发包。首次配置时，CMake 通过 FetchContent 获取 spdlog v1.17.0。开启测试时，CMake 通过 FetchContent 获取固定版本的 GoogleTest v1.15.2。
 
 ```sh
 cmake -S . -B build -DTITLEBOT_ENABLE_TESTS=ON

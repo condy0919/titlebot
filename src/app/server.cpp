@@ -1,10 +1,12 @@
 #include "server.hpp"
 
 #include <deque>
+#include <exception>
 #include <iostream>
 
 #include <boost/asio.hpp>
 
+#include "common/log.hpp"
 #include "fetch_scheduler.hpp"
 
 namespace tb {
@@ -50,10 +52,24 @@ void Send(std::shared_ptr<Session> session, std::string line, bool priority = fa
     if (!session->writing) {
         session->writing = true;
         asio::co_spawn(session->socket.get_executor(), Drain(session),
-                       [session](std::exception_ptr error) {
-                           if (error) {
-                               boost::system::error_code ignored;
-                               session->socket.close(ignored);
+                       [session](const std::exception_ptr& error) {
+                           if (!error) {
+                               return;
+                           }
+
+                           try {
+                               std::rethrow_exception(error);
+                           } catch (const std::exception& ex) {
+                               TB_LOG_ERROR("IRC write failed: {}", ex.what());
+                           } catch (...) {
+                               TB_LOG_ERROR("IRC write failed with an unknown exception");
+                           }
+
+                           boost::system::error_code close_error;
+                           session->socket.close(close_error);
+                           if (close_error) {
+                               TB_LOG_WARN("Failed to close IRC socket after write failure: {}",
+                                           close_error.message());
                            }
                        });
     }
