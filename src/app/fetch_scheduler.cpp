@@ -20,7 +20,7 @@ FetchScheduler::FetchScheduler(boost::asio::any_io_executor executor, Fetch fetc
 void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
     MaybeReport();
     if (subscribers_ >= kMaxActive + kQueue) {
-        ++stats_.dropped;
+        ++stats_.queue_drops;
         return;
     }
     for (auto& job : jobs_) {
@@ -44,7 +44,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
     if (jobs_.size() - active_ > kQueue) {
         jobs_.pop_back();
         --subscribers_;
-        ++stats_.dropped;
+        ++stats_.queue_drops;
     }
     stats_.peak_queue = std::max(stats_.peak_queue, jobs_.size() - active_);
 }
@@ -73,8 +73,12 @@ void FetchScheduler::Complete(std::list<Job>::iterator job, Clock::time_point st
                               const FetchResult& result) {
     ++stats_.completed;
     stats_.elapsed += std::chrono::duration_cast<std::chrono::milliseconds>(now_() - start);
-    if (!result && result.error() == FetchError::kTimeout) {
-        ++stats_.timeouts;
+    if (!result) {
+        ++stats_.failures[result.error()];
+    } else if (result->has_value()) {
+        ++stats_.titles;
+    } else {
+        ++stats_.no_title;
     }
     auto replies = std::move(job->replies);
     jobs_.erase(job);
@@ -90,7 +94,7 @@ void FetchScheduler::Complete(std::list<Job>::iterator job, Clock::time_point st
 }
 
 void FetchScheduler::RecordReplyDrop() {
-    ++stats_.dropped;
+    ++stats_.reply_drops;
     MaybeReport();
 }
 
@@ -104,8 +108,20 @@ void FetchScheduler::MaybeReport() {
 void FetchScheduler::Report() const {
     std::clog << "fetch active=" << active_ << " queued=" << jobs_.size() - active_
               << " peak_queue=" << stats_.peak_queue << " completed=" << stats_.completed
-              << " elapsed_ms_total=" << stats_.elapsed.count() << " timeouts=" << stats_.timeouts
-              << " merged=" << stats_.merged << " dropped=" << stats_.dropped << '\n';
+              << " elapsed_ms_total=" << stats_.elapsed.count() << " titles=" << stats_.titles
+              << " no_title=" << stats_.no_title << " merged=" << stats_.merged
+              << " queue_drops=" << stats_.queue_drops << " reply_drops=" << stats_.reply_drops;
+    for (auto [error, name] : {std::pair{FetchError::kInvalidUrl, "invalid_url"},
+                               {FetchError::kNetwork, "network"},
+                               {FetchError::kTimeout, "timeouts"},
+                               {FetchError::kDecode, "decode"},
+                               {FetchError::kResponseLimit, "response_limit"},
+                               {FetchError::kBlockedAddress, "blocked"},
+                               {FetchError::kRedirectLimit, "redirect_limit"}}) {
+        auto it = stats_.failures.find(error);
+        std::clog << ' ' << name << '=' << (it == stats_.failures.end() ? 0 : it->second);
+    }
+    std::clog << '\n';
 }
 
 bool ReplyLimiter::Allow(std::string target, Clock::time_point now) {

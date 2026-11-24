@@ -5,6 +5,7 @@
 #include <boost/asio/any_io_executor.hpp>
 #include <chrono>
 #include <list>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -23,8 +24,11 @@ public:
 
     struct Stats {
         std::size_t completed = 0;
-        std::size_t timeouts = 0;
-        std::size_t dropped = 0;
+        std::size_t titles = 0;
+        std::size_t no_title = 0;
+        std::map<FetchError, std::size_t> failures;
+        std::size_t queue_drops = 0;
+        std::size_t reply_drops = 0;
         std::size_t merged = 0;
         std::size_t peak_queue = 0;
         std::chrono::milliseconds elapsed{};

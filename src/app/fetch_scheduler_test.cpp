@@ -21,6 +21,12 @@ protected:
             if (msg.url.ends_with("timeout")) {
                 co_return std::unexpected(tb::FetchError::kTimeout);
             }
+            if (msg.url == "decode") {
+                co_return std::unexpected(tb::FetchError::kDecode);
+            }
+            if (msg.url == "missing") {
+                co_return std::nullopt;
+            }
             co_return msg.url;
         },
         [this] { return now; });
@@ -49,12 +55,27 @@ TEST_F(SchedulerTest, SharesDownloadsAndSkipsHostAtCapacity) {
     EXPECT_EQ(release.cancel(), 1u);
     io.run();
     EXPECT_EQ(scheduler->stats().completed, 4u);
-    EXPECT_EQ(scheduler->stats().timeouts, 1u);
+    EXPECT_EQ(scheduler->stats().failures.at(tb::FetchError::kTimeout), 1u);
     EXPECT_EQ(scheduler->stats().merged, 1u);
     EXPECT_EQ(scheduler->stats().elapsed, std::chrono::milliseconds(21));
     std::sort(delivered.begin(), delivered.end());
     EXPECT_EQ(delivered, (std::vector<std::string>{"#first slow/a", "#room SLOW.:443/b",
                                                    "#room slow/c", "#second slow/a"}));
+}
+
+TEST_F(SchedulerTest, SeparatesCompletionOutcomes) {
+    for (auto url : {"ok", "missing", "decode", "timeout"}) {
+        Submit(url);
+    }
+    io.poll();
+    release.cancel();
+    io.run();
+    const auto& stats = scheduler->stats();
+    EXPECT_EQ(stats.completed, 4u);
+    EXPECT_EQ(stats.titles, 1u);
+    EXPECT_EQ(stats.no_title, 1u);
+    EXPECT_EQ(stats.failures.at(tb::FetchError::kDecode), 1u);
+    EXPECT_EQ(stats.failures.at(tb::FetchError::kTimeout), 1u);
 }
 
 TEST_F(SchedulerTest, BoundsActiveAndWaitingWork) {
@@ -64,7 +85,10 @@ TEST_F(SchedulerTest, BoundsActiveAndWaitingWork) {
     io.poll();
     EXPECT_EQ(started.size(), 8u);
     EXPECT_EQ(scheduler->stats().peak_queue, 64u);
-    EXPECT_EQ(scheduler->stats().dropped, 28u);
+    EXPECT_EQ(scheduler->stats().queue_drops, 28u);
+    scheduler->RecordReplyDrop();
+    EXPECT_EQ(scheduler->stats().reply_drops, 1u);
+    EXPECT_EQ(scheduler->stats().queue_drops, 28u);
     while (release.cancel()) {
         io.poll();
     }
@@ -83,7 +107,7 @@ TEST_F(SchedulerTest, BoundsSubscribersForOneDownload) {
     release.cancel();
     io.run();
     EXPECT_EQ(replies, 2u);
-    EXPECT_EQ(scheduler->stats().dropped, 28u);
+    EXPECT_EQ(scheduler->stats().queue_drops, 28u);
     EXPECT_EQ(scheduler->stats().merged, 71u);
     // 其他频道有独立额度，到达窗口边界后原频道恢复。
     EXPECT_TRUE(limiter.Allow("#two", now));
