@@ -5,8 +5,8 @@
 titlebot 为 IRC 用户获取网页标题。处理聊天输入时，仅解析 `PRIVMSG`，每条消息只取第一个 URL。修改解析行为时，用具体的 IRC 消息或 HTML 样本说明输入和预期结果。
 
 - `src/irc/irc.cpp` 负责 IRC 文本规范化和消息解析，`src/html/title_parser.cpp` 负责从网页内容提取标题。
-- 顶层 CMake 的 `titlebot` 目标是库，当前编译 `irc.cpp`、`title_parser.cpp`、`decoder.cpp` 和 `utils.cpp`。修改 `main.cpp`、连接或抓取代码时，需另行验证涉及的调用路径，默认构建未覆盖这些源文件。
-- 构建目标、语言标准和依赖以顶层 `CMakeLists.txt` 为准。README 中的部署脚本说明属于旧版流程。
+- 默认构建解析和会话库 `titlebot`、可执行目标 `titlebot_cli`（产物名为 `titlebot`）及 GoogleTest。程序入口在 `src/app/main.cpp`，会话和网页抓取分别在 `src/app/server.cpp` 与 `src/http/fetcher.cpp`。
+- 构建要求见顶层 CMakeLists.txt，运行参数见 README。
 
 ## 构建与验证
 

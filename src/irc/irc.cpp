@@ -14,13 +14,10 @@ inline constexpr bool is_tspecial(char c) {
     case '@':
     case ',':
     case ';':
-    case ':':
     case '\\':
     case '\"':
     case '[':
     case ']':
-    case '?':
-    case '=':
     case '{':
     case '}':
     case ' ':
@@ -110,7 +107,7 @@ std::string normalize(const std::string& s) {
     }
 
     // Remove format prefix.
-    std::erase_if(out, [](char c) { return !std::isprint(c); });
+    std::erase_if(out, [](char c) { return !std::isprint(static_cast<unsigned char>(c)); });
     return out;
 }
 
@@ -121,7 +118,7 @@ std::string normalize(const std::string& s) {
 // schema: http
 // url: www.baidu.com
 std::optional<PrivMsg> parse_privmsg(const std::string& s) {
-    if (s.front() != ':') {
+    if (s.empty() || s.front() != ':') {
         return std::nullopt;
     }
 
@@ -213,7 +210,7 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
             break;
 
         case Slash2:
-            if (std::isalnum(c)) {
+            if (std::isalnum(static_cast<unsigned char>(c))) {
                 url.push_back(c);
                 state = Url;
             } else {

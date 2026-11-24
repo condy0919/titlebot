@@ -18,6 +18,8 @@ option(TITLEBOT_ENABLE_TESTS "Enable tests" ON)
 option(TITLEBOT_ENABLE_BENCHMARKS "Enable benchmarks" OFF)
 
 add_library(titlebot
+  src/app/server.cpp
+  src/http/fetcher.cpp
   src/irc/irc.cpp
   src/http/decoder.cpp
   src/html/title_parser.cpp
@@ -71,6 +73,12 @@ target_link_libraries(titlebot
     OpenSSL::SSL
 )
 
+find_package(Boost CONFIG REQUIRED)
+target_link_libraries(titlebot PUBLIC Boost::headers)
+add_executable(titlebot_cli src/app/main.cpp)
+set_target_properties(titlebot_cli PROPERTIES OUTPUT_NAME titlebot)
+target_link_libraries(titlebot_cli PRIVATE titlebot)
+
 # Test
 if(TITLEBOT_ENABLE_TESTS)
   FetchContent_Declare(
@@ -82,6 +90,8 @@ if(TITLEBOT_ENABLE_TESTS)
   FetchContent_MakeAvailable(googletest)
 
   add_executable(titlebot_unittests
+    src/app/server_test.cpp
+    src/http/fetcher_test.cpp
     src/http/decoder_test.cpp
     src/common/numfmt_test.cpp
     src/common/utils_test.cpp

@@ -32,14 +32,16 @@ titlebot 仅解析 PRIVMSG 类型的消息，且仅解析消息中第一条 url�
 
 安装使用
 ------------
-``` git clone https://github.com/condy0919/titlebot ```
+使用 CMake 3.20 或更高版本构建。首次开启测试时需要获取 GoogleTest。
 
-修改 scripts/deploy.sh 文件，可供配置项分别为 TITLEBOT\_NICK, TITLEBOT\_USER, TITLEBOT\_CHANNELS。当 TITLEBOT\_CHANNELS 中有多个 channels 的情况下必须带有引号。
+```sh
+cmake -S . -B build
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+./build/titlebot irc.example.org 6667 titlebot '#example'
+```
 
-``` sh ./script/deploy.sh ``` 编译
-
-``` ./build/titlebot ``` 运行程序。
-
+四个参数分别为 IRC 服务器、TCP 端口、昵称和频道列表。多个频道用逗号分隔。当前 IRC 连接使用明文 TCP，网页抓取支持 HTTP 和 HTTPS。
 
 后记
 ------------

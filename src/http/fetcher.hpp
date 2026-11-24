@@ -1,21 +1,16 @@
-#pragma once
+#ifndef TITLEBOT_FETCHER_HPP_
+#define TITLEBOT_FETCHER_HPP_
 
-#include "connection.hpp"
-#include <boost/asio.hpp>
-#include <functional>
+#include "irc/irc.hpp"
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/ssl/context.hpp>
+#include <expected>
+#include <optional>
+#include <string>
 
-class Fetcher {
-public:
-    Fetcher();
-
-    void start(std::string schema, std::string host, std::string uri,
-               std::function<void(std::string)> cb);
-
-    void run();
-
-    void poll();
-
-private:
-    boost::asio::io_service io_service_;
-    std::shared_ptr<boost::asio::io_service::work> work_;
-};
+namespace tb {
+enum class FetchError { kInvalidUrl, kBlockedAddress, kNetwork, kTimeout };
+using FetchResult = std::expected<std::optional<std::string>, FetchError>;
+boost::asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, boost::asio::ssl::context& tls);
+} // namespace tb
+#endif
