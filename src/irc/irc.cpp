@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <boost/beast/core/string.hpp>
+#include <boost/url/ipv6_address.hpp>
 #include <cctype>
 
 namespace {
@@ -17,6 +18,8 @@ inline constexpr bool is_tspecial(char c) {
     case ';':
     case '\\':
     case '\"':
+    case '[':
+    case ']':
     case '{':
     case '}':
     case ' ':
@@ -113,8 +116,16 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
             (tail.front() != '[' && !std::isalnum(static_cast<unsigned char>(tail.front())))) {
             continue;
         }
-        auto end =
-            std::ranges::find_if(tail, [](unsigned char c) { return c >= 128 || is_tspecial(c); });
+        auto suffix = tail;
+        if (tail.starts_with('[')) {
+            auto close = tail.find(']');
+            if (close == tail.npos || !boost::urls::parse_ipv6_address(tail.substr(1, close - 1))) {
+                continue;
+            }
+            suffix.remove_prefix(close + 1);
+        }
+        auto end = std::ranges::find_if(suffix,
+                                        [](unsigned char c) { return c >= 128 || is_tspecial(c); });
         return PrivMsg{std::string(who), std::string(target), secure ? "https" : "http",
                        std::string(tail.begin(), end)};
     }

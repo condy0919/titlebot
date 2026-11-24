@@ -73,9 +73,8 @@ TEST(Irc, ParsesPrivmsg) {
     ASSERT_EQ(msg.value().url, "www.baidu.com");
 
     // url starting with digits
-    msg = tb::parse_privmsg(
-        ":condy!~condy@unaffiliated/condy PRIVMSG #linuxba :>   "
-        "http://2016.sina.cn/zq/abc.html 测试");
+    msg = tb::parse_privmsg(":condy!~condy@unaffiliated/condy PRIVMSG #linuxba :>   "
+                            "http://2016.sina.cn/zq/abc.html 测试");
     ASSERT_TRUE(msg.has_value());
     ASSERT_EQ(msg.value().who, "condy");
     ASSERT_EQ(msg.value().channel, "#linuxba");
@@ -91,8 +90,13 @@ TEST(Irc, PreservesUnicodeMessageBoundaries) {
 }
 
 TEST(Irc, BoundsColorParameters) {
-    EXPECT_EQ(tb::normalize("\x03" "04,2https://2016.example"), "https://2016.example");
-    EXPECT_EQ(tb::normalize("\x03" "4\x03" "12text"), "text");
+    EXPECT_EQ(tb::normalize("\x03"
+                            "04,2https://2016.example"),
+              "https://2016.example");
+    EXPECT_EQ(tb::normalize("\x03"
+                            "4\x03"
+                            "12text"),
+              "text");
 }
 
 TEST(Irc, ParsesOnlyMessageCommandParameters) {
@@ -105,4 +109,15 @@ TEST(Irc, FindsOverlappingScheme) {
     auto msg = tb::parse_privmsg(":a!b PRIVMSG #r :httpHtTpS://example.org");
     ASSERT_TRUE(msg);
     EXPECT_EQ(msg->protocol, "https");
+}
+
+TEST(Irc, DistinguishesIpv6HostFromSurroundingBrackets) {
+    for (const auto& [text, expected] :
+         {std::pair{"[https://example.org/path]", "example.org/path"},
+          {"[http://[2001:db8::1]:8080/a]", "[2001:db8::1]:8080/a"},
+          {"https://[bad https://example.org", "example.org"}}) {
+        auto msg = tb::parse_privmsg(std::string(":a!b PRIVMSG #r :") + text);
+        ASSERT_TRUE(msg);
+        EXPECT_EQ(msg->url, expected);
+    }
 }
