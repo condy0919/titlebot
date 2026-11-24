@@ -26,5 +26,6 @@ cmake --build build --parallel
 - 格式和 include 排序遵循 `.clang-format`，沿用所在模块的命名约定，例如 `tb::PrivMsg` 和 `tb::parse_privmsg`。头文件使用 include guard 并直接包含所需依赖。控制语句使用花括号。
 - 新增需要返回错误原因的 C++ 接口使用 `std::expected<T, Error>`，无返回值时使用 `std::expected<void, Error>`。失败用 `std::unexpected(error)` 返回，Error 只表示失败。调用方先检查结果，再访问值或错误；资源由 RAII 管理。系统调用和第三方接口在项目边界转换。
 - 保持现有错误语义。例如 `parse_privmsg` 通过 `std::nullopt` 表示没有可处理的消息。比较协议文本时检查长度，避免依赖主机字节序或未对齐的整数读取。
-- 标识符与提交信息使用英文，新增注释与 Markdown 文档使用中文。提交采用 Conventional Commits，例如 `fix(irc): handle truncated PRIVMSG commands`。
+- 新增或修改的代码注释（包括函数接口注释）和新增的 Markdown 文档使用中文。
+- 标识符与提交信息使用英文。提交采用 Conventional Commits，例如 `fix(irc): handle truncated PRIVMSG commands`。
 - 每次提交聚焦一个目的。提交前用 `git diff --cached --numstat` 检查暂存内容，新增与删除合计不超过 1000 行。仅在明确要求时推送到远端或执行破坏性 Git 操作。
