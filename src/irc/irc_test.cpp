@@ -94,3 +94,9 @@ TEST(Irc, BoundsColorParameters) {
     EXPECT_EQ(tb::normalize("\x03" "04,2https://2016.example"), "https://2016.example");
     EXPECT_EQ(tb::normalize("\x03" "4\x03" "12text"), "text");
 }
+
+TEST(Irc, ParsesOnlyMessageCommandParameters) {
+    EXPECT_FALSE(tb::parse_privmsg(":server NOTICE nick :see https://example.org"));
+    EXPECT_FALSE(tb::parse_privmsg(":a!b PRIVMSG  :https://example.org"));
+    EXPECT_TRUE(tb::parse_privmsg(":a!b  PRIVMSG #r https://example.org"));
+}

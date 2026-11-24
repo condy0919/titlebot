@@ -73,34 +73,34 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
         return std::nullopt;
     }
 
-    // [s.begin()+1, from_end) => who
-    const auto from_end = std::find(s.begin() + 1, s.end(), '!');
-    if (from_end == s.end()) {
+    std::string_view rest(s);
+    auto token = [&]() {
+        auto end = rest.find(' ');
+        auto word = rest.substr(0, end);
+        rest.remove_prefix(word.size());
+        while (rest.starts_with(' ')) {
+            rest.remove_prefix(1);
+        }
+        return word;
+    };
+    auto prefix = token().substr(1);
+    auto bang = prefix.find('!');
+    if (bang == prefix.npos || !bang || token() != "PRIVMSG") {
         return std::nullopt;
     }
-
-    const auto privmsg_start = std::find(from_end, s.end(), ' ');
-    if (privmsg_start == s.end()) {
+    auto who = prefix.substr(0, bang);
+    auto target = token();
+    auto control = [](unsigned char c) { return c < 32 || c == 127; };
+    if (target.empty() || target.starts_with(':') || std::ranges::any_of(prefix, control) ||
+        std::ranges::any_of(target, control) || rest.empty()) {
         return std::nullopt;
     }
-
-    if (s.compare(privmsg_start - s.begin(), 9, " PRIVMSG ") != 0) {
+    if (rest.starts_with(':')) {
+        rest.remove_prefix(1);
+    } else if (rest.find(' ') != rest.npos) {
         return std::nullopt;
     }
-
-    // [privmsg_start+9, target_end) => target
-    const auto target_end = std::find(privmsg_start + 9, s.end(), ' ');
-    if (target_end == s.end()) {
-        return std::nullopt;
-    }
-
-    // the private message is empty
-    if (std::distance(target_end, s.end()) <= 2) {
-        return std::nullopt;
-    }
-
-    // remove color/bold/italic/underline... text properties
-    const std::string norm = normalize(std::string(target_end + 2, s.end()));
+    const auto norm = normalize(std::string(rest));
 
     std::string url;
     bool https = false;
@@ -174,8 +174,8 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
                 url.push_back(c);
             } else {
                 return PrivMsg{
-                    .who = std::string(s.begin() + 1, from_end),
-                    .channel = std::string(privmsg_start + 9, target_end),
+                    .who = std::string(who),
+                    .channel = std::string(target),
                     .protocol = https ? "https" : "http",
                     .url = std::move(url),
                 };
@@ -186,8 +186,8 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
 
     if (!url.empty()) {
         return PrivMsg{
-            .who = std::string(s.begin() + 1, from_end),
-            .channel = std::string(privmsg_start + 9, target_end),
+            .who = std::string(who),
+            .channel = std::string(target),
             .protocol = https ? "https" : "http",
             .url = std::move(url),
         };
