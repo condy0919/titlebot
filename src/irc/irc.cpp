@@ -43,10 +43,15 @@ std::string_view TakeIrcToken(std::string_view& rest) {
     return word;
 }
 
+// Strip IRC formatting before looking for links. For the color parameter syntax, see
+// https://modern.ircdocs.horse/formatting#color and https://modern.ircdocs.horse/formatting#hex-color
 std::string normalize(const std::string& s) {
     std::string out;
     for (size_t i = 0; i < s.size();) {
         auto c = static_cast<unsigned char>(s[i++]);
+        // IRC color control bytes: 0x03 takes a palette index (1 or 2 decimal digits),
+        // and 0x04 takes an RGB value (6 hex digits). Strip the control byte and any
+        // foreground color, including a comma and background color if both follow.
         if (c == 3 || c == 4) {
             const size_t width = c == 3 ? 2 : 6;
             auto digits = [&](size_t pos) {
