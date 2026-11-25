@@ -262,8 +262,8 @@ std::size_t PrivmsgTextBudget(std::string_view target, std::size_t prefix_bytes)
     return available - target.size() - prefix_bytes;
 }
 
-std::expected<std::vector<std::string_view>, SerializeError>
-SplitText(std::string_view text, std::size_t budget) {
+std::expected<std::vector<std::string_view>, SerializeError> SplitText(std::string_view text,
+                                                                       std::size_t budget) {
     if (HasLineBreakOrNul(text) || !ValidUtf8(text)) {
         return std::unexpected(SerializeError::kInvalidParameter);
     }
@@ -355,7 +355,8 @@ SerializeMessage(std::string_view command, std::span<const std::string_view> par
         if (HasLineBreakOrNul(param)) {
             return std::unexpected(SerializeError::kInvalidParameter);
         }
-        const bool needs_colon = (force_trailing && i + 1 == params.size()) || param.empty() || param.starts_with(':') || param.contains(' ');
+        const bool needs_colon = (force_trailing && i + 1 == params.size()) || param.empty() ||
+                                 param.starts_with(':') || param.contains(' ');
         if (i + 1 != params.size() && needs_colon) {
             return std::unexpected(SerializeError::kInvalidParameter);
         }

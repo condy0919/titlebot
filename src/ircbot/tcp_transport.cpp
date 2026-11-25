@@ -27,13 +27,18 @@ class SocketTransport final : public Transport {
 public:
     SocketTransport(asio::ip::tcp::socket socket, asio::ssl::context* tls)
         : stream_(std::move(socket), tls) {}
-    asio::any_io_executor Executor() override { return stream_.get_executor(); }
-    bool IsOpen() const override { return stream_.IsOpen(); }
+    asio::any_io_executor Executor() override {
+        return stream_.get_executor();
+    }
+    bool IsOpen() const override {
+        return stream_.IsOpen();
+    }
     void Close() override {
         boost::system::error_code ignored;
         stream_.Close(ignored);
     }
-    asio::awaitable<IoResult<void>> Handshake(const std::string& host, const std::string& name) override {
+    asio::awaitable<IoResult<void>> Handshake(const std::string& host,
+                                              const std::string& name) override {
         try {
             co_await stream_.Handshake(host, name);
             co_return IoResult<void>{};
@@ -44,17 +49,24 @@ public:
     bool MatchesPeerCertificate(std::string_view hex) override {
         return stream_.MatchesPeerCertificate(hex);
     }
-    long PeerVerificationResult() override { return stream_.PeerVerificationResult(); }
+    long PeerVerificationResult() override {
+        return stream_.PeerVerificationResult();
+    }
     asio::awaitable<IoResult<std::size_t>> Read(asio::mutable_buffer buffer) override {
         boost::system::error_code ec;
-        auto count = co_await stream_.async_read_some(buffer, asio::redirect_error(use_awaitable, ec));
-        if (ec) { co_return std::unexpected(ec); }
+        auto count =
+            co_await stream_.async_read_some(buffer, asio::redirect_error(use_awaitable, ec));
+        if (ec) {
+            co_return std::unexpected(ec);
+        }
         co_return count;
     }
     asio::awaitable<IoResult<void>> Write(asio::const_buffer buffer) override {
         boost::system::error_code ec;
         co_await asio::async_write(stream_, buffer, asio::redirect_error(use_awaitable, ec));
-        if (ec) { co_return std::unexpected(ec); }
+        if (ec) {
+            co_return std::unexpected(ec);
+        }
         co_return IoResult<void>{};
     }
     asio::awaitable<IoResult<void>> Shutdown() override {
@@ -65,6 +77,7 @@ public:
             co_return std::unexpected(error.code());
         }
     }
+
 private:
     tb::AnyStream stream_;
 };

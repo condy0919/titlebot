@@ -38,8 +38,8 @@ struct MessageView {
     /// For "a=one;b", RawTags() yields the views "a=one" and "b" in wire order.
     auto RawTags() const {
         return tags | std::views::split(';') | std::views::transform([](auto item) {
-            return std::string_view(item.begin(), item.end());
-        });
+                   return std::string_view(item.begin(), item.end());
+               });
     }
     /// Decode the last matching tag. For tags "label=one;label=two\\swords", Tag("label")
     /// returns "two words". Missing tags and values containing invalid UTF-8 yield nullopt.
@@ -97,8 +97,8 @@ enum class SerializeError {
 
 /// Split valid UTF-8 without copying bytes. For example, ("a猫b", 3) yields {"a", "猫", "b"}.
 /// The input must outlive all returned views.
-std::expected<std::vector<std::string_view>, SerializeError>
-SplitText(std::string_view text, std::size_t budget);
+std::expected<std::vector<std::string_view>, SerializeError> SplitText(std::string_view text,
+                                                                       std::size_t budget);
 
 /// Validate the raw tag section of a parsed outgoing message. For example, "a=1;a=2"
 /// fails because a client cannot send duplicate keys.

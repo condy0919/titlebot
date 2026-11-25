@@ -15,10 +15,12 @@
 namespace tb {
 
 /// For example, adding 10ms to time_point::max() - 1ms yields time_point::max().
-inline std::chrono::steady_clock::time_point DeadlineAfter(std::chrono::steady_clock::time_point now,
-                                                           std::chrono::milliseconds delay) {
+inline std::chrono::steady_clock::time_point
+DeadlineAfter(std::chrono::steady_clock::time_point now, std::chrono::milliseconds delay) {
     using Clock = std::chrono::steady_clock;
-    if (delay <= delay.zero()) { return now; }
+    if (delay <= delay.zero()) {
+        return now;
+    }
     if (delay > std::chrono::duration_cast<std::chrono::milliseconds>(Clock::duration::max())) {
         return Clock::time_point::max();
     }
@@ -38,7 +40,9 @@ public:
 
     BasicDeadline(const BasicDeadline&) = delete;
     BasicDeadline& operator=(const BasicDeadline&) = delete;
-    ~BasicDeadline() { Cancel(); }
+    ~BasicDeadline() {
+        Cancel();
+    }
 
     void Cancel() {
         if (!state_->cancelled) {

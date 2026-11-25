@@ -50,7 +50,17 @@ struct ServerAddress {
     std::string port;
 };
 
-enum class ClientError { kNetwork, kInvalidConfig, kTlsConfiguration, kTlsTrust, kAuthentication, kHandler, kReconnectTimer, kRetryLimit, kInvalidNickname };
+enum class ClientError {
+    kNetwork,
+    kInvalidConfig,
+    kTlsConfiguration,
+    kTlsTrust,
+    kAuthentication,
+    kHandler,
+    kReconnectTimer,
+    kRetryLimit,
+    kInvalidNickname
+};
 
 struct Config {
     std::string server;
@@ -87,7 +97,6 @@ struct Config {
 
 enum class SendError { kClosed, kInvalidMessage, kQueueFull, kCapabilityRequired };
 
-
 /// A weak handle to one connection. Copies cannot send on a later reconnect.
 class Connection {
 public:
@@ -119,14 +128,16 @@ public:
     /// For example, Join("#room", "secret") queues "JOIN #room secret".
     std::expected<void, SendError> Join(std::string_view channel, std::string_view key = {}) const;
     /// For example, Part("#room", "going away") queues "PART #room :going away".
-    std::expected<void, SendError> Part(std::string_view channel, std::string_view reason = {}) const;
+    std::expected<void, SendError> Part(std::string_view channel,
+                                        std::string_view reason = {}) const;
     /// For example, Post([](Connection c) { c.Send("PING", {"id"}); }) runs on the
     /// session executor. An expired session invokes the callback inline with a closed handle.
     void Post(std::move_only_function<void(Connection)> operation) const;
     /// For example, PostPrivmsg("#room", "done", callback) dispatches a send from a worker
     /// thread and invokes callback with the enqueue result. Closed handles may complete inline.
-    void PostPrivmsg(std::string target, std::string text,
-                     std::move_only_function<void(std::expected<void, SendError>)> completion) const;
+    void
+    PostPrivmsg(std::string target, std::string text,
+                std::move_only_function<void(std::expected<void, SendError>)> completion) const;
     /// For example, RequestReconnect() closes this session and lets Run apply its retry policy.
     std::expected<void, SendError> RequestReconnect() const;
     bool IsOpen() const;
@@ -135,7 +146,9 @@ public:
     /// and the current nickname when computing a forwarded PRIVMSG budget.
     std::size_t TextBudget(std::string_view target) const;
     CaseMapping Casemapping() const;
-    CaseMapping casemapping() const { return Casemapping(); }
+    CaseMapping casemapping() const {
+        return Casemapping();
+    }
     ServerFeatures Features() const;
     /// For example, Feature("NETWORK") returns the current 005 value when advertised.
     std::optional<std::string> Feature(std::string_view name) const;
@@ -164,24 +177,32 @@ struct DiagnosticEvent {
     std::optional<long> certificate_error;
 };
 
-template <class Signature> class SharedCallback;
+template <class Signature>
+class SharedCallback;
 
 template <class Result, class... Args>
 class SharedCallback<Result(Args...)> {
     using Function = std::move_only_function<Result(Args...)>;
+
 public:
     SharedCallback() = default;
     template <class Fn>
-        requires (!std::same_as<std::remove_cvref_t<Fn>, SharedCallback> &&
-                  std::constructible_from<Function, Fn>)
+        requires(!std::same_as<std::remove_cvref_t<Fn>, SharedCallback> &&
+                 std::constructible_from<Function, Fn>)
     SharedCallback(Fn&& fn) : function_(std::make_shared<Function>(std::forward<Fn>(fn))) {}
-    explicit operator bool() const { return function_ && static_cast<bool>(*function_); }
-    Result operator()(Args... args) const { return (*function_)(std::forward<Args>(args)...); }
+    explicit operator bool() const {
+        return function_ && static_cast<bool>(*function_);
+    }
+    Result operator()(Args... args) const {
+        return (*function_)(std::forward<Args>(args)...);
+    }
+
 private:
     std::shared_ptr<Function> function_;
 };
 
-template <class... Args> using Callback = SharedCallback<void(Args...)>;
+template <class... Args>
+using Callback = SharedCallback<void(Args...)>;
 enum class MessageFlow { kContinue, kStop };
 
 struct MessageSubscription {
@@ -207,7 +228,8 @@ struct Handlers {
 
 // A connector supplies a connected transport on Run's executor and observes config.timeouts.
 // For example, a test may return an in-memory transport seeded with "PING :test\r\n".
-using Connector = std::function<boost::asio::awaitable<IoResult<std::unique_ptr<Transport>>>(const Config&)>;
+using Connector =
+    std::function<boost::asio::awaitable<IoResult<std::unique_ptr<Transport>>>(const Config&)>;
 
 /// Run one independent client on a single-threaded executor (or a strand).
 /// For example, Run({.server="irc.example.org", .nick="bot", .tls=true}, handlers)
@@ -215,7 +237,8 @@ using Connector = std::function<boost::asio::awaitable<IoResult<std::unique_ptr<
 /// Network failures reconnect; invalid configuration, required SASL failure, and non-diagnostic
 /// callback exceptions return an error. Terminal cancellation sends QUIT before completing
 /// successfully.
-boost::asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers = {}, Connector connector = {});
+boost::asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers = {},
+                                                             Connector connector = {});
 
 } // namespace ircbot
 

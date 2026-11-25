@@ -78,8 +78,8 @@ public:
             return state_->timer.async_wait(std::forward<Token>(token));
         }
         return asio::async_compose<Token, void(boost::system::error_code)>(
-            [state = state_, generation = state_->generation, started = false](
-                auto& self, boost::system::error_code ec = {}) mutable {
+            [state = state_, generation = state_->generation,
+             started = false](auto& self, boost::system::error_code ec = {}) mutable {
                 if (!started) {
                     started = true;
                     auto& timer = state->timer;

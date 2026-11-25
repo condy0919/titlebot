@@ -20,7 +20,9 @@ public:
     ManualClock(const ManualClock&) = delete;
     ManualClock& operator=(const ManualClock&) = delete;
     using TimePoint = std::chrono::steady_clock::time_point;
-    TimePoint Now() const { return now_; }
+    TimePoint Now() const {
+        return now_;
+    }
     /// For example, Advance(30s) makes a registration timeout at Now() + 30s ready.
     std::expected<void, ClockError> Advance(std::chrono::steady_clock::duration elapsed);
 

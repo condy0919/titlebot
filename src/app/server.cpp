@@ -123,7 +123,8 @@ asio::awaitable<void> RunBot(BotConfig config, TitleFetcher fetch) {
             return;
         }
         auto target = connection.IsSelf(parsed->channel) ? parsed->who : parsed->channel;
-        FetchScheduler::Destination destination{connection.Identity(), target, connection.Casemapping()};
+        FetchScheduler::Destination destination{connection.Identity(), target,
+                                                connection.Casemapping()};
         scheduler->Submit(
             std::move(*parsed),
             [weak = std::weak_ptr(current), target = std::move(target), limits,

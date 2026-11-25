@@ -357,7 +357,9 @@ Registration::Output Registration::Handle(const MessageView& message) {
             reading_ls_ = false;
             reading_list_ = false;
             initial_ls_done_ = false;
-            if (config_.sasl) { std::string{}.swap(config_.sasl->password); }
+            if (config_.sasl) {
+                std::string{}.swap(config_.sasl->password);
+            }
             done_ = true;
             sasl_state_ = SaslState::kFinished;
         }

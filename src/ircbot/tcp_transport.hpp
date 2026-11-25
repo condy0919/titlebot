@@ -9,7 +9,7 @@
 namespace ircbot {
 struct Config;
 class Transport;
-}
+} // namespace ircbot
 
 namespace ircbot::detail {
 /// For example, ConnectTcp(config, nullptr) connects a plain TCP transport to config.server.

@@ -47,13 +47,19 @@ public:
             return false;
         }
         auto nibble = [](char c) {
-            if (c >= '0' && c <= '9') { return c - '0'; }
-            if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
-            if (c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+            if (c >= '0' && c <= '9') {
+                return c - '0';
+            }
+            if (c >= 'a' && c <= 'f') {
+                return c - 'a' + 10;
+            }
+            if (c >= 'A' && c <= 'F') {
+                return c - 'A' + 10;
+            }
             return -1;
         };
         for (std::size_t i = 0; i < size; ++i) {
-            if (nibble(hex[2*i]) != digest[i] / 16 || nibble(hex[2*i + 1]) != digest[i] % 16) {
+            if (nibble(hex[2 * i]) != digest[i] / 16 || nibble(hex[2 * i + 1]) != digest[i] % 16) {
                 return false;
             }
         }
@@ -75,7 +81,8 @@ public:
         socket().close(ec);
     }
     /// Verify the peer certificate against host. A plain stream completes immediately.
-    boost::asio::awaitable<void> Handshake(const std::string& host, const std::string& server_name = {}) {
+    boost::asio::awaitable<void> Handshake(const std::string& host,
+                                           const std::string& server_name = {}) {
         auto* tls = std::get_if<Tls>(&stream_);
         if (!tls) {
             co_return;

@@ -89,11 +89,13 @@ using SessionDeadline = tb::BasicDeadline<SessionTimer>;
 
 void Diagnose(const Handlers& handlers, std::string_view text,
               DiagnosticKind kind = DiagnosticKind::kProtocol, Severity level = Severity::kWarning,
-              boost::system::error_code code = {}, std::optional<RegistrationError> registration = {},
-              std::exception_ptr exception = {}, std::optional<long> certificate_error = {}) {
+              boost::system::error_code code = {},
+              std::optional<RegistrationError> registration = {}, std::exception_ptr exception = {},
+              std::optional<long> certificate_error = {}) {
     if (handlers.diagnostic_event) {
         try {
-            handlers.diagnostic_event({level, kind, text, code, registration, exception, certificate_error});
+            handlers.diagnostic_event(
+                {level, kind, text, code, registration, exception, certificate_error});
         } catch (...) {
         }
     }
@@ -165,9 +167,10 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                 auto interval = session->send_interval;
                 if (session->send_delay) {
                     try {
-                        interval = std::clamp(session->send_delay(line),
-                                              std::chrono::milliseconds::zero(),
-                                              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::hours(24)));
+                        interval =
+                            std::clamp(session->send_delay(line), std::chrono::milliseconds::zero(),
+                                       std::chrono::duration_cast<std::chrono::milliseconds>(
+                                           std::chrono::hours(24)));
                     } catch (...) {
                         session->background_error = std::current_exception();
                         Close(session);
@@ -176,7 +179,9 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                 }
                 session->next_send = tb::DeadlineAfter(now, interval);
             }
-            if (!session->transport->IsOpen()) { break; }
+            if (!session->transport->IsOpen()) {
+                break;
+            }
             line += "\r\n";
             if (session->writable) {
                 session->writable->cancel();
@@ -188,12 +193,15 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
             session->write_timer->expires_after(session->timeouts.write_timeout);
             session->write_timer->async_wait([session, generation](boost::system::error_code ec) {
                 if (!ec && session->write_generation == generation) {
-                    Diagnose(session, "IRC write timed out", DiagnosticKind::kTransport, Severity::kWarning, asio::error::timed_out);
+                    Diagnose(session, "IRC write timed out", DiagnosticKind::kTransport,
+                             Severity::kWarning, asio::error::timed_out);
                     Close(session);
                 }
             });
             auto written = co_await session->transport->Write(asio::buffer(line));
-            if (!written) { throw boost::system::system_error(written.error()); }
+            if (!written) {
+                throw boost::system::system_error(written.error());
+            }
             ++session->write_generation;
             session->write_timer->cancel();
         }
@@ -216,7 +224,8 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
 
 bool ValidChannelArgument(std::string_view channel) {
     return !channel.empty() && !channel.starts_with(':') &&
-           std::ranges::none_of(channel, [](unsigned char ch) { return ch <= 32 || ch == 127 || ch == ','; });
+           std::ranges::none_of(
+               channel, [](unsigned char ch) { return ch <= 32 || ch == 127 || ch == ','; });
 }
 
 bool PaceCommand(std::string_view command) {
@@ -241,7 +250,8 @@ std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, st
     if (priority) {
         session->queue.push_front({std::move(line), false});
     } else if (!paced) {
-        const auto first_business = std::ranges::find(session->queue, true, &detail::QueuedLine::paced);
+        const auto first_business =
+            std::ranges::find(session->queue, true, &detail::QueuedLine::paced);
         session->queue.insert(first_business, {std::move(line), false});
     } else {
         session->queue.push_back({std::move(line), true});
@@ -285,7 +295,8 @@ asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
             continue;
         }
         if (session->probe_sent) {
-            Diagnose(session, "IRC idle probe timed out", DiagnosticKind::kTransport, Severity::kWarning, asio::error::timed_out);
+            Diagnose(session, "IRC idle probe timed out", DiagnosticKind::kTransport,
+                     Severity::kWarning, asio::error::timed_out);
             Close(session);
             co_return;
         }
@@ -397,7 +408,8 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
             Invoke(session->handlers.isupport_changed, Connection(session), message);
         }
     } else if (!session->registered && IsCommand(message, "432") && message.params.size() >= 2) {
-        Diagnose(session, "IRC server rejected nickname: " + std::string(message.params[1]), DiagnosticKind::kRegistration, Severity::kError);
+        Diagnose(session, "IRC server rejected nickname: " + std::string(message.params[1]),
+                 DiagnosticKind::kRegistration, Severity::kError);
         throw Fatal{ClientError::kInvalidNickname};
     } else if (!session->registered && message.params.size() >= 2 &&
                (IsCommand(message, "433") || IsCommand(message, "437")) &&
@@ -416,8 +428,9 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
         session->registered = true;
         session->registered_at = detail::Now(session->clock);
         session->nick = message.params.front();
-        session->reclaim_pending = config.reclaim_nickname &&
-                                   !Equals(session->nick, config.nick, session->features.casemapping);
+        session->reclaim_pending =
+            config.reclaim_nickname &&
+            !Equals(session->nick, config.nick, session->features.casemapping);
         for (const auto& channel : *session->channels) {
             SendControl(session, channel.key.empty() ? "JOIN " + channel.name
                                                      : "JOIN " + channel.name + " " + channel.key);
@@ -430,12 +443,12 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
             session->reclaim_pending = false;
         }
     }
-    if (session->reclaim_pending &&
-        (IsCommand(message, "QUIT") || IsCommand(message, "NICK")) &&
+    if (session->reclaim_pending && (IsCommand(message, "QUIT") || IsCommand(message, "NICK")) &&
         !Equals(session->nick, config.nick, session->features.casemapping) &&
         Equals(message.Nick(), config.nick, session->features.casemapping) &&
-        (IsCommand(message, "QUIT") || (!message.params.empty() &&
-         !Equals(message.params[0], config.nick, session->features.casemapping)))) {
+        (IsCommand(message, "QUIT") ||
+         (!message.params.empty() &&
+          !Equals(message.params[0], config.nick, session->features.casemapping)))) {
         SendControl(session, "NICK " + config.nick);
     }
     if (IsCommand(message, "ERROR") && !message.params.empty()) {
@@ -510,18 +523,24 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
     bool connected = false;
     try {
         if (config.tls) {
-            SessionDeadline handshake(executor, session->clock, tb::DeadlineAfter(detail::Now(session->clock), config.timeouts.connect_timeout));
+            SessionDeadline handshake(
+                executor, session->clock,
+                tb::DeadlineAfter(detail::Now(session->clock), config.timeouts.connect_timeout));
             asio::co_spawn(executor,
                            CloseOnTimeout(handshake.Wait(), session, "IRC TLS handshake timed out"),
                            asio::detached);
             try {
-                auto verified = co_await session->transport->Handshake(config.server, config.tls_server_name);
-                if (!verified) { throw boost::system::system_error(verified.error()); }
+                auto verified =
+                    co_await session->transport->Handshake(config.server, config.tls_server_name);
+                if (!verified) {
+                    throw boost::system::system_error(verified.error());
+                }
             } catch (const boost::system::system_error& error) {
                 const auto verify = session->transport->PeerVerificationResult();
                 if (verify != X509_V_OK) {
                     Diagnose(session->handlers, X509_verify_cert_error_string(verify),
-                             DiagnosticKind::kTransport, Severity::kError, error.code(), {}, {}, verify);
+                             DiagnosticKind::kTransport, Severity::kError, error.code(), {}, {},
+                             verify);
                     throw Fatal{ClientError::kTlsTrust};
                 }
                 throw;
@@ -545,11 +564,14 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         SendControl(session, "NICK " + config.nick);
         SendControl(session, "USER " + config.username + " 0 * :" + config.realname);
         Invoke(handlers.connected, Connection(session));
-        SessionDeadline registration(executor, session->clock, tb::DeadlineAfter(detail::Now(session->clock), config.timeouts.registration_timeout));
+        SessionDeadline registration(
+            executor, session->clock,
+            tb::DeadlineAfter(detail::Now(session->clock), config.timeouts.registration_timeout));
         asio::co_spawn(
             executor,
             CloseOnTimeout(registration.Wait(), session,
-                           "IRC registration timed out before welcome; closing connection", DiagnosticKind::kRegistration),
+                           "IRC registration timed out before welcome; closing connection",
+                           DiagnosticKind::kRegistration),
             asio::detached);
         // Include CRLF in the IRCv3 wire limit. Compact only after consuming a read batch.
         std::array<char, 8703> input;
@@ -558,9 +580,15 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         while (session->transport->IsOpen()) {
             const auto count = co_await session->transport->Read(
                 asio::buffer(input.data() + used, input.size() - used));
-            if (!count) { throw boost::system::system_error(count.error()); }
-            if (!*count) { throw boost::system::system_error(asio::error::eof); }
-            if (*count > input.size() - used) { throw Fatal{ClientError::kInvalidConfig}; }
+            if (!count) {
+                throw boost::system::system_error(count.error());
+            }
+            if (!*count) {
+                throw boost::system::system_error(asio::error::eof);
+            }
+            if (*count > input.size() - used) {
+                throw Fatal{ClientError::kInvalidConfig};
+            }
             const std::string_view batch(input.data(), used + *count);
             std::size_t begin = 0;
             auto end = batch.find("\r\n", used == 0 ? 0 : used - 1);
@@ -610,22 +638,28 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
     bool stopping = cancellation.cancelled() != asio::cancellation_type::none;
     if (stopping && connected && session->transport->IsOpen()) {
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
-        session->quit_timer =
-            std::make_shared<SessionTimer>(executor, session->clock, tb::DeadlineAfter(detail::Now(session->clock), std::chrono::seconds(1)));
+        session->quit_timer = std::make_shared<SessionTimer>(
+            executor, session->clock,
+            tb::DeadlineAfter(detail::Now(session->clock), std::chrono::seconds(1)));
         session->queue.clear();
         if (Queue(session, "QUIT :" + config.quit_reason, true)) {
             boost::system::error_code ignored;
             if (session->writing) {
-                co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
+                co_await session->quit_timer->async_wait(
+                    asio::redirect_error(use_awaitable, ignored));
             }
             if (config.tls && !session->writing && session->transport->IsOpen()) {
-                SessionDeadline shutdown(executor, session->clock, tb::DeadlineAfter(detail::Now(session->clock), std::chrono::seconds(1)));
-                asio::co_spawn(executor,
-                               CloseOnTimeout(shutdown.Wait(), session, "IRC TLS shutdown timed out"),
-                               asio::detached);
+                SessionDeadline shutdown(
+                    executor, session->clock,
+                    tb::DeadlineAfter(detail::Now(session->clock), std::chrono::seconds(1)));
+                asio::co_spawn(
+                    executor,
+                    CloseOnTimeout(shutdown.Wait(), session, "IRC TLS shutdown timed out"),
+                    asio::detached);
                 auto closed = co_await session->transport->Shutdown();
                 if (!closed && closed.error() != asio::ssl::error::stream_truncated &&
-                    closed.error() != asio::error::eof && closed.error() != asio::error::operation_aborted) {
+                    closed.error() != asio::error::eof &&
+                    closed.error() != asio::error::operation_aborted) {
                     Diagnose(handlers, "IRC TLS shutdown failed", DiagnosticKind::kTransport,
                              Severity::kWarning, closed.error());
                 }
@@ -671,8 +705,10 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
     if (stopping) {
         co_return std::nullopt;
     }
-    const bool stable = session->registered &&
-                        std::chrono::duration_cast<std::chrono::milliseconds>(detail::Now(session->clock) - session->registered_at) >= config.timeouts.stable_session;
+    const bool stable =
+        session->registered &&
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            detail::Now(session->clock) - session->registered_at) >= config.timeouts.stable_session;
     co_return stable;
 }
 
@@ -728,9 +764,10 @@ std::string_view InvalidConfigField(const Config& config) {
         }
     }
     for (const auto& server : config.fallback_servers) {
-        if (server.host.empty() || std::ranges::any_of(server.host, [](unsigned char ch) {
-                return ch <= 32 || ch == 127;
-            }) || (!server.port.empty() && !token(server.port))) {
+        if (server.host.empty() ||
+            std::ranges::any_of(server.host,
+                                [](unsigned char ch) { return ch <= 32 || ch == 127; }) ||
+            (!server.port.empty() && !token(server.port))) {
             return "fallback_servers";
         }
     }
@@ -878,13 +915,15 @@ asio::awaitable<std::expected<void, SendError>> Connection::WaitWritable() const
     return WaitForSpace(session_);
 }
 
-std::expected<void, SendError> Connection::Notice(std::string_view target, std::string_view text) const {
+std::expected<void, SendError> Connection::Notice(std::string_view target,
+                                                  std::string_view text) const {
     return Send("NOTICE", {target, text});
 }
 
-std::expected<void, SendError> Connection::Join(std::string_view channel, std::string_view key) const {
-    if (!ValidChannelArgument(channel) ||
-        key.find_first_of(" ,") != key.npos || key.starts_with(':')) {
+std::expected<void, SendError> Connection::Join(std::string_view channel,
+                                                std::string_view key) const {
+    if (!ValidChannelArgument(channel) || key.find_first_of(" ,") != key.npos ||
+        key.starts_with(':')) {
         return std::unexpected(SendError::kInvalidMessage);
     }
     auto session = session_.lock();
@@ -909,7 +948,8 @@ std::expected<void, SendError> Connection::Join(std::string_view channel, std::s
     return sent;
 }
 
-std::expected<void, SendError> Connection::Part(std::string_view channel, std::string_view reason) const {
+std::expected<void, SendError> Connection::Part(std::string_view channel,
+                                                std::string_view reason) const {
     if (!ValidChannelArgument(channel)) {
         return std::unexpected(SendError::kInvalidMessage);
     }
@@ -943,8 +983,9 @@ void Connection::Post(std::move_only_function<void(Connection)> operation) const
     }
 }
 
-void Connection::PostPrivmsg(std::string target, std::string text,
-                             std::move_only_function<void(std::expected<void, SendError>)> completion) const {
+void Connection::PostPrivmsg(
+    std::string target, std::string text,
+    std::move_only_function<void(std::expected<void, SendError>)> completion) const {
     Post([target = std::move(target), text = std::move(text),
           completion = std::move(completion)](Connection connection) mutable {
         auto result = connection.Privmsg(target, text);
@@ -1039,7 +1080,8 @@ std::weak_ptr<void> Connection::Identity() const {
     return session ? session->identity : std::weak_ptr<void>{};
 }
 
-asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers, Connector connector) {
+asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers,
+                                                      Connector connector) {
     if (config.port.empty()) {
         config.port = config.tls ? "6697" : "6667";
     }
@@ -1054,32 +1096,33 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
     auto executor = co_await asio::this_coro::executor;
     std::optional<asio::ssl::context> tls;
     if (!connector && (config.tls || !config.ca_file.empty() || !config.certificate_file.empty())) {
-    try {
-        tls.emplace(asio::ssl::context::tls_client);
-        if (!SSL_CTX_set_min_proto_version(tls->native_handle(), TLS1_2_VERSION)) {
-            co_return std::unexpected(ClientError::kTlsConfiguration);
-        }
-        tls->set_default_verify_paths();
-        if (!config.ca_file.empty()) {
-            tls->load_verify_file(config.ca_file);
-        }
-        if (!config.certificate_file.empty()) {
-            tls->use_certificate_chain_file(config.certificate_file);
-            tls->use_private_key_file(config.private_key_file, asio::ssl::context::pem);
-            if (!SSL_CTX_check_private_key(tls->native_handle())) {
+        try {
+            tls.emplace(asio::ssl::context::tls_client);
+            if (!SSL_CTX_set_min_proto_version(tls->native_handle(), TLS1_2_VERSION)) {
                 co_return std::unexpected(ClientError::kTlsConfiguration);
             }
+            tls->set_default_verify_paths();
+            if (!config.ca_file.empty()) {
+                tls->load_verify_file(config.ca_file);
+            }
+            if (!config.certificate_file.empty()) {
+                tls->use_certificate_chain_file(config.certificate_file);
+                tls->use_private_key_file(config.private_key_file, asio::ssl::context::pem);
+                if (!SSL_CTX_check_private_key(tls->native_handle())) {
+                    co_return std::unexpected(ClientError::kTlsConfiguration);
+                }
+            }
+        } catch (const boost::system::system_error& error) {
+            Diagnose(handlers, "IRC TLS configuration failed", DiagnosticKind::kConfiguration,
+                     Severity::kError, error.code());
+            co_return std::unexpected(ClientError::kTlsConfiguration);
         }
-    } catch (const boost::system::system_error& error) {
-        Diagnose(handlers, "IRC TLS configuration failed", DiagnosticKind::kConfiguration,
-                 Severity::kError, error.code());
-        co_return std::unexpected(ClientError::kTlsConfiguration);
-    }
     }
     auto channels = std::make_shared<detail::Channels>();
     for (const auto& channel : config.channels) {
         const auto key = config.channel_keys.find(channel);
-        channels->push_back({channel, key == config.channel_keys.end() ? std::string{} : key->second});
+        channels->push_back(
+            {channel, key == config.channel_keys.end() ? std::string{} : key->second});
     }
     Nicknames nicknames;
     const auto cancellation = co_await asio::this_coro::cancellation_state;
@@ -1092,7 +1135,8 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
     while (true) {
         auto failure = ClientError::kNetwork;
         try {
-            const auto& server = next_server == 0 ? primary : config.fallback_servers[next_server - 1];
+            const auto& server =
+                next_server == 0 ? primary : config.fallback_servers[next_server - 1];
             config.server = server.host;
             config.port = server.port.empty() ? primary.port : server.port;
             next_server = next_server == config.fallback_servers.size() ? 0 : next_server + 1;
@@ -1116,7 +1160,9 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             std::unique_ptr<Transport> transport;
             if (connector) {
                 auto connected = co_await connector(config);
-                if (!connected) { throw boost::system::system_error(connected.error()); }
+                if (!connected) {
+                    throw boost::system::system_error(connected.error());
+                }
                 transport = std::move(*connected);
                 if (!transport || transport->Executor() != executor) {
                     co_return std::unexpected(ClientError::kInvalidConfig);
@@ -1125,7 +1171,8 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
                 transport = co_await detail::ConnectTcp(config, config.tls ? &*tls : nullptr);
             }
             nicknames.Begin();
-            auto stable = co_await Serve(std::move(transport), config, handlers, nicknames, channels);
+            auto stable =
+                co_await Serve(std::move(transport), config, handlers, nicknames, channels);
             if (!stable) {
                 co_return std::expected<void, ClientError>{};
             }
@@ -1178,7 +1225,8 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             wait = std::chrono::milliseconds(
                 std::uniform_int_distribution<Count>(low.count(), high.count())(jitter));
         }
-        SessionTimer timer(executor, config.clock, tb::DeadlineAfter(detail::Now(config.clock), wait));
+        SessionTimer timer(executor, config.clock,
+                           tb::DeadlineAfter(detail::Now(config.clock), wait));
         boost::system::error_code ec;
         try {
             co_await timer.async_wait(asio::redirect_error(use_awaitable, ec));
