@@ -38,7 +38,7 @@ target_compile_definitions(ircbot PUBLIC
 target_link_libraries(ircbot PUBLIC Boost::headers Threads::Threads PRIVATE OpenSSL::SSL)
 install(TARGETS ircbot)
 install(FILES include/ircbot/client.hpp include/ircbot/features.hpp include/ircbot/message.hpp
-  include/ircbot/registration.hpp include/ircbot/transport.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ircbot)
+  include/ircbot/registration.hpp include/ircbot/transport.hpp include/ircbot/manual_clock.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ircbot)
 
 if(IRCBOT_BUILD_EXAMPLES)
   add_executable(ircbot_echo examples/echo_bot.cpp)

@@ -7,6 +7,7 @@
 #include <exception>
 #include <optional>
 #include <random>
+#include <stdexcept>
 #include <utility>
 
 #include <boost/asio.hpp>
@@ -17,11 +18,25 @@
 #include "common/any_stream.hpp"
 #include "common/connect.hpp"
 #include "common/deadline.hpp"
+#include "session_timer.hpp"
 
 namespace ircbot {
 namespace asio = boost::asio;
 using asio::use_awaitable;
 using Clock = std::chrono::steady_clock;
+std::expected<void, ClockError> ManualClock::Advance(std::chrono::steady_clock::duration elapsed) {
+    if (elapsed < elapsed.zero() || elapsed > TimePoint::max() - now_) {
+        return std::unexpected(ClockError::kInvalidAdvance);
+    }
+    now_ += elapsed;
+    for (auto& weak : alarms_) {
+        if (auto alarm = weak.lock()) {
+            alarm->Advance(now_);
+        }
+    }
+    return {};
+}
+
 namespace detail {
 struct QueuedLine {
     std::string text;
@@ -33,6 +48,7 @@ struct Session {
     asio::any_io_executor executor;
     Handlers handlers;
     Timeouts timeouts;
+    std::shared_ptr<ManualClock> clock;
     std::size_t queue_limit;
     ServerFeatures features;
     Registration registration;
@@ -40,9 +56,9 @@ struct Session {
     std::deque<QueuedLine> queue;
     std::chrono::milliseconds send_interval;
     std::function<std::chrono::milliseconds(std::string_view)> send_delay;
-    std::optional<asio::steady_timer> pacing;
+    std::optional<SessionTimer> pacing;
     Clock::time_point next_send{};
-    std::optional<asio::steady_timer> write_timer;
+    std::optional<SessionTimer> write_timer;
     std::size_t write_generation = 0;
     std::optional<asio::steady_timer> writable;
     bool writing = false;
@@ -53,13 +69,15 @@ struct Session {
     bool probe_sent = false;
     Clock::time_point last_input{};
     Clock::time_point registered_at{};
-    std::shared_ptr<asio::steady_timer> quit_timer;
+    std::shared_ptr<SessionTimer> quit_timer;
     std::optional<asio::experimental::channel<void(boost::system::error_code, bool)>> writer_done;
 };
 } // namespace detail
 namespace {
 using tb::Deadline;
 using detail::Session;
+using detail::SessionTimer;
+using SessionDeadline = tb::BasicDeadline<SessionTimer>;
 
 void Diagnose(const Handlers& handlers, std::string_view text,
               DiagnosticKind kind = DiagnosticKind::kProtocol, Severity level = Severity::kWarning,
@@ -108,9 +126,9 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
     try {
         while (session->transport->IsOpen() && !session->queue.empty()) {
             if (session->queue.front().paced && (session->send_interval.count() > 0 || session->send_delay)) {
-                const auto now = Clock::now();
+                const auto now = detail::Now(session->clock);
                 if (now < session->next_send) {
-                    session->pacing.emplace(session->executor, session->next_send);
+                    session->pacing.emplace(session->executor, session->clock, session->next_send);
                     boost::system::error_code ec;
                     co_await session->pacing->async_wait(asio::redirect_error(use_awaitable, ec));
                     session->pacing.reset();
@@ -131,7 +149,7 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                 session->writable->cancel();
             }
             if (!session->write_timer) {
-                session->write_timer.emplace(session->executor);
+                session->write_timer.emplace(session->executor, session->clock);
             }
             const auto generation = ++session->write_generation;
             session->write_timer->expires_after(session->timeouts.write_timeout);
@@ -210,7 +228,7 @@ void SendControl(const std::shared_ptr<Session>& session, std::string line) {
 }
 
 asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
-                                std::shared_ptr<asio::steady_timer> timer) {
+                                std::shared_ptr<SessionTimer> timer) {
     while (session->transport->IsOpen()) {
         auto interval =
             session->probe_sent ? session->timeouts.ping_timeout : session->timeouts.idle_timeout;
@@ -222,7 +240,7 @@ asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
         }
         interval =
             session->probe_sent ? session->timeouts.ping_timeout : session->timeouts.idle_timeout;
-        if (Clock::now() < session->last_input + interval) {
+        if (detail::Now(session->clock) < session->last_input + interval) {
             continue;
         }
         if (session->probe_sent) {
@@ -234,7 +252,7 @@ asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
             co_return;
         }
         session->probe_sent = true;
-        session->last_input = Clock::now();
+        session->last_input = detail::Now(session->clock);
     }
 }
 
@@ -292,7 +310,7 @@ void Invoke(const Callback& callback, Args&&... args) {
 }
 
 void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
-            const Config& config, Nicknames& nicknames, Deadline& registration) {
+            const Config& config, Nicknames& nicknames, SessionDeadline& registration) {
     if (IsCommand(message, "PING") && !message.params.empty()) {
         std::string pong = "PONG";
         for (std::size_t i = 0; i < message.params.size(); ++i) {
@@ -346,7 +364,7 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
         }
         registration.Cancel();
         session->registered = true;
-        session->registered_at = Clock::now();
+        session->registered_at = detail::Now(session->clock);
         session->nick = message.params.front();
         for (const auto& channel : config.channels) {
             const auto key = config.channel_keys.find(channel);
@@ -437,6 +455,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         .executor = session_executor,
         .handlers = handlers,
         .timeouts = config.timeouts,
+        .clock = config.clock,
         .queue_limit = config.queued_lines,
         .features = {},
         .registration = Registration(config.registration),
@@ -452,12 +471,12 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         .writer_done = {},
     });
     auto executor = session->executor;
-    auto idle = std::make_shared<asio::steady_timer>(executor);
+    auto idle = std::make_shared<SessionTimer>(executor, session->clock);
     std::optional<Fatal> fatal;
     bool connected = false;
     try {
         if (config.tls) {
-            Deadline handshake(executor, Clock::now() + config.timeouts.connect_timeout);
+            SessionDeadline handshake(executor, session->clock, detail::Now(session->clock) + config.timeouts.connect_timeout);
             asio::co_spawn(executor,
                            CloseOnTimeout(handshake.Wait(), session, "IRC TLS handshake timed out"),
                            asio::detached);
@@ -486,7 +505,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         SendControl(session, "NICK " + config.nick);
         SendControl(session, "USER " + config.username + " 0 * :" + config.realname);
         Invoke(handlers.connected, Connection(session));
-        Deadline registration(executor, Clock::now() + config.timeouts.registration_timeout);
+        SessionDeadline registration(executor, session->clock, detail::Now(session->clock) + config.timeouts.registration_timeout);
         asio::co_spawn(
             executor,
             CloseOnTimeout(registration.Wait(), session,
@@ -510,7 +529,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
                     discarding = false;
                 } else if (auto parsed = ParseMessage(batch.substr(begin, end - begin))) {
                     const bool registered = session->registered;
-                    session->last_input = Clock::now();
+                    session->last_input = detail::Now(session->clock);
                     session->probe_sent = false;
                     Handle(session, *parsed, config, nicknames, registration);
                     if (!registered && session->registered) {
@@ -554,13 +573,13 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
     if (stopping && connected && session->transport->IsOpen()) {
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
         session->quit_timer =
-            std::make_shared<asio::steady_timer>(executor, std::chrono::seconds(1));
+            std::make_shared<SessionTimer>(executor, session->clock, detail::Now(session->clock) + std::chrono::seconds(1));
         session->queue.clear();
         if (Queue(session, "QUIT :" + config.quit_reason, true)) {
             boost::system::error_code ignored;
             co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
             if (config.tls && !session->writing && session->transport->IsOpen()) {
-                Deadline shutdown(executor, Clock::now() + std::chrono::seconds(1));
+                SessionDeadline shutdown(executor, session->clock, detail::Now(session->clock) + std::chrono::seconds(1));
                 asio::co_spawn(executor,
                                CloseOnTimeout(shutdown.Wait(), session, "IRC TLS shutdown timed out"),
                                asio::detached);
@@ -608,7 +627,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
     if (stopping) {
         co_return std::nullopt;
     }
-    co_return session->registered&& Clock::now() - session -> registered_at >=
+    co_return session->registered&& detail::Now(session->clock) - session -> registered_at >=
         config.timeouts.stable_session;
 }
 
@@ -1114,7 +1133,7 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             wait = std::chrono::milliseconds(
                 std::uniform_int_distribution<Count>(low.count(), high.count())(jitter));
         }
-        asio::steady_timer timer(executor, wait);
+        SessionTimer timer(executor, config.clock, detail::Now(config.clock) + wait);
         boost::system::error_code ec;
         try {
             co_await timer.async_wait(asio::redirect_error(use_awaitable, ec));

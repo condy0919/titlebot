@@ -24,6 +24,7 @@
 #include <boost/system/error_code.hpp>
 
 #include "features.hpp"
+#include "manual_clock.hpp"
 #include "message.hpp"
 #include "registration.hpp"
 #include "transport.hpp"
@@ -76,6 +77,7 @@ struct Config {
     std::map<std::string, std::string> channel_keys;
     std::vector<ServerAddress> fallback_servers;
     std::string tls_server_name;
+    std::shared_ptr<ManualClock> clock;
     std::string quit_reason = "Shutting down";
 };
 

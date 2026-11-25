@@ -481,8 +481,8 @@ TEST_F(Client, LetsPolicyTerminateTransientConnectionFailures) {
 
 class ScriptedTransport final : public ircbot::Transport {
 public:
-    ScriptedTransport(asio::any_io_executor executor, std::string& transcript)
-        : gate_(executor, std::chrono::steady_clock::time_point::max()), transcript_(transcript) {}
+    ScriptedTransport(asio::any_io_executor executor, std::string& transcript, bool reject = true)
+        : gate_(executor, std::chrono::steady_clock::time_point::max()), transcript_(transcript), reject_(reject) {}
     asio::any_io_executor Executor() override { return gate_.get_executor(); }
     bool IsOpen() const override { return open_; }
     void Close() override {
@@ -493,6 +493,13 @@ public:
     long PeerVerificationResult() override { return X509_V_OK; }
     asio::awaitable<ircbot::IoResult<void>> Shutdown() override { co_return ircbot::IoResult<void>{}; }
     asio::awaitable<ircbot::IoResult<std::size_t>> Read(asio::mutable_buffer buffer) override {
+        if (!reject_) {
+            while (open_) {
+                boost::system::error_code ec;
+                co_await gate_.async_wait(asio::redirect_error(use_awaitable, ec));
+            }
+            co_return std::unexpected(boost::system::error_code(asio::error::eof));
+        }
         // Wait for NICK to be written before returning the server's rejection.
         if (transcript_.find("NICK bot\r\n") == transcript_.npos) {
             boost::system::error_code ec;
@@ -510,7 +517,54 @@ private:
     asio::steady_timer gate_;
     std::string& transcript_;
     bool open_ = true;
+    bool reject_;
 };
+
+TEST_F(Client, AdvancesRetryBackoffWithoutSocketOrWallClockWaits) {
+    ircbot::Config config;
+    config.server = "example.invalid";
+    config.nick = "bot";
+    config.clock = std::make_shared<ircbot::ManualClock>();
+    config.reconnect_jitter = false;
+    config.max_retries = 1;
+    unsigned attempts = 0;
+    ircbot::Connector connect = [&](const auto&) -> asio::awaitable<ircbot::IoResult<std::unique_ptr<ircbot::Transport>>> {
+        ++attempts;
+        co_return std::unexpected(boost::system::error_code(asio::error::host_unreachable));
+    };
+    auto result = asio::co_spawn(io, ircbot::Run(config, {}, connect), asio::use_future);
+    io.poll();
+    ASSERT_EQ(attempts, 1u);
+    EXPECT_FALSE(config.clock->Advance(-1ms));
+    ASSERT_TRUE(config.clock->Advance(config.timeouts.reconnect_initial - 1ms));
+    io.poll();
+    EXPECT_EQ(attempts, 1u);
+    ASSERT_TRUE(config.clock->Advance(1ms));
+    io.poll();
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kRetryLimit);
+    EXPECT_EQ(attempts, 2u);
+}
+
+TEST_F(Client, AdvancesRegistrationDeadlineWithoutWallClockWaits) {
+    std::string transcript;
+    ircbot::Config config;
+    config.server = "example.invalid";
+    config.nick = "bot";
+    config.clock = std::make_shared<ircbot::ManualClock>();
+    config.max_retries = 0;
+    ircbot::Connector connector = [&](const auto&) -> asio::awaitable<ircbot::IoResult<std::unique_ptr<ircbot::Transport>>> {
+        co_return std::make_unique<ScriptedTransport>(co_await asio::this_coro::executor, transcript, false);
+    };
+    auto result = asio::co_spawn(io, ircbot::Run(config, {}, connector), asio::use_future);
+    io.poll();
+    ASSERT_NE(transcript.find("NICK bot"), transcript.npos);
+    EXPECT_NE(result.wait_for(0s), std::future_status::ready);
+    ASSERT_TRUE(config.clock->Advance(config.timeouts.registration_timeout));
+    io.poll();
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kRetryLimit);
+}
 
 TEST_F(Client, ExercisesRegistrationWithoutSockets) {
     std::string transcript;

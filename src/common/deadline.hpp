@@ -2,6 +2,7 @@
 #define TITLEBOT_DEADLINE_HPP_
 
 #include <memory>
+#include <utility>
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
@@ -15,18 +16,16 @@ namespace tb {
 /// A one-shot deadline for operations on the same single-threaded executor.
 /// Wait() returns true on expiry. For example, cancelling the registration deadline
 /// on IRC 001 makes its pending Wait() return false and keeps the socket open.
-class Deadline {
+template <class Timer>
+class BasicDeadline {
 public:
-    Deadline(const boost::asio::any_io_executor& executor,
-             boost::asio::steady_timer::time_point expires)
-        : state_(std::make_shared<State>(boost::asio::steady_timer(executor, expires))) {}
+    template <class... Args>
+    explicit BasicDeadline(Args&&... args)
+        : state_(std::make_shared<State>(Timer(std::forward<Args>(args)...))) {}
 
-    Deadline(const Deadline&) = delete;
-    Deadline& operator=(const Deadline&) = delete;
-
-    ~Deadline() {
-        Cancel();
-    }
+    BasicDeadline(const BasicDeadline&) = delete;
+    BasicDeadline& operator=(const BasicDeadline&) = delete;
+    ~BasicDeadline() { Cancel(); }
 
     void Cancel() {
         if (!state_->cancelled) {
@@ -41,7 +40,7 @@ public:
 
 private:
     struct State {
-        boost::asio::steady_timer timer;
+        Timer timer;
         bool cancelled = false;
     };
 
@@ -58,6 +57,8 @@ private:
 
     std::shared_ptr<State> state_;
 };
+
+using Deadline = BasicDeadline<boost::asio::steady_timer>;
 
 } // namespace tb
 
