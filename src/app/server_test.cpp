@@ -215,6 +215,64 @@ TEST_F(Server, RetriesNicknameConflictsOnTheSameConnection) {
     RunExercise(exercise(), std::chrono::seconds(2));
 }
 
+TEST_F(Server, FitsNicknameRetriesToTheServerLimit) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    const std::string nick = "longnickname";
+    asio::co_spawn(
+        io,
+        tb::RunBot({"127.0.0.1", std::to_string(listener.local_endpoint().port()), nick, "#room"}),
+        asio::detached);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        for (bool reconnect : {false, true}) {
+            auto peer = co_await listener.async_accept(use_awaitable);
+            std::string input;
+            EXPECT_EQ(co_await ReadLine(peer, input), "NICK " + nick);
+            EXPECT_EQ(co_await ReadLine(peer, input), "USER " + nick + " 0 * :titlebot");
+            std::string conflict = ":irc 433 * " + nick + " :In use\r\n";
+            co_await asio::async_write(peer, asio::buffer(conflict), use_awaitable);
+            auto retry = co_await ReadLine(peer, input);
+            EXPECT_EQ(retry.size(), 5u + (reconnect ? 2u : 9u));
+            EXPECT_TRUE(retry.starts_with("NICK l"));
+            if (reconnect) {
+                std::string seen;
+                for (int attempt = 0; attempt < 10; ++attempt) {
+                    EXPECT_TRUE(retry.starts_with("NICK l"));
+                    EXPECT_EQ(retry.size(), 7u);
+                    EXPECT_GE(retry.back(), '0');
+                    EXPECT_LE(retry.back(), '9');
+                    EXPECT_EQ(seen.find(retry.back()), seen.npos);
+                    seen.push_back(retry.back());
+                    conflict = ":irc 433 * " + retry.substr(5) + " :In use\r\n";
+                    co_await asio::async_write(peer, asio::buffer(conflict), use_awaitable);
+                    if (attempt < 9) {
+                        retry = co_await ReadLine(peer, input);
+                    }
+                }
+                const std::string ping = "PING :done\r\n";
+                co_await asio::async_write(peer, asio::buffer(ping), use_awaitable);
+                EXPECT_EQ(co_await ReadLine(peer, input), "PONG :done");
+            } else {
+                // A server can truncate the rejected NICK before it sends ISUPPORT.
+                auto truncated = retry.substr(5, 4);
+                conflict = ":irc 433 * " + truncated + " :In use\r\n";
+                co_await asio::async_write(peer, asio::buffer(conflict), use_awaitable);
+                retry = co_await ReadLine(peer, input);
+                EXPECT_EQ(retry.size(), 9u);
+                // Servers normally send ISUPPORT after registration. Use its limit on reconnect.
+                auto welcome = ":irc 001 " + retry.substr(5) +
+                               " :Welcome\r\n"
+                               ":irc 005 bot PREFIX=(ov)@+ NICKLEN=2 :are supported\r\n"
+                               ":irc 005 bot NICKLEN=0 NICKLEN=2x :NICKLEN=30 ignored\r\n"
+                               "PING :ready\r\n";
+                co_await asio::async_write(peer, asio::buffer(welcome), use_awaitable);
+                EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #room");
+                EXPECT_EQ(co_await ReadLine(peer, input), "PONG :ready");
+            }
+        }
+    };
+    RunExercise(exercise(), std::chrono::seconds(5));
+}
+
 TEST_F(Server, LogsServerErrorsKicksAndJoinFailures) {
     std::ostringstream output;
     auto previous = spdlog::default_logger();

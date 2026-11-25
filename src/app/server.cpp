@@ -1,6 +1,7 @@
 #include "server.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cstddef>
 #include <deque>
 #include <exception>
@@ -22,12 +23,17 @@ namespace {
 namespace asio = boost::asio;
 using asio::use_awaitable;
 
+// Use the traditional IRC nickname length for retries until ISUPPORT supplies NICKLEN.
+constexpr std::size_t kDefaultNickLength = 9;
+
 // Owns the socket and protocol state for one IRC connection. Fetch callbacks hold a weak
 // reference to their originating session so a late title cannot be sent on a new connection.
 struct Session {
     asio::ip::tcp::socket socket;
     std::string nick;
     std::optional<unsigned> nick_suffix;
+    unsigned nick_retries = 0;
+    std::string retry_nick;
     bool registered = false;
     // Pending IRC lines without CRLF. A PONG can move ahead of queued title replies.
     std::deque<std::string> queue;
@@ -158,6 +164,54 @@ unsigned RandomNickSuffix() {
     return std::uniform_int_distribution<unsigned>(0, 65535)(generator);
 }
 
+void UpdateNickLength(std::string_view params, std::size_t& limit) {
+    TakeIrcToken(params); // Skip the recipient; tokens end at the trailing description.
+    while (!params.empty() && !params.starts_with(':')) {
+        auto token = TakeIrcToken(params);
+        if (token == "-NICKLEN") {
+            limit = kDefaultNickLength;
+        } else if (token.starts_with("NICKLEN=")) {
+            token.remove_prefix(std::string_view("NICKLEN=").size());
+            std::size_t value = 0;
+            auto end = token.data() + token.size();
+            auto [ptr, ec] = std::from_chars(token.data(), end, value);
+            if (ec == std::errc{} && ptr == end && value > 0) {
+                limit = value;
+            }
+        }
+    }
+}
+
+void RetryNickname(const std::shared_ptr<Session>& session, std::string_view rejected,
+                   std::size_t& limit) {
+    // Before ISUPPORT, a 433 may echo the server-truncated form of our last NICK.
+    const auto& requested = session->retry_nick.empty() ? session->nick : session->retry_nick;
+    if (!rejected.empty() && rejected.size() < requested.size() &&
+        requested.starts_with(rejected)) {
+        limit = std::min(limit, rejected.size());
+    }
+    // Keep one leading character. Stop before a short decimal suffix cycles.
+    if (std::to_string(session->nick_retries).size() >= limit) {
+        TB_LOG_WARN("No more numeric nickname retries fit NICKLEN={}", limit);
+        return;
+    }
+    if (!session->nick_suffix) {
+        session->nick_suffix = RandomNickSuffix();
+    }
+    auto suffix = std::to_string(*session->nick_suffix + session->nick_retries++);
+    if (suffix.size() >= limit) {
+        suffix.erase(0, suffix.size() - (limit - 1));
+    }
+    auto keep = std::min(session->nick.size(), limit - suffix.size());
+    while (keep && keep < session->nick.size() &&
+           (static_cast<unsigned char>(session->nick[keep]) & 0xc0) == 0x80) {
+        --keep;
+    }
+    auto prefix = keep ? session->nick.substr(0, keep) : "_";
+    session->retry_nick = prefix + suffix;
+    Send(session, "NICK " + session->retry_nick);
+}
+
 bool SameNick(std::string_view a, std::string_view b) {
     return std::ranges::equal(a, b, {}, FoldIrcCase, FoldIrcCase);
 }
@@ -197,7 +251,7 @@ std::string_view TrailingText(std::string_view params) {
 }
 
 void HandleLine(const std::shared_ptr<Session>& session, const std::string& line, // NOLINT
-                const std::string& channels, Deadline& registration) {
+                const std::string& channels, Deadline& registration, std::size_t& nick_limit) {
     std::string_view params(line);
     std::string_view source;
     if (params.starts_with(':')) {
@@ -215,13 +269,11 @@ void HandleLine(const std::shared_ptr<Session>& session, const std::string& line
         session->registered = true;
         session->nick = TakeIrcToken(params);
         Send(session, "JOIN " + channels);
+    } else if (command == "005") {
+        UpdateNickLength(params, nick_limit);
     } else if (command == "433" && !session->registered) {
-        if (session->nick_suffix) {
-            ++*session->nick_suffix;
-        } else {
-            session->nick_suffix = RandomNickSuffix();
-        }
-        Send(session, "NICK " + session->nick + std::to_string(*session->nick_suffix));
+        TakeIrcToken(params);
+        RetryNickname(session, TakeIrcToken(params), nick_limit);
     } else if (command == "NICK" && SameNick(source.substr(0, source.find('!')), session->nick)) {
         session->nick = TrailingText(params);
     } else if (command == "ERROR") {
@@ -251,11 +303,13 @@ void HandleLine(const std::shared_ptr<Session>& session, const std::string& line
 
 asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nick, // NOLINT
                                    std::string channels, std::shared_ptr<FetchScheduler> scheduler,
-                                   std::chrono::milliseconds registration_timeout) {
+                                   std::chrono::milliseconds registration_timeout,
+                                   std::size_t& nick_limit) {
     auto session = std::make_shared<Session>(Session{
         .socket = std::move(socket),
         .nick = std::move(nick),
         .nick_suffix = {},
+        .retry_nick = {},
         .queue = {},
         .scheduler = scheduler,
         .limiter = {},
@@ -277,7 +331,7 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
                 session->socket, asio::dynamic_buffer(input, 8192), "\r\n", use_awaitable);
             auto line = input.substr(0, count - 2);
             input.erase(0, count);
-            HandleLine(session, line, channels, registration);
+            HandleLine(session, line, channels, registration, nick_limit);
         }
     } catch (const boost::system::system_error& ex) {
         if (session->socket.is_open()) {
@@ -302,6 +356,7 @@ asio::awaitable<void> RunBot(BotConfig config) {
     auto scheduler = std::make_shared<FetchScheduler>(
         executor, [tls](PrivMsg msg) { return FetchTitle(std::move(msg), *tls); });
     asio::ip::tcp::resolver resolver(executor);
+    std::size_t nick_limit = kDefaultNickLength;
     unsigned delay = 1;
     while (true) {
         try {
@@ -310,7 +365,7 @@ asio::awaitable<void> RunBot(BotConfig config) {
             asio::ip::tcp::socket socket(executor);
             co_await asio::async_connect(socket, endpoints, asio::use_awaitable);
             if (co_await ServeSession(std::move(socket), config.nick, config.channels, scheduler,
-                                      config.registration_timeout)) {
+                                      config.registration_timeout, nick_limit)) {
                 delay = 1;
             }
         } catch (const boost::system::system_error& ex) {
