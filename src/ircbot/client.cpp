@@ -948,18 +948,24 @@ std::expected<void, SendError> Connection::Part(std::string_view channel, std::s
     return sent;
 }
 
-void Connection::PostPrivmsg(std::string target, std::string text,
-                             std::move_only_function<void(std::expected<void, SendError>)> completion) const {
-    auto session = session_.lock();
-    if (!session) {
-        if (completion) {
-            completion(std::unexpected(SendError::kClosed));
-        }
+void Connection::Post(std::move_only_function<void(Connection)> operation) const {
+    if (!operation) {
         return;
     }
-    asio::post(session->executor, [connection = *this, target = std::move(target),
-                                   text = std::move(text), completion = std::move(completion)]() mutable {
-        const auto result = connection.Privmsg(target, text);
+    if (auto session = session_.lock()) {
+        asio::post(session->executor, [connection = *this, op = std::move(operation)]() mutable {
+            op(connection);
+        });
+    } else {
+        operation(*this);
+    }
+}
+
+void Connection::PostPrivmsg(std::string target, std::string text,
+                             std::move_only_function<void(std::expected<void, SendError>)> completion) const {
+    Post([target = std::move(target), text = std::move(text),
+          completion = std::move(completion)](Connection connection) mutable {
+        auto result = connection.Privmsg(target, text);
         if (completion) {
             completion(result);
         }

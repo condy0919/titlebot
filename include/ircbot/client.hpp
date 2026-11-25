@@ -116,6 +116,9 @@ public:
     std::expected<void, SendError> Join(std::string_view channel, std::string_view key = {}) const;
     /// For example, Part("#room", "going away") queues "PART #room :going away".
     std::expected<void, SendError> Part(std::string_view channel, std::string_view reason = {}) const;
+    /// For example, Post([](Connection c) { c.Send("PING", {"id"}); }) runs on the
+    /// session executor. An expired session invokes the callback inline with a closed handle.
+    void Post(std::move_only_function<void(Connection)> operation) const;
     /// For example, PostPrivmsg("#room", "done", callback) dispatches a send from a worker
     /// thread and invokes callback with the enqueue result. Closed handles may complete inline.
     void PostPrivmsg(std::string target, std::string text,
