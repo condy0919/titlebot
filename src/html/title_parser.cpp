@@ -134,7 +134,11 @@ std::optional<std::string> TitleParser::consume(char ch) {
                 title_.resize(title_tag_);
                 state_ = State::kText;
                 title_tag_ = title_.npos;
-                return std::exchange(title_, {});
+                auto title = std::exchange(title_, {});
+                if (std::ranges::all_of(title, [](unsigned char c) { return c <= 32 || c == 127; })) {
+                    return {};
+                }
+                return title;
             }
             title_tag_ = title_.npos;
         }
@@ -202,7 +206,7 @@ std::optional<std::string> TitleParser::Finish() {
             }
         }
     }
-    return {};
+    return std::exchange(social_title_, std::nullopt);
 }
 
 void TitleParser::HandleCompleteTag() {
@@ -242,8 +246,24 @@ void TitleParser::HandleCompleteTag() {
     } else if (!closing && !svg_depth_ && !template_depth_) {
         if (boost::beast::iequals(name, "title") && !tag.ends_with('/')) {
             state_ = State::kTitle;
-        } else if (boost::beast::iequals(name, "meta") && charset_.empty()) {
-            charset_ = MetaCharset(tag.substr(name.size()));
+        } else if (boost::beast::iequals(name, "meta")) {
+            auto attrs = tag.substr(name.size());
+            if (charset_.empty()) {
+                charset_ = MetaCharset(attrs);
+            }
+            if (!social_title_) {
+                std::string_view property, content;
+                while (auto attr = NextAttribute(attrs)) {
+                    if (boost::beast::iequals(attr->name, "property")) {
+                        property = attr->value;
+                    } else if (boost::beast::iequals(attr->name, "content")) {
+                        content = attr->value;
+                    }
+                }
+                if (boost::beast::iequals(property, "og:title") && !content.empty()) {
+                    social_title_ = content;
+                }
+            }
         }
     }
 }

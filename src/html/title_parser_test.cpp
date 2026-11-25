@@ -144,4 +144,12 @@ TEST_F(TitleParser, RecoversOnlyFromUnterminatedAttributesAtEndOfInput) {
     EXPECT_FALSE(valid.parse(doc.begin(), doc.end()));
     EXPECT_FALSE(valid.Finish());
 }
+TEST_F(TitleParser, PrefersDocumentTitleOverOpenGraphFallback) {
+    std::string html = "<title> </title><meta content='social' property='og:title'>";
+    EXPECT_FALSE(parser.parse(html.begin(), html.end()));
+    EXPECT_EQ(parser.Finish(), "social");
+    tb::TitleParser document;
+    html += "<title>document</title>";
+    EXPECT_EQ(document.parse(html.begin(), html.end()), "document");
+}
 } // namespace
