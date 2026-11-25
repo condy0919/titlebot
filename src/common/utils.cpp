@@ -14,6 +14,7 @@
 #include <tuple>
 
 #include <boost/beast/core/string.hpp>
+#include <boost/locale/utf.hpp>
 
 namespace {
 // Each entry maps an HTML entity name to its Unicode code point, written in decimal.
@@ -310,11 +311,23 @@ constexpr std::string encode_utf8_code_point(unsigned ch) {
     return buf;
 }
 
+bool ValidUtf8(std::string_view text) {
+    auto it = text.begin();
+    while (it != text.end()) {
+        using namespace boost::locale::utf;
+        auto cp = utf_traits<char>::decode(it, text.end());
+        if (cp == illegal || cp == incomplete) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::optional<std::string> try_source_encodings(const std::string& s, const char* encodings[],
                                                 std::size_t n) {
     // Copy the string to a buffer as `iconv` requires a non-const char pointer.
     std::string in_buf(s);
-    std::string buf(2048, ' ');
+    std::array<char, 2048> buf;
     for (std::size_t i = 0; i < n; ++i) {
         if (*encodings[i] == '\0') {
             continue;
@@ -436,6 +449,9 @@ std::string decode_html_entities(std::string_view text) {
 std::optional<std::string> convert_to_utf8(const std::string& in, // NOLINT
                                            const std::string& charset, std::string_view sample) {
     if (!charset.empty()) {
+        if (boost::beast::iequals(charset, "utf-8") || boost::beast::iequals(charset, "utf8")) {
+            return ValidUtf8(in) ? std::optional(in) : std::nullopt;
+        }
         const char* encoding = charset.c_str();
         for (auto [label, backend] : {std::pair{"gb2312", "GB18030"}, {"gbk", "GB18030"},
                                       {"iso-8859-1", "WINDOWS-1252"}, {"latin1", "WINDOWS-1252"},
@@ -450,9 +466,8 @@ std::optional<std::string> convert_to_utf8(const std::string& in, // NOLINT
         return try_source_encodings(in, declared, 1);
     }
 
-    const char* unicode[] = {"UTF-8"};
-    if (auto valid = try_source_encodings(in, unicode, 1)) {
-        return valid;
+    if (ValidUtf8(in)) {
+        return in;
     }
 
     std::unique_ptr<uchardet, decltype(&::uchardet_delete)> detector(::uchardet_new(),
