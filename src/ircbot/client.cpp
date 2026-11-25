@@ -36,6 +36,8 @@ struct Session {
     std::chrono::milliseconds send_interval;
     std::optional<asio::steady_timer> pacing;
     Clock::time_point next_send{};
+    std::optional<asio::steady_timer> write_timer;
+    std::size_t write_generation = 0;
     bool writing = false;
     bool closing = false;
     std::stop_source stop;
@@ -101,14 +103,26 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
             auto line = std::move(session->queue.front().text);
             line += "\r\n";
             session->queue.pop_front();
-            Deadline deadline(session->transport.get_executor(),
-                              Clock::now() + session->timeouts.write_timeout);
-            asio::co_spawn(session->transport.get_executor(),
-                           CloseOnTimeout(deadline.Wait(), session, "IRC write timed out"),
-                           asio::detached);
+            if (!session->write_timer) {
+                session->write_timer.emplace(session->transport.get_executor());
+            }
+            const auto generation = ++session->write_generation;
+            session->write_timer->expires_after(session->timeouts.write_timeout);
+            session->write_timer->async_wait([session, generation](boost::system::error_code ec) {
+                if (!ec && session->write_generation == generation) {
+                    Diagnose(session, "IRC write timed out");
+                    Close(session);
+                }
+            });
             co_await asio::async_write(session->transport, asio::buffer(line), use_awaitable);
+            ++session->write_generation;
+            session->write_timer->cancel();
         }
     } catch (const std::exception&) {
+        ++session->write_generation;
+        if (session->write_timer) {
+            session->write_timer->cancel();
+        }
         Diagnose(session, "IRC write failed");
         Close(session);
     }
@@ -333,6 +347,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         .queue = {},
         .send_interval = config.send_interval,
         .pacing = {},
+        .write_timer = {},
         .stop = {},
         .quit_timer = {},
         .drain_timer = {},
