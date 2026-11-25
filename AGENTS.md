@@ -22,6 +22,7 @@ cmake --build build --parallel
 
 ## 实现与协作
 
+- 将 IRC 收发和 HTTP 流式抓取视为性能关键路径，保持事件循环响应及时。处理每条消息或每个响应块时，避免不必要的堆分配、数据拷贝和重复扫描。例如，解析 IRC 行时可直接读取缓冲区上的 `std::string_view`；异步任务需要在缓冲区复用后继续访问字段时，只保存所需字段的副本。HTTP 正文应使用有界缓冲区增量处理，取得标题后即可结束读取。
 - 只修改与任务相关的文件，保留工作区已有改动。先检查实际调用方和测试，再决定是否修改接口。涉及多种可行设计时，在计划中说明影响范围、取舍与验证方式。示意图使用 Mermaid。
 - 格式和 include 排序遵循 `.clang-format`，沿用所在模块的命名约定，例如 `tb::PrivMsg` 和 `tb::parse_privmsg`。头文件使用 include guard 并直接包含所需依赖。控制语句使用花括号。
 - `#include` 依次分为对应头文件（`foo.cpp` 和 `foo_test.cpp` 的 `foo.hpp`）、C 系统头及其他以尖括号引用的 `.h`、C++ 标准库、其他第三方库、项目头文件。各组内按字母顺序排列，非空组之间空一行。例如 `<iconv.h>`、`<uchardet/uchardet.h>` 在 `<algorithm>` 之前，`<boost/scope_exit.hpp>` 在标准库之后。见 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html#Names_and_Order_of_Includes)。
