@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <expected>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -34,6 +35,12 @@ struct MessageView {
     std::string_view User() const;
     /// For "nick@irc.example", Host() returns "irc.example".
     std::string_view Host() const;
+    /// For "a=one;b", RawTags() yields the views "a=one" and "b" in wire order.
+    auto RawTags() const {
+        return tags | std::views::split(';') | std::views::transform([](auto item) {
+            return std::string_view(item.begin(), item.end());
+        });
+    }
     /// Decode the last matching tag. For tags "label=one;label=two\\swords", Tag("label")
     /// returns "two words". Missing tags and values containing invalid UTF-8 yield nullopt.
     std::optional<std::string> Tag(std::string_view key) const;

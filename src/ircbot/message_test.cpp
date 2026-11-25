@@ -42,6 +42,11 @@ TEST(IrcMessage, ParsesTagsPrefixAndParametersAsViews) {
         "@label=hello\\sworld :alice!u@h pRiVmSg  #room  :hello : world ";
     const auto result = ParseMessage(line);
     ASSERT_TRUE(result);
+    std::vector<std::string_view> raw;
+    for (auto tag : result->RawTags()) {
+        raw.push_back(tag);
+    }
+    EXPECT_EQ(raw, (std::vector<std::string_view>{"label=hello\\sworld"}));
     EXPECT_EQ(result->tags, "label=hello\\sworld");
     EXPECT_EQ(result->prefix, "alice!u@h");
     EXPECT_EQ(result->Nick(), "alice");
