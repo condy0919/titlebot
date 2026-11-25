@@ -1,6 +1,7 @@
 #ifndef TITLEBOT_UTILS_HPP_
 #define TITLEBOT_UTILS_HPP_
 
+#include <expected>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,6 +16,14 @@ std::string decode_html_entities(std::string_view text);
 /// For example, `convert_to_utf8("Caf\xE9", "ISO-8859-1")` returns an optional containing `"Café"`.
 std::optional<std::string> convert_to_utf8(const std::string& in, const std::string& charset = {},
                                            std::string_view sample = {});
+enum class TitleFormatError {
+    kDecode,
+};
+
+/// Decode and normalize a raw HTML title. For example, " A &amp; B " in UTF-8 yields "A & B".
+std::expected<std::optional<std::string>, TitleFormatError>
+FormatHtmlTitle(const std::string& title, const std::string& charset, bool bom,
+                const std::string& meta, std::string_view sample);
 } // namespace tb
 
 #endif // TITLEBOT_UTILS_HPP_

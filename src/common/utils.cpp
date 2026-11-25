@@ -308,4 +308,44 @@ std::optional<std::string> convert_to_utf8(const std::string& in, // NOLINT
     return try_source_encodings(in, fallback, std::size(fallback));
 }
 
+std::expected<std::optional<std::string>, TitleFormatError>
+FormatHtmlTitle(const std::string& title, const std::string& charset, bool bom,
+                const std::string& meta, std::string_view sample) {
+    std::optional<std::string> text;
+    if (bom) {
+        text = convert_to_utf8(title, "UTF-8");
+    } else {
+        if (!charset.empty()) {
+            text = convert_to_utf8(title, charset);
+        }
+        if (!text && !meta.empty() && !boost::beast::iequals(meta, charset)) {
+            text = convert_to_utf8(title, meta);
+        }
+        if (!text) {
+            text = convert_to_utf8(title, {}, sample);
+        }
+    }
+    if (!text) {
+        return std::unexpected(TitleFormatError::kDecode);
+    }
+    auto decoded = decode_html_entities(*text);
+    std::string normalized;
+    bool space = false;
+    for (char ch : decoded) {
+        if (static_cast<unsigned char>(ch) <= 32 || ch == 127) {
+            space = !normalized.empty();
+        } else {
+            if (space) {
+                normalized += ' ';
+                space = false;
+            }
+            normalized += ch;
+        }
+    }
+    if (normalized.empty()) {
+        return std::nullopt;
+    }
+    return normalized;
+}
+
 } // namespace tb

@@ -40,4 +40,10 @@ TEST_F(Utils, DetectsTitleBeyondAsciiSample) {
     EXPECT_EQ(tb::convert_to_utf8(title, {}, std::string(1024, ' ')),
               "これは日本語で書かれたページのタイトルです。");
 }
+TEST_F(Utils, UsesMetaAfterInvalidDeclaredEncodingAndNormalizesTitle) {
+    auto result = tb::FormatHtmlTitle("  Caf\xe9\t&amp;\n B ", "UTF-8", false, "latin1", {});
+    ASSERT_TRUE(result);
+    EXPECT_EQ(*result, "Café & B");
+    EXPECT_FALSE(tb::FormatHtmlTitle("\xe9", "latin1", true, "latin1", {}));
+}
 } // namespace

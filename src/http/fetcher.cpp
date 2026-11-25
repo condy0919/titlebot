@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <variant>
 
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/asio.hpp>
@@ -39,45 +40,10 @@ bool IsPublicV4(asio::ip::address_v4 address) {
            !(b[0] == 203 && b[1] == 0 && b[2] == 113);
 }
 
-FetchResult FormatTitle(const std::string& title, const std::string& charset,
-                        const TitleParser& parser) {
-    std::optional<std::string> text;
-    if (parser.unicode_bom()) {
-        text = convert_to_utf8(title, "UTF-8");
-    } else {
-        if (!charset.empty()) {
-            text = convert_to_utf8(title, charset);
-        }
-        auto meta = parser.DeclaredCharset();
-        if (!text && !meta.empty() && !boost::beast::iequals(meta, charset)) {
-            text = convert_to_utf8(title, meta);
-        }
-        if (!text) {
-            text = convert_to_utf8(title, {}, parser.sample());
-        }
-    }
-    if (!text) {
-        return std::unexpected(FetchError::kDecode);
-    }
-    auto decoded = decode_html_entities(*text);
-    std::string normalized;
-    bool space = false;
-    for (char ch : decoded) {
-        if (static_cast<unsigned char>(ch) <= 32 || ch == 127) {
-            space = !normalized.empty();
-        } else {
-            if (space) {
-                normalized += ' ';
-                space = false;
-            }
-            normalized += ch;
-        }
-    }
-    if (normalized.empty()) {
-        return std::nullopt;
-    }
-    return normalized;
-}
+struct Redirect {
+    std::string location;
+};
+using HopOutcome = std::expected<std::variant<std::optional<std::string>, Redirect>, FetchError>;
 
 using ResponseParser = http::response_parser<http::buffer_body>;
 constexpr std::size_t kReadBufferLimit = 16 * 1024;
@@ -124,8 +90,8 @@ asio::awaitable<void> ReadResponsePart(Stream& stream, std::string& pending,
 }
 
 template <class Stream>
-asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, std::string path,
-                                       std::string& location, std::size_t body_limit) {
+asio::awaitable<HopOutcome> ReadTitle(Stream& stream, std::string authority, std::string path,
+                                      std::size_t body_limit) {
     http::request<http::empty_body> request(http::verb::get, path, 11);
     request.set(http::field::host, authority);
     request.set(http::field::user_agent, "titlebot/0.1");
@@ -161,11 +127,10 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     case 303:
     case 307:
     case 308:
-        location = response.get()[http::field::location];
-        if (location.empty()) {
+        if (response.get()[http::field::location].empty()) {
             co_return std::unexpected(FetchError::kInvalidUrl);
         }
-        co_return std::nullopt;
+        co_return Redirect{std::string(response.get()[http::field::location])};
     }
     if (response.get().result() != http::status::ok) {
         TB_LOG_INFO("HTTP {} from {}", response.get().result_int(), authority);
@@ -198,6 +163,16 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     }
     ContentDecoder decoder(encoding, body_limit);
     TitleParser parser;
+    auto format = [&](const std::string& raw) -> HopOutcome {
+        auto title = FormatHtmlTitle(raw, charset, parser.unicode_bom(), parser.DeclaredCharset(),
+                                     parser.sample());
+        if (!title) {
+            TB_LOG_WARN("Title decoding failed for {} (declared charset {:.64})", authority,
+                        charset);
+            return std::unexpected(FetchError::kDecode);
+        }
+        return std::move(*title);
+    };
     std::array<char, 4096> block;
     std::size_t remaining = body_limit;
     do {
@@ -219,12 +194,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
                                           : FetchError::kDecode);
         }
         if (*title) {
-            auto result = FormatTitle(**title, charset, parser);
-            if (!result) {
-                TB_LOG_WARN("Title decoding failed for {} (declared charset {:.64})", authority,
-                            charset);
-            }
-            co_return result;
+            co_return format(**title);
         }
         if (used < count) {
             TB_LOG_DEBUG("HTTP body from {} exceeds {}", authority, numfmt(body_limit));
@@ -232,7 +202,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
         }
     } while (!response.is_done());
     if (auto title = parser.Finish()) {
-        co_return FormatTitle(*title, charset, parser);
+        co_return format(*title);
     }
     co_return std::nullopt;
 }
@@ -248,10 +218,10 @@ asio::awaitable<void> CancelOnTimeout(asio::awaitable<bool> expired,
     }
 }
 
-asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::context& tls,
-                                      const std::shared_ptr<tcp::resolver>& resolver,
-                                      const detail::FetchPolicy& policy, Clock::time_point deadline,
-                                      std::string& location) {
+asio::awaitable<HopOutcome> FetchHop(const boost::urls::url& url, asio::ssl::context& tls,
+                                     const std::shared_ptr<tcp::resolver>& resolver,
+                                     const detail::FetchPolicy& policy,
+                                     Clock::time_point deadline) {
     bool secure = url.scheme_id() == boost::urls::scheme::https;
     if ((!secure && url.scheme_id() != boost::urls::scheme::http) || url.has_userinfo() ||
         url.host().empty() || (url.has_port() && url.port_number() == 0) ||
@@ -291,7 +261,7 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         Deadline read_timeout(executor, expires);
         asio::co_spawn(executor, CancelOnTimeout(read_timeout.Wait(), resolver, stream),
                        asio::detached);
-        co_return co_await ReadTitle(*stream, authority, path, location, policy.body_bytes);
+        co_return co_await ReadTitle(*stream, authority, path, policy.body_bytes);
     } catch (const boost::system::system_error& error) {
         TB_LOG_WARN("Fetch from {} failed: {}", host, error.what());
         if (Clock::now() >= expires) {
@@ -331,15 +301,17 @@ asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::con
     current = *parsed;
     auto resolver = std::make_shared<tcp::resolver>(co_await asio::this_coro::executor);
     for (unsigned redirects = 0;; ++redirects) {
-        std::string location;
-        auto result = co_await FetchHop(current, tls, resolver, policy, deadline, location);
-        if (!result || location.empty()) {
-            co_return result;
+        auto result = co_await FetchHop(current, tls, resolver, policy, deadline);
+        if (!result) {
+            co_return std::unexpected(result.error());
+        }
+        if (auto* title = std::get_if<std::optional<std::string>>(&*result)) {
+            co_return std::move(*title);
         }
         if (redirects == 5) {
             co_return std::unexpected(FetchError::kRedirectLimit);
         }
-        auto reference = boost::urls::parse_uri_reference(location);
+        auto reference = boost::urls::parse_uri_reference(std::get<Redirect>(*result).location);
         if (!reference || !current.resolve(*reference)) {
             co_return std::unexpected(FetchError::kInvalidUrl);
         }
