@@ -61,6 +61,7 @@ struct Session {
     Registration registration;
     bool require_auth;
     std::string nick;
+    std::optional<std::size_t> mask_suffix{};
     std::deque<QueuedLine> queue;
     std::chrono::milliseconds send_interval;
     std::function<std::chrono::milliseconds(std::string_view)> send_delay;
@@ -375,6 +376,15 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
         (Equals(message.params[1], "NEW", CaseMapping::kAscii) ||
          Equals(message.params[1], "DEL", CaseMapping::kAscii))) {
         Invoke(session->handlers.capabilities_changed, Connection(session), message);
+    }
+    if ((IsCommand(message, "JOIN") || IsCommand(message, "NICK") ||
+         IsCommand(message, "CHGHOST")) &&
+        Equals(message.Nick(), session->nick, session->features.casemapping)) {
+        if (IsCommand(message, "CHGHOST") && message.params.size() == 2) {
+            session->mask_suffix = 2 + message.params[0].size() + message.params[1].size();
+        } else if (!message.User().empty() && !message.Host().empty()) {
+            session->mask_suffix = message.prefix.size() - message.Nick().size();
+        }
     }
     if (IsCommand(message, "005")) {
         if (session->features.Observe(message)) {
@@ -1085,6 +1095,9 @@ std::size_t Connection::TextBudget(std::string_view target) const {
     auto session = session_.lock();
     if (!session || session->closing) {
         return 0;
+    }
+    if (session->mask_suffix) {
+        return PrivmsgTextBudget(target, session->nick.size() + *session->mask_suffix);
     }
     const auto bound = [&](std::string_view key, std::size_t fallback) {
         const auto& values = session->features.values;
