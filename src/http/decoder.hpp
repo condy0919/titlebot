@@ -17,7 +17,6 @@ enum class ContentEncoding : std::uint8_t {
     kIdentity,
     kGzip,
     kDeflate,
-    kRawDeflate,
 };
 
 enum class DecodeError : std::uint8_t {
@@ -31,7 +30,7 @@ public:
     explicit ContentDecoder(ContentEncoding encoding = ContentEncoding::kIdentity,
                             std::size_t limit = FetchLimits{}.body_bytes);
 
-    virtual ~ContentDecoder();
+    ~ContentDecoder();
 
     ContentDecoder(const ContentDecoder&) = delete;
     ContentDecoder& operator=(const ContentDecoder&) = delete;
@@ -43,13 +42,6 @@ public:
     std::expected<std::optional<std::string>, DecodeError>
     Consume(TitleParser& parser, std::string_view input, bool final);
 
-    /// Feed a non-final range, returning std::nullopt for both missing titles and decode errors.
-    /// For example, with html = "<title>OK</title>" in a std::string, an identity decoder's
-    /// parse(parser, html.data(), html.data() + html.size()) yields "OK".
-    std::optional<std::string> parse(TitleParser& parser, const char* begin, const char* end) {
-        return Consume(parser, {begin, end}, false).value_or(std::nullopt);
-    }
-
 private:
     struct InflateState;
 
@@ -58,16 +50,6 @@ private:
     std::size_t remaining_;
 };
 
-class GzipDecoder : public ContentDecoder {
-public:
-    GzipDecoder() : ContentDecoder(ContentEncoding::kGzip) {}
-};
-
-/// Decode raw DEFLATE data without a zlib wrapper.
-class DeflateDecoder : public ContentDecoder {
-public:
-    DeflateDecoder() : ContentDecoder(ContentEncoding::kRawDeflate) {}
-};
 } // namespace tb
 
 #endif // TITLEBOT_DECODER_HPP_

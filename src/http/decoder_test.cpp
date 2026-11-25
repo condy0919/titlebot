@@ -4,7 +4,6 @@
 
 #include <fstream>
 #include <ios>
-#include <memory>
 
 #include "html/title_parser.hpp"
 
@@ -19,14 +18,17 @@ protected:
 TEST_F(Decoder, ReadsGzipTitle) {
     const std::string path = TITLEBOT_PROJ_ROOT + "/tests/fixtures/bilibili.html.gz"s;
 
-    std::unique_ptr<tb::ContentDecoder> decoder = std::make_unique<tb::GzipDecoder>();
+    tb::ContentDecoder decoder(tb::ContentEncoding::kGzip);
 
     std::optional<std::string> found;
     char buf[1024];
     std::ifstream ifs(path, std::ios_base::in | std::ios_base::binary);
-    while (std::streamsize sz = ifs.readsome(buf, sizeof(buf))) {
-        if (auto result = decoder->parse(parser, buf, buf + sz)) {
-            found = result;
+    ASSERT_TRUE(ifs.is_open());
+    while (ifs.read(buf, sizeof(buf)) || ifs.gcount()) {
+        auto result = decoder.Consume(parser, {buf, static_cast<std::size_t>(ifs.gcount())}, ifs.eof());
+        ASSERT_TRUE(result);
+        if (*result) {
+            found = *result;
             break;
         }
     }
@@ -43,7 +45,7 @@ TEST_F(Decoder, ContinuesAcrossGzipMembers) {
         0xc,  0xb,  0x0,  0x0,  0x0,  0x1f, 0x8b, 0x8,  0x0,  0x0,  0x0,  0x0,  0x0,
         0x2,  0xff, 0x53, 0x28, 0x29, 0xcf, 0xb7, 0xd1, 0x2f, 0xc9, 0x2c, 0xc9, 0x49,
         0xb5, 0x3,  0x0,  0x18, 0x3e, 0x2d, 0x29, 0xc,  0x0,  0x0,  0x0};
-    tb::GzipDecoder decoder;
+    tb::ContentDecoder decoder(tb::ContentEncoding::kGzip);
     std::optional<std::string> title;
     for (unsigned char byte : compressed) {
         char ch = static_cast<char>(byte);
