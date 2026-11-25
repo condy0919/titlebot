@@ -380,4 +380,26 @@ TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
     };
     RunExercise(exercise(), std::chrono::seconds(3));
 }
+TEST_F(Server, SendsQuitAndCompletesOnCancellation) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    asio::cancellation_signal stop;
+    auto finished = asio::co_spawn(io, tb::RunBot({
+        .server = "127.0.0.1",
+        .port = std::to_string(listener.local_endpoint().port()),
+        .nick = "bot",
+        .channels = "#room",
+    }), asio::bind_cancellation_slot(stop.slot(), asio::use_future));
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        EXPECT_EQ(co_await ReadLine(peer, input), "NICK bot");
+        EXPECT_EQ(co_await ReadLine(peer, input), "USER bot 0 * :titlebot");
+        stop.emit(asio::cancellation_type::terminal);
+        EXPECT_EQ(co_await ReadLine(peer, input), "QUIT :Shutting down");
+    };
+    RunExercise(exercise(), std::chrono::seconds(2));
+    io.run_for(std::chrono::milliseconds(100));
+    ASSERT_EQ(finished.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_NO_THROW(finished.get());
+}
 } // namespace
