@@ -30,6 +30,7 @@ struct Session {
     std::deque<std::string> queue;
     bool writing = false;
     bool closing = false;
+    std::shared_ptr<void> identity = std::make_shared<char>();
     bool registered = false;
     bool probe_sent = false;
     Clock::time_point last_input{};
@@ -360,6 +361,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
     }
     idle->cancel();
     session->closing = true;
+    session->identity.reset();
     const auto cancellation = co_await asio::this_coro::cancellation_state;
     bool stopping = cancellation.cancelled() != asio::cancellation_type::none;
     if (stopping && connected && session->transport.IsOpen()) {
@@ -577,7 +579,8 @@ bool Connection::IsSelf(std::string_view nick) const {
 }
 
 std::weak_ptr<void> Connection::Identity() const {
-    return session_;
+    auto session = session_.lock();
+    return session ? session->identity : std::weak_ptr<void>{};
 }
 
 asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers) {
