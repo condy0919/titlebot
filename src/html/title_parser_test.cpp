@@ -135,4 +135,13 @@ TEST_F(TitleParser, ReadsSplitByteOrderMarksAndSurrogates) {
     EXPECT_EQ(parser.parse(utf8.begin(), utf8.end()), "中文");
     EXPECT_TRUE(parser.unicode_bom());
 }
+TEST_F(TitleParser, RecoversOnlyFromUnterminatedAttributesAtEndOfInput) {
+    std::string doc = "<div data-x='damaged><title>real</title>";
+    EXPECT_FALSE(parser.parse(doc.begin(), doc.end()));
+    EXPECT_EQ(parser.Finish(), "real");
+    tb::TitleParser valid;
+    doc = "<div data-x='" + std::string(17000, ' ') + "<title>fake</title>'>";
+    EXPECT_FALSE(valid.parse(doc.begin(), doc.end()));
+    EXPECT_FALSE(valid.Finish());
+}
 } // namespace

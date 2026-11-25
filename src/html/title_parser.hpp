@@ -36,6 +36,9 @@ public:
         return std::nullopt;
     }
 
+    /// 在文档结束时尝试从未闭合的属性引号后恢复，例如解析残缺标记后的 <title>。
+    std::optional<std::string> Finish();
+
     /// View the first 1024 input bytes or the shorter prefix consumed so far.
     std::string_view sample() const {
         return bytes_.sample();

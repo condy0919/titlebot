@@ -226,6 +226,9 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
             co_return std::unexpected(FetchError::kResponseLimit);
         }
     } while (!response.is_done());
+    if (auto title = parser.Finish()) {
+        co_return FormatTitle(*title, charset, parser);
+    }
     co_return std::nullopt;
 }
 

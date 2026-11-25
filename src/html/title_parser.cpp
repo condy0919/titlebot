@@ -148,7 +148,7 @@ std::optional<std::string> TitleParser::consume(char ch) {
         dashes_ = ch == '-' ? std::min(2u, dashes_ + 1) : 0;
         return {};
     }
-    if (ch == '<' && (!quote_ || tag_.size() >= 16384)) {
+    if (ch == '<' && !quote_) {
         quote_ = 0;
         tag_.clear();
         state_ = State::kTag;
@@ -184,6 +184,24 @@ std::optional<std::string> TitleParser::consume(char ch) {
         return {};
     }
     HandleCompleteTag();
+    return {};
+}
+
+std::optional<std::string> TitleParser::Finish() {
+    if (state_ == State::kTag && quote_) {
+        // 直到文档结束才能区分残缺属性和含有标记文本的合法属性，最多重新扫描一次。
+        auto remainder = std::exchange(tag_, {});
+        state_ = State::kText;
+        quote_ = 0;
+        auto first = remainder.find('<');
+        if (first != remainder.npos) {
+            for (char ch : std::string_view(remainder).substr(first)) {
+                if (auto title = consume(ch)) {
+                    return title;
+                }
+            }
+        }
+    }
     return {};
 }
 
