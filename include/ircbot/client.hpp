@@ -70,6 +70,7 @@ struct Config {
     std::chrono::milliseconds send_interval{0};
     // Return the minimum interval before the next ordinary line. Protocol control bypasses pacing.
     std::function<std::chrono::milliseconds(std::string_view)> send_delay;
+    bool reclaim_nickname = false;
     bool reconnect_jitter = true;
     std::optional<std::size_t> max_retries{};
     // For example, return false for kTlsTrust to stop after a failed verification.

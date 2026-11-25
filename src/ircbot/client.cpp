@@ -74,6 +74,7 @@ struct Session {
     std::stop_source stop;
     std::shared_ptr<void> identity = std::make_shared<char>();
     bool registered = false;
+    bool reclaim_pending = false;
     bool probe_sent = false;
     Clock::time_point last_input{};
     Clock::time_point registered_at{};
@@ -373,6 +374,8 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
         session->registered = true;
         session->registered_at = detail::Now(session->clock);
         session->nick = message.params.front();
+        session->reclaim_pending = config.reclaim_nickname &&
+                                   !Equals(session->nick, config.nick, session->features.casemapping);
         for (const auto& channel : *session->channels) {
             SendControl(session, channel.key.empty() ? "JOIN " + channel.name
                                                      : "JOIN " + channel.name + " " + channel.key);
@@ -381,6 +384,17 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
     } else if (IsCommand(message, "NICK") && !message.params.empty() &&
                Equals(message.Nick(), session->nick, session->features.casemapping)) {
         session->nick = message.params.front();
+        if (Equals(session->nick, config.nick, session->features.casemapping)) {
+            session->reclaim_pending = false;
+        }
+    }
+    if (session->reclaim_pending &&
+        (IsCommand(message, "QUIT") || IsCommand(message, "NICK")) &&
+        !Equals(session->nick, config.nick, session->features.casemapping) &&
+        Equals(message.Nick(), config.nick, session->features.casemapping) &&
+        (IsCommand(message, "QUIT") || (!message.params.empty() &&
+         !Equals(message.params[0], config.nick, session->features.casemapping)))) {
+        SendControl(session, "NICK " + config.nick);
     }
     if (IsCommand(message, "ERROR") && !message.params.empty()) {
         Diagnose(session, "IRC ERROR: " + std::string(message.params.back()));
