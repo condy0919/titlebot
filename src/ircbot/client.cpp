@@ -541,7 +541,7 @@ asio::awaitable<asio::ip::tcp::socket> Connect(const Config& config) {
     co_return std::move(*socket);
 }
 
-bool ValidConfig(const Config& config) {
+std::string_view InvalidConfigField(const Config& config) {
     auto token = [](std::string_view value) {
         return !value.empty() && value.front() != ':' &&
                std::ranges::none_of(value, [](unsigned char ch) { return ch <= 32 || ch == 127; });
@@ -552,24 +552,40 @@ bool ValidConfig(const Config& config) {
     const bool valid_server =
         !config.server.empty() &&
         std::ranges::none_of(config.server, [](unsigned char ch) { return ch <= 32 || ch == 127; });
-    if (!valid_server || !token(config.port) || !token(config.nick) || !token(config.username) ||
-        !text(config.realname) || !text(config.server_password) || config.nick.size() > 100 ||
-        config.username.size() + config.realname.size() + 12 > 510 ||
-        config.send_interval.count() < 0 || config.send_interval > std::chrono::hours(24) ||
-        config.server_password.size() > 503 || !config.queued_lines ||
-        config.certificate_file.empty() != config.private_key_file.empty()) {
-        return false;
+    if (!valid_server) {
+        return "server";
+    }
+    if (!token(config.port)) {
+        return "port";
+    }
+    if (!token(config.nick) || config.nick.size() > 100) {
+        return "nick";
+    }
+    if (!token(config.username)) {
+        return "username";
+    }
+    if (!text(config.realname) || config.username.size() + config.realname.size() + 12 > 510) {
+        return "username/realname";
+    }
+    if (!text(config.server_password) || config.server_password.size() > 503) {
+        return "server_password";
+    }
+    if (config.send_interval.count() < 0 || config.send_interval > std::chrono::hours(24)) {
+        return "send_interval";
+    }
+    if (config.certificate_file.empty() != config.private_key_file.empty()) {
+        return "certificate_file/private_key_file";
     }
     for (const auto& channel : config.channels) {
         if (!token(channel) || channel.size() > 505) {
-            return false;
+            return "channels";
         }
     }
     for (const auto& [channel, key] : config.channel_keys) {
         if (std::ranges::find(config.channels, channel) == config.channels.end() ||
             channel.contains(',') || !token(key) || key.contains(',') ||
             key.size() > 504 - std::min<std::size_t>(504, channel.size())) {
-            return false;
+            return "channel_keys";
         }
     }
     for (auto timeout :
@@ -577,11 +593,11 @@ bool ValidConfig(const Config& config) {
           config.timeouts.idle_timeout, config.timeouts.ping_timeout, config.timeouts.write_timeout,
           config.timeouts.reconnect_initial, config.timeouts.reconnect_max}) {
         if (timeout <= std::chrono::milliseconds::zero()) {
-            return false;
+            return "timeouts";
         }
     }
     if (!ValidateRegistration(config.registration)) {
-        return false;
+        return "registration";
     }
     // A negotiation batch must fit without dropping credentials or control commands.
     std::size_t control_lines = std::max<std::size_t>(4, config.channels.size() + 1);
@@ -595,13 +611,13 @@ bool ValidConfig(const Config& config) {
         control_lines = std::max(control_lines, ((bytes + 2) / 3 * 4) / 400 + 2);
     }
     if (config.queued_lines < control_lines) {
-        return false;
+        return "queued_lines";
     }
     if (config.registration.sasl && config.registration.sasl->mechanism == SaslMechanism::kPlain &&
         !config.tls) {
-        return false;
+        return "registration.sasl/tls";
     }
-    return true;
+    return {};
 }
 } // namespace
 
@@ -819,7 +835,9 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
     if (config.username.empty()) {
         config.username = config.nick;
     }
-    if (!ValidConfig(config)) {
+    if (const auto field = InvalidConfigField(config); !field.empty()) {
+        Diagnose(handlers, "Invalid IRC configuration: " + std::string(field),
+                 DiagnosticKind::kConfiguration, Severity::kError);
         co_return std::unexpected(ClientError::kInvalidConfig);
     }
     auto executor = co_await asio::this_coro::executor;

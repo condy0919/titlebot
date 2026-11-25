@@ -265,9 +265,17 @@ TEST_F(Client, RejectsPlainAuthenticationWithoutTlsBeforeConnecting) {
     config.nick = "bot";
     config.registration.sasl =
         ircbot::SaslConfig{.username = "bot", .password = "secret", .authzid = {}};
-    auto result = asio::co_spawn(io, ircbot::Run(config), asio::use_future);
+    std::string diagnostic;
+    ircbot::Handlers handlers;
+    handlers.diagnostic_event = [&](const auto& event) {
+        if (event.kind == ircbot::DiagnosticKind::kConfiguration) {
+            diagnostic = event.message;
+        }
+    };
+    auto result = asio::co_spawn(io, ircbot::Run(config, handlers), asio::use_future);
     io.run();
     EXPECT_EQ(result.get().error(), ircbot::ClientError::kInvalidConfig);
+    EXPECT_NE(diagnostic.find("registration.sasl/tls"), diagnostic.npos);
 }
 
 TEST_F(Client, ReturnsHandlerFailureAndClosesConnection) {
