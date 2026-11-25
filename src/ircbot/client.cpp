@@ -933,6 +933,7 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
     const ServerAddress primary{config.server, config.port};
     std::mt19937 jitter(std::random_device{}());
     while (true) {
+        auto failure = ClientError::kNetwork;
         try {
             const auto& server = next_server == 0 ? primary : config.fallback_servers[next_server - 1];
             config.server = server.host;
@@ -953,7 +954,10 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
                 Diagnose(handlers, "IRC application callback failed", DiagnosticKind::kCallback,
                          Severity::kError, {}, {}, error.exception);
             }
-            co_return std::unexpected(error.error);
+            failure = error.error;
+            if (!config.should_retry) {
+                co_return std::unexpected(failure);
+            }
         } catch (const boost::system::system_error& error) {
             if (cancellation.cancelled() != asio::cancellation_type::none) {
                 co_return std::expected<void, ClientError>{};
@@ -963,6 +967,17 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
         }
         if (cancellation.cancelled() != asio::cancellation_type::none) {
             co_return std::expected<void, ClientError>{};
+        }
+        if (config.should_retry) {
+            try {
+                if (!config.should_retry(failure, retries)) {
+                    co_return std::unexpected(failure);
+                }
+            } catch (...) {
+                Diagnose(handlers, "IRC retry policy failed", DiagnosticKind::kCallback,
+                         Severity::kError, {}, {}, std::current_exception());
+                co_return std::unexpected(ClientError::kHandler);
+            }
         }
         if (config.max_retries && retries >= *config.max_retries) {
             co_return std::unexpected(ClientError::kRetryLimit);

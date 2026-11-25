@@ -84,6 +84,8 @@ const char* ClientErrorText(ircbot::ClientError error) {
         return "IRC server rejected the configured nickname";
     case ircbot::ClientError::kRetryLimit:
         return "IRC reconnect limit reached";
+    case ircbot::ClientError::kNetwork:
+        return "IRC connection failed";
     case ircbot::ClientError::kHandler:
         return "IRC application callback failed";
     }

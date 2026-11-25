@@ -48,6 +48,8 @@ struct ServerAddress {
     std::string port;
 };
 
+enum class ClientError { kNetwork, kInvalidConfig, kTlsConfiguration, kTlsTrust, kAuthentication, kHandler, kReconnectTimer, kRetryLimit, kInvalidNickname };
+
 struct Config {
     std::string server;
     std::string port;
@@ -68,6 +70,8 @@ struct Config {
     std::function<std::chrono::milliseconds(std::string_view)> send_delay;
     bool reconnect_jitter = true;
     std::optional<std::size_t> max_retries{};
+    // For example, return false for kTlsTrust to stop after a failed verification.
+    std::function<bool(ClientError, std::size_t)> should_retry;
     std::map<std::string, std::string> channel_keys;
     std::vector<ServerAddress> fallback_servers;
     std::string tls_server_name;
@@ -75,7 +79,7 @@ struct Config {
 };
 
 enum class SendError { kClosed, kInvalidMessage, kQueueFull, kCapabilityRequired };
-enum class ClientError { kInvalidConfig, kTlsConfiguration, kTlsTrust, kAuthentication, kHandler, kReconnectTimer, kRetryLimit, kInvalidNickname };
+
 
 /// A weak handle to one connection. Copies cannot send on a later reconnect.
 class Connection {

@@ -456,6 +456,28 @@ TEST_F(Client, ReportsInvalidNicknameBeforeRegistrationTimesOut) {
     EXPECT_EQ(result.get().error(), ircbot::ClientError::kInvalidNickname);
 }
 
+TEST_F(Client, LetsPolicyTerminateTransientConnectionFailures) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    auto config = Configuration(listener);
+    std::vector<ircbot::ClientError> failures;
+    config.should_retry = [&](auto error, std::size_t retries) {
+        EXPECT_EQ(retries, 0u);
+        failures.push_back(error);
+        return false;
+    };
+    auto result = asio::co_spawn(io, ircbot::Run(config), asio::use_future);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        co_await Register(peer, input);
+        peer.close();
+    };
+    Exercise(exercise());
+    io.run();
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kNetwork);
+    EXPECT_EQ(failures, (std::vector{ircbot::ClientError::kNetwork}));
+}
+
 TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     auto config = Configuration(listener);
