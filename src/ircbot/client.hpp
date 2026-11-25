@@ -85,6 +85,12 @@ public:
     /// Await queue capacity on the session executor. For example, after kQueueFull,
     /// co_await connection.WaitWritable() before retrying Send; other senders can win the slot.
     boost::asio::awaitable<std::expected<void, SendError>> WaitWritable() const;
+    /// For example, Notice("bot", "hi") sends a NOTICE with target and text.
+    std::expected<void, SendError> Notice(std::string_view target, std::string_view text) const;
+    /// For example, Join("#room", "secret") queues "JOIN #room secret".
+    std::expected<void, SendError> Join(std::string_view channel, std::string_view key = {}) const;
+    /// For example, Part("#room", "going away") queues "PART #room :going away".
+    std::expected<void, SendError> Part(std::string_view channel, std::string_view reason = {}) const;
     bool IsOpen() const;
     std::string Nick() const;
     /// For example, TextBudget("#room") reserves the server-advertised user/host limits

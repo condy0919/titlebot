@@ -699,6 +699,25 @@ asio::awaitable<std::expected<void, SendError>> Connection::WaitWritable() const
     return WaitForSpace(session_);
 }
 
+std::expected<void, SendError> Connection::Notice(std::string_view target, std::string_view text) const {
+    return Send("NOTICE", {target, text});
+}
+
+std::expected<void, SendError> Connection::Join(std::string_view channel, std::string_view key) const {
+    if (channel.empty() || channel.find_first_of(" ,:") != channel.npos ||
+        key.find_first_of(" ,") != key.npos || key.starts_with(':')) {
+        return std::unexpected(SendError::kInvalidMessage);
+    }
+    return key.empty() ? Send("JOIN", {channel}) : Send("JOIN", {channel, key});
+}
+
+std::expected<void, SendError> Connection::Part(std::string_view channel, std::string_view reason) const {
+    if (channel.empty() || channel.find_first_of(" ,:") != channel.npos) {
+        return std::unexpected(SendError::kInvalidMessage);
+    }
+    return reason.empty() ? Send("PART", {channel}) : Send("PART", {channel, reason});
+}
+
 bool Connection::IsOpen() const {
     auto session = session_.lock();
     return session && !session->closing && session->transport.IsOpen();
