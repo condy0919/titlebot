@@ -116,7 +116,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     for (;;) {
         auto& parser = parser_storage.emplace();
         parser.header_limit(16384);
-        parser.body_limit(kBodyLimit);
+        parser.body_limit(boost::none);
         while (!parser.is_header_done()) {
             co_await ReadResponsePart(stream, pending, parser);
         }
@@ -172,15 +172,19 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     ContentDecoder decoder(encoding);
     TitleParser parser;
     std::array<char, 4096> block;
+    std::size_t remaining = kBodyLimit;
     do {
         auto& body = response.get().body();
         body.data = block.data();
-        body.size = block.size();
+        const auto capacity = std::min(block.size(), remaining + 1);
+        body.size = capacity;
         if (!response.is_done()) {
             co_await ReadResponsePart(stream, pending, response);
         }
-        auto title =
-            decoder.Consume(parser, {block.data(), block.size() - body.size}, response.is_done());
+        const auto count = capacity - body.size;
+        const auto used = std::min(count, remaining);
+        remaining -= used;
+        auto title = decoder.Consume(parser, {block.data(), used}, response.is_done() && used == count);
         if (!title) {
             co_return std::unexpected(title.error() == DecodeError::kLimit
                                           ? FetchError::kResponseLimit
@@ -192,6 +196,9 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
                                   : charset.empty()    ? parser.DeclaredCharset()
                                                        : charset,
                                   parser.sample());
+        }
+        if (used < count) {
+            co_return std::unexpected(FetchError::kResponseLimit);
         }
     } while (!response.is_done());
     co_return std::nullopt;

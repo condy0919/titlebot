@@ -167,7 +167,9 @@ TEST_F(FetcherLoopback, ResolvesRelativeReferencesAndRechecksDestinations) {
 TEST_F(FetcherLoopback, BoundsRedirectsAndResponseSizes) {
     EXPECT_EQ(Run(std::vector<std::string>(6, Redirect("/loop"))),
               std::unexpected(tb::FetchError::kRedirectLimit));
-    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 524289\r\n\r\n"}),
+    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 524289\r\n\r\n<title>Early</title>"}),
+              tb::FetchResult(std::string("Early")));
+    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 524289\r\n\r\n" + std::string(524289, 'x')}),
               std::unexpected(tb::FetchError::kResponseLimit));
     EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nX-Large: " + std::string(17000, 'x') + "\r\n\r\n"}),
               std::unexpected(tb::FetchError::kResponseLimit));
