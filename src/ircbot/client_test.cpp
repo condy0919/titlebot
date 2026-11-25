@@ -76,7 +76,8 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
     ircbot::Connection saved;
     unsigned ready = 0, disconnected = 0;
     ircbot::Handlers handlers;
-    handlers.ready = [&](ircbot::Connection connection) {
+    handlers.ready = [&, marker = std::make_unique<bool>(true)](ircbot::Connection connection) {
+        EXPECT_TRUE(*marker);
         saved = connection;
         ++ready;
     };

@@ -2,6 +2,7 @@
 #define IRCBOT_CLIENT_HPP_
 
 #include <chrono>
+#include <concepts>
 #include <cstddef>
 #include <exception>
 #include <expected>
@@ -14,6 +15,7 @@
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -135,15 +137,30 @@ struct DiagnosticEvent {
     std::exception_ptr exception;
 };
 
+template <class... Args>
+class Callback {
+public:
+    Callback() = default;
+    template <class Fn>
+        requires (!std::same_as<std::remove_cvref_t<Fn>, Callback> &&
+                  std::constructible_from<std::move_only_function<void(Args...)>, Fn>)
+    Callback(Fn&& fn)
+        : function_(std::make_shared<std::move_only_function<void(Args...)>>(std::forward<Fn>(fn))) {}
+    explicit operator bool() const { return function_ && static_cast<bool>(*function_); }
+    void operator()(Args... args) const { (*function_)(std::forward<Args>(args)...); }
+private:
+    std::shared_ptr<std::move_only_function<void(Args...)>> function_;
+};
+
 struct Handlers {
     // Callbacks run on Run's executor and must not block. Message views last only for the call;
     // copy fields needed by a co_spawn task, and retain Connection to isolate late replies.
-    std::function<void(Connection)> connected;
-    std::function<void(Connection)> ready;
-    std::function<void(Connection, const MessageView&)> message;
-    std::function<void(Connection)> disconnected;
-    std::function<void(std::string_view)> diagnostic;
-    std::function<void(const DiagnosticEvent&)> diagnostic_event;
+    Callback<Connection> connected;
+    Callback<Connection> ready;
+    Callback<Connection, const MessageView&> message;
+    Callback<Connection> disconnected;
+    Callback<std::string_view> diagnostic;
+    Callback<const DiagnosticEvent&> diagnostic_event;
 };
 
 /// Run one independent client on a single-threaded executor (or a strand).
