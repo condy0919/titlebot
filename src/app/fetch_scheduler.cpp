@@ -84,12 +84,11 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
 
 void FetchScheduler::Pump() {
     for (auto job = jobs_.begin(); job != jobs_.end() && active_ < kMaxActive; ++job) {
-        if (job->running || std::ranges::count_if(jobs_, [&](const Job& other) {
-                                return other.running && other.host == job->host;
-                            }) >= static_cast<int>(kPerHost)) {
+        if (job->running || host_active_[job->host] >= kPerHost) {
             continue;
         }
         job->running = true;
+        ++host_active_[job->host];
         ++active_;
         asio::co_spawn(
             executor_,
@@ -130,6 +129,10 @@ void FetchScheduler::Complete(std::list<Job>::iterator job, Clock::time_point st
         ++stats_.no_title;
     }
     auto replies = std::move(job->replies);
+    auto host = host_active_.find(job->host);
+    if (--host->second == 0) {
+        host_active_.erase(host);
+    }
     jobs_.erase(job);
     --active_;
     subscribers_ -= replies.size();

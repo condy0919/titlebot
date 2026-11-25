@@ -72,6 +72,7 @@ private:
     Fetch fetch_;
     Clock::time_point next_report_;
     std::list<Job> jobs_;
+    std::map<std::string, std::size_t> host_active_;
     std::size_t active_ = 0;
     std::size_t subscribers_ = 0;
     Stats stats_;
