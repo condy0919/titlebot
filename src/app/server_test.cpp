@@ -108,7 +108,7 @@ asio::awaitable<void> ExerciseSession() {
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG bob :测试标题");
     release.cancel();
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #room :测试标题");
-    // 同一频道只收到一次标题，另一个频道仍收到自己的回复。
+    // Each channel receives one reply for the shared download.
     EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #other :测试标题");
     EXPECT_EQ(urls, (std::vector<std::string>{"first.example:8080/?q=title", "private.example/"}));
 }

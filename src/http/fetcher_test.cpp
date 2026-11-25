@@ -199,7 +199,8 @@ TEST_F(FetcherLoopback, VerifiesTrustAndHostForEachTlsConnection) {
     client_tls.load_verify_file(fixture);
     EXPECT_EQ(Run({ok}, "https"), std::unexpected(tb::FetchError::kNetwork));
     EXPECT_EQ(Run({ok}, "https", localhost), tb::FetchResult(std::string("OK")));
-    // 测试服务端直接关闭 TCP。无长度的正文可按 EOF 结束，固定长度的正文必须完整。
+    // The peer closes TCP directly. An EOF-delimited body may finish, but a fixed-length body must
+    // be complete.
     EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\n\r\nno title"}, "https", localhost),
               tb::FetchResult(std::nullopt));
     EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 30\r\n\r\nshort"}, "https", localhost),

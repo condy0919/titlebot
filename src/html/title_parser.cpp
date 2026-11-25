@@ -79,27 +79,11 @@ std::optional<Attribute> NextAttribute(std::string_view& attrs) {
     return std::nullopt;
 }
 
-// Extract the encoding label declared by one <meta> tag. The caller passes only the
-// attributes: MetaCharset(" charset='UTF-8'") returns "UTF-8". An empty string means
-// this tag supplied no usable declaration, so later <meta> tags can still be checked.
-std::string MetaCharset(std::string_view attrs) {
-    // The legacy form needs both attributes. Keep views into the tag so they can appear
-    // in either order, e.g. content='text/html; charset=shift_jis' before http-equiv.
-    std::string_view content, equiv;
-    while (auto attr = NextAttribute(attrs)) {
-        // Attribute names are case-insensitive. A valid direct charset takes precedence
-        // over the legacy form, even if content and http-equiv were seen first.
-        if (boost::beast::iequals(attr->name, "charset")) {
-            auto result = ParseCharsetLabel(attr->value);
-            if (!result.empty()) {
-                return result;
-            }
-        } else if (boost::beast::iequals(attr->name, "content")) {
-            content = attr->value;
-        } else if (boost::beast::iequals(attr->name, "http-equiv")) {
-            equiv = attr->value;
-        }
-    }
+bool BlankTitle(std::string_view value) {
+    return std::ranges::all_of(value, [](unsigned char c) { return c <= 32 || c == 127; });
+}
+
+std::string LegacyCharset(std::string_view equiv, std::string_view content) {
     // Interpret content as a MIME type with parameters only for http-equiv="Content-Type".
     // Start at the semicolon so param_list sees "; charset=shift_jis" after "text/html".
     const auto semi = content.find(';');
@@ -136,8 +120,7 @@ std::optional<std::string> TitleParser::consume(char ch) {
                 state_ = State::kText;
                 title_tag_ = title_.npos;
                 auto title = std::exchange(title_, {});
-                if (std::ranges::all_of(title,
-                                        [](unsigned char c) { return c <= 32 || c == 127; })) {
+                if (BlankTitle(title)) {
                     return {};
                 }
                 return title;
@@ -161,6 +144,10 @@ std::optional<std::string> TitleParser::consume(char ch) {
         return {};
     }
     if (state_ != State::kTag) {
+        return {};
+    }
+    if (!raw_element_.empty() && tag_.empty() && ch != '/') {
+        state_ = State::kText;
         return {};
     }
     if (ch != '>' || quote_) {
@@ -195,7 +182,7 @@ std::optional<std::string> TitleParser::consume(char ch) {
 
 std::optional<std::string> TitleParser::Finish() {
     if (state_ == State::kTag && quote_) {
-        // 直到文档结束才能区分残缺属性和含有标记文本的合法属性，最多重新扫描一次。
+        // Only EOF distinguishes an unfinished attribute from quoted markup. Replay its tail once.
         auto remainder = std::exchange(tag_, {});
         state_ = State::kText;
         quote_ = 0;
@@ -251,21 +238,24 @@ void TitleParser::HandleCompleteTag() {
             state_ = State::kTitle;
         } else if (boost::beast::iequals(name, "meta")) {
             auto attrs = tag.substr(name.size());
-            if (charset_.empty()) {
-                charset_ = MetaCharset(attrs);
+            std::string_view property, content, equiv;
+            while (auto attr = NextAttribute(attrs)) {
+                if (boost::beast::iequals(attr->name, "charset") && charset_.empty()) {
+                    charset_ = ParseCharsetLabel(attr->value);
+                } else if (boost::beast::iequals(attr->name, "property")) {
+                    property = attr->value;
+                } else if (boost::beast::iequals(attr->name, "content")) {
+                    content = attr->value;
+                } else if (boost::beast::iequals(attr->name, "http-equiv")) {
+                    equiv = attr->value;
+                }
             }
-            if (!social_title_) {
-                std::string_view property, content;
-                while (auto attr = NextAttribute(attrs)) {
-                    if (boost::beast::iequals(attr->name, "property")) {
-                        property = attr->value;
-                    } else if (boost::beast::iequals(attr->name, "content")) {
-                        content = attr->value;
-                    }
-                }
-                if (boost::beast::iequals(property, "og:title") && !content.empty()) {
-                    social_title_ = content;
-                }
+            if (charset_.empty()) {
+                charset_ = LegacyCharset(equiv, content);
+            }
+            if (!social_title_ && boost::beast::iequals(property, "og:title") &&
+                !BlankTitle(content)) {
+                social_title_ = content;
             }
         }
     }

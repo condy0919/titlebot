@@ -13,7 +13,7 @@
 
 namespace tb {
 namespace detail {
-/// 判断解析得到的地址是否可用于公网抓取，例如 127.0.0.1 返回 false。
+/// Check a resolved address before connecting. For example, 127.0.0.1 returns false.
 bool IsPublicAddress(boost::asio::ip::address address);
 
 struct FetchPolicy {

@@ -156,4 +156,13 @@ TEST_F(TitleParser, AcceptsUnsignedInputBytes) {
     const unsigned char html[] = "<title>ok</title>";
     EXPECT_EQ(parser.parse(std::begin(html), std::end(html)), "ok");
 }
+TEST_F(TitleParser, SkipsScriptComparisonsAndBlankMetadataAcrossChunks) {
+    std::string body =
+        "<script>if (a<b && c<d) '<title>x</title>';</script>"
+        "<meta property='og:title' content=' \t\x01'><meta content='real' property='og:title'>";
+    for (char byte : body) {
+        EXPECT_FALSE(parser.parse(&byte, &byte + 1));
+    }
+    EXPECT_EQ(parser.Finish(), "real");
+}
 } // namespace

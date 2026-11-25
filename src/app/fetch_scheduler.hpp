@@ -36,17 +36,17 @@ public:
         std::weak_ptr<void> session;
         std::string target;
     };
-    /// 为消息抓取标题。相同链接共用一次下载，同一会话的同一目标仅接收一次在途结果。
-    /// 例如 #a 和 #b 同时提交相同链接时，两个频道各收到一次回复。
+    /// Fetch a title once for pending requests for the same link.
+    /// For example, simultaneous submissions from #a and #b deliver once to each channel.
     void Submit(PrivMsg message, Deliver deliver, Destination destination = {});
 
     /// Count a dropped outgoing reply. RecordReplyDrop() increments stats().reply_drops by one.
     void RecordReplyDrop();
 
-    /// 记录抓取统计。例如，首个任务完成前汇总包含 completed=0。
+    /// Report current counters. Before any download completes, Report() logs completed=0.
     void Report() const;
 
-    /// 启用按分钟汇总，空闲期间没有统计变化时不打印。
+    /// After EnableReports(), a completed download triggers a summary within one minute.
     void EnableReports();
 
     struct Stats {
