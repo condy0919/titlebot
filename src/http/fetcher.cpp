@@ -129,6 +129,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     request.set(http::field::accept_encoding, "gzip, deflate, identity");
     co_await http::async_write(stream, request, use_awaitable);
     std::string pending;
+    unsigned informational = 0;
     std::optional<ResponseParser> parser_storage;
     for (;;) {
         auto& parser = parser_storage.emplace();
@@ -143,6 +144,9 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
         }
         if (status < 100 || status >= 200) {
             break;
+        }
+        if (++informational > 4) {
+            co_return std::unexpected(FetchError::kResponseLimit);
         }
     }
     auto& response = *parser_storage;

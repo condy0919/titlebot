@@ -270,4 +270,9 @@ TEST_F(FetcherLoopback, ReturnsCompleteTitleBeforeBodyEnds) {
 TEST_F(FetcherLoopback, ReportsBlankAndControlOnlyTitlesAsMissing) {
     EXPECT_EQ(Run({HtmlResponse("<title> \x01\t </title>", "")}), tb::FetchResult(std::nullopt));
 }
+TEST_F(FetcherLoopback, LimitsInformationalResponses) {
+    EXPECT_EQ(Run({hints + hints + hints + hints + ok}), tb::FetchResult(std::string("OK")));
+    EXPECT_EQ(Run({hints + hints + hints + hints + hints + ok}),
+              std::unexpected(tb::FetchError::kResponseLimit));
+}
 } // namespace
