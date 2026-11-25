@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <exception>
-#include <iostream>
+#include <sstream>
 #include <iterator>
 #include <utility>
 
@@ -158,16 +158,17 @@ void FetchScheduler::MaybeReport() {
 }
 
 void FetchScheduler::Report() const {
-    std::clog << "fetch active=" << active_ << " queued=" << jobs_.size() - active_
+    std::ostringstream summary;
+    summary << "fetch active=" << active_ << " queued=" << jobs_.size() - active_
               << " peak_queue=" << stats_.peak_queue << " completed=" << stats_.completed
               << " elapsed_ms_total=" << stats_.elapsed.count() << " titles=" << stats_.titles
               << " no_title=" << stats_.no_title << " merged=" << stats_.merged
               << " queue_drops=" << stats_.queue_drops << " reply_drops=" << stats_.reply_drops;
     for (auto [error, name] : kErrorNames) {
         auto it = stats_.failures.find(error);
-        std::clog << ' ' << name << '=' << (it == stats_.failures.end() ? 0 : it->second);
+        summary << ' ' << name << '=' << (it == stats_.failures.end() ? 0 : it->second);
     }
-    std::clog << '\n';
+    TB_LOG_INFO("{}", summary.str());
 }
 
 bool ReplyLimiter::Allow(std::string target, Clock::time_point now) {

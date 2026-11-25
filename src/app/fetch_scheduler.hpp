@@ -36,7 +36,7 @@ public:
     /// Count a dropped outgoing reply. RecordReplyDrop() increments stats().reply_drops by one.
     void RecordReplyDrop();
 
-    /// Write current counters to std::clog. For example, Report() includes completed=0
+    /// Log current counters. For example, Report() includes completed=0
     /// before the first fetch completes.
     void Report() const;
 

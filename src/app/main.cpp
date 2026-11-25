@@ -6,6 +6,8 @@
 
 #include <boost/asio.hpp>
 
+#include <spdlog/sinks/stdout_color_sinks.h>
+
 #include "common/log.hpp"
 #include "server.hpp"
 
@@ -95,6 +97,7 @@ constexpr argp kParser{
 } // namespace
 
 int main(int argc, char** argv) {
+    spdlog::set_default_logger(spdlog::stderr_color_mt("titlebot"));
     Arguments args{};
     argp_err_exit_status = 2;
     if (argp_parse(&kParser, argc, argv, 0, nullptr, &args) != 0) {
