@@ -500,7 +500,15 @@ std::expected<void, SendError> Connection::Send(std::string_view command,
     if (!line) {
         return std::unexpected(SendError::kInvalidMessage);
     }
-    return SendLine(std::move(*line));
+    auto session = session_.lock();
+    if (!session || session->closing || !session->transport.IsOpen()) {
+        return std::unexpected(SendError::kClosed);
+    }
+    if ((!tags.empty() || Equals(command, "TAGMSG", CaseMapping::kAscii)) &&
+        !session->registration.enabled().contains("message-tags")) {
+        return std::unexpected(SendError::kCapabilityRequired);
+    }
+    return Queue(session, std::move(*line));
 }
 
 std::expected<void, SendError> Connection::SendLine(std::string line) const {
