@@ -161,13 +161,20 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
     }
 }
 
+bool PaceCommand(std::string_view command) {
+    return !Equals(command, "PONG", CaseMapping::kAscii) &&
+           !Equals(command, "CAP", CaseMapping::kAscii) &&
+           !Equals(command, "AUTHENTICATE", CaseMapping::kAscii) &&
+           !Equals(command, "QUIT", CaseMapping::kAscii);
+}
+
 std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, std::string line,
                                      bool priority = false, bool paced = true) {
     if (!session->transport.IsOpen()) {
         return std::unexpected(SendError::kClosed);
     }
     if (session->queue.size() >= session->queue_limit) {
-        if (!priority) {
+        if ((!priority && paced) || !session->queue.back().paced) {
             return std::unexpected(SendError::kQueueFull);
         }
         session->queue.pop_back();
@@ -175,11 +182,14 @@ std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, st
     }
     if (priority) {
         session->queue.push_front({std::move(line), false});
-        if (session->pacing) {
-            session->pacing->cancel();
-        }
+    } else if (!paced) {
+        const auto first_business = std::ranges::find(session->queue, true, &detail::QueuedLine::paced);
+        session->queue.insert(first_business, {std::move(line), false});
     } else {
-        session->queue.push_back({std::move(line), paced});
+        session->queue.push_back({std::move(line), true});
+    }
+    if ((priority || !paced) && session->pacing) {
+        session->pacing->cancel();
     }
     if (!session->writing) {
         session->writing = true;
@@ -671,7 +681,7 @@ std::expected<void, SendError> Connection::Send(std::string_view command,
         !session->registration.enabled().contains("message-tags")) {
         return std::unexpected(SendError::kCapabilityRequired);
     }
-    return Queue(session, std::move(*line));
+    return Queue(session, std::move(*line), false, PaceCommand(command));
 }
 
 std::expected<void, SendError> Connection::SendLine(std::string line) const {
@@ -710,7 +720,8 @@ std::expected<void, SendError> Connection::SendLine(std::string line) const {
         !session->registration.enabled().contains("message-tags")) {
         return std::unexpected(SendError::kCapabilityRequired);
     }
-    return Queue(session, std::move(line));
+    const bool paced = PaceCommand(parsed->command);
+    return Queue(session, std::move(line), false, paced);
 }
 
 std::expected<void, SendError> Connection::Privmsg(std::string_view target,
