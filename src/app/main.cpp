@@ -2,6 +2,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <csignal>
+#include <cstdlib>
 #include <exception>
 #include <string_view>
 #include <utility>
@@ -21,6 +22,23 @@ struct Arguments {
     const char* port = nullptr;
     const char* nick = nullptr;
     const char* channels = nullptr;
+    const char* sasl_user = nullptr;
+    const char* sasl_password_env = "TITLEBOT_SASL_PASSWORD";
+    bool sasl_external = false;
+    const char* server_password_env = nullptr;
+    const char* ca_file = nullptr;
+    const char* certificate_file = nullptr;
+    const char* private_key_file = nullptr;
+};
+
+enum Option {
+    kSaslUser = 256,
+    kSaslPasswordEnv,
+    kSaslExternal,
+    kServerPasswordEnv,
+    kCaFile,
+    kCertificateFile,
+    kPrivateKeyFile,
 };
 
 constexpr argp_option kOptions[] = {
@@ -29,6 +47,14 @@ constexpr argp_option kOptions[] = {
     {"nick", 'n', "NICK", 0, "Bot nickname (required)", 0},
     {"tls", 't', nullptr, 0, "Connect to IRC over TLS (default port 6697)", 0},
     {"verbose", 'v', nullptr, 0, "Enable debug logging", 0},
+    {"sasl-user", kSaslUser, "USER", 0, "Require SASL PLAIN authentication over TLS", 0},
+    {"sasl-password-env", kSaslPasswordEnv, "NAME", 0,
+     "Read SASL password from NAME (default TITLEBOT_SASL_PASSWORD)", 0},
+    {"sasl-external", kSaslExternal, nullptr, 0, "Require SASL EXTERNAL authentication", 0},
+    {"server-password-env", kServerPasswordEnv, "NAME", 0, "Read IRC PASS password from NAME", 0},
+    {"ca-file", kCaFile, "FILE", 0, "Additional IRC TLS CA certificate file", 0},
+    {"cert-file", kCertificateFile, "FILE", 0, "IRC TLS client certificate chain", 0},
+    {"key-file", kPrivateKeyFile, "FILE", 0, "IRC TLS client private key", 0},
     {},
 };
 
@@ -55,6 +81,28 @@ error_t ParseArgument(int key, char* arg, argp_state* state) {
         args.nick = arg;
         break;
 
+    case kSaslUser:
+        args.sasl_user = arg;
+        break;
+    case kSaslPasswordEnv:
+        args.sasl_password_env = arg;
+        break;
+    case kSaslExternal:
+        args.sasl_external = true;
+        return 0;
+    case kServerPasswordEnv:
+        args.server_password_env = arg;
+        break;
+    case kCaFile:
+        args.ca_file = arg;
+        break;
+    case kCertificateFile:
+        args.certificate_file = arg;
+        break;
+    case kPrivateKeyFile:
+        args.private_key_file = arg;
+        break;
+
     case ARGP_KEY_ARG:
         if (state->arg_num != 0) {
             return ARGP_ERR_UNKNOWN;
@@ -68,6 +116,24 @@ error_t ParseArgument(int key, char* arg, argp_state* state) {
         }
         if (!args.server || !args.port || !args.nick || !args.channels) {
             argp_error(state, "expected -s SERVER -p PORT -n NICK CHANNEL[,CHANNEL...]");
+        }
+        if (args.sasl_user && args.sasl_external) {
+            argp_error(state, "choose either --sasl-user or --sasl-external");
+        }
+        if ((args.sasl_user || args.sasl_external) && !args.tls) {
+            argp_error(state, "SASL authentication requires --tls");
+        }
+        if (args.sasl_user) {
+            const char* password = std::getenv(args.sasl_password_env);
+            if (!password || !*password) {
+                argp_error(state, "SASL password environment variable is missing or empty");
+            }
+        }
+        if (args.server_password_env) {
+            const char* password = std::getenv(args.server_password_env);
+            if (!password || !*password) {
+                argp_error(state, "server password environment variable is missing or empty");
+            }
         }
         return 0;
 
@@ -117,6 +183,26 @@ int main(int argc, char** argv) {
             .channels = args.channels,
             .tls = args.tls,
         };
+        if (args.sasl_user) {
+            config.registration.sasl = ircbot::SaslConfig{
+                .username = args.sasl_user,
+                .password = std::getenv(args.sasl_password_env),
+                .authzid = {},
+            };
+        } else if (args.sasl_external) {
+            config.registration.sasl = ircbot::SaslConfig{
+                .mechanism = ircbot::SaslMechanism::kExternal,
+                .username = {},
+                .password = {},
+                .authzid = {},
+            };
+        }
+        if (args.server_password_env) {
+            config.server_password = std::getenv(args.server_password_env);
+        }
+        config.ca_file = args.ca_file ? args.ca_file : "";
+        config.certificate_file = args.certificate_file ? args.certificate_file : "";
+        config.private_key_file = args.private_key_file ? args.private_key_file : "";
         asio::signal_set signals(io, SIGINT, SIGTERM);
         asio::cancellation_signal cancel;
         bool stopping = false;
