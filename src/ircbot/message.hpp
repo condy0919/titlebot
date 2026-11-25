@@ -46,6 +46,10 @@ std::expected<MessageView, ParseError> ParseMessage(std::string_view line);
 /// when parsed_ping.command is "pInG". Numeric commands compare byte for byte.
 bool IsCommand(const MessageView& message, std::string_view command);
 
+/// Relay budget for PRIVMSG including a server prefix, e.g. ("#r", 8) reserves
+/// ":nick!u@h " and leaves 488 text bytes. Supply the full nick!user@host byte length.
+std::size_t PrivmsgTextBudget(std::string_view target, std::size_t prefix_bytes);
+
 struct Tag {
     std::string key;
     std::string value;

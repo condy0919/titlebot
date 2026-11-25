@@ -10,6 +10,11 @@ namespace {
 using ircbot::ParseMessage;
 using ircbot::SerializeMessage;
 
+TEST(IrcMessage, ReservesRelayPrefixBeforeComputingTextBudget) {
+    EXPECT_EQ(ircbot::PrivmsgTextBudget("#r", 8), 488u);
+    EXPECT_EQ(ircbot::PrivmsgTextBudget("#r", std::string_view::npos), 0u);
+}
+
 TEST(MessagePrefix, ExtractsUserAndHost) {
     auto message = ircbot::ParseMessage(":nick!alice@host NOTICE bot :hello");
     ASSERT_TRUE(message);

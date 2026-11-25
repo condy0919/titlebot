@@ -233,6 +233,15 @@ std::expected<MessageView, ParseError> ParseMessage(std::string_view line) {
     return message;
 }
 
+std::size_t PrivmsgTextBudget(std::string_view target, std::size_t prefix_bytes) {
+    // "PRIVMSG " and " :" add ten bytes; ":" and " " surround the relay prefix.
+    constexpr auto available = kBodyLimit - 12;
+    if (target.size() >= available || prefix_bytes >= available - target.size()) {
+        return 0;
+    }
+    return available - target.size() - prefix_bytes;
+}
+
 bool IsCommand(const MessageView& message, std::string_view command) {
     return std::ranges::equal(message.command, command, {}, Lower, Lower);
 }
