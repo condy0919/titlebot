@@ -180,4 +180,22 @@ TEST_F(SchedulerTest, AppliesCustomReplyQuotas) {
     EXPECT_FALSE(limiter.Allow("#two", start));
     EXPECT_TRUE(limiter.Allow("#two", start + std::chrono::seconds(2)));
 }
+TEST_F(SchedulerTest, EvictsLeastRecentlyUsedTitlesAndSkipsDisabledNegativeCaching) {
+    scheduler = std::make_shared<tb::FetchScheduler>(
+        io.get_executor(),
+        [this](tb::PrivMsg msg) -> asio::awaitable<tb::FetchResult> {
+            started.push_back(msg.url);
+            if (msg.url == "timeout") {
+                co_return std::unexpected(tb::FetchError::kTimeout);
+            }
+            co_return msg.url;
+        },
+        tb::SchedulerLimits{.cache_entries = 2, .negative_ttl = std::chrono::milliseconds(0)});
+    for (auto url : {"a", "b", "a", "c", "b", "timeout", "timeout"}) {
+        io.restart();
+        Submit(url);
+        io.run();
+    }
+    EXPECT_EQ(started, (std::vector<std::string>{"a", "b", "c", "b", "timeout", "timeout"}));
+}
 } // namespace

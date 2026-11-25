@@ -15,6 +15,9 @@ struct SchedulerLimits {
     std::size_t active = 8;
     std::size_t per_host = 2;
     std::size_t queued = 64;
+    std::size_t cache_entries = 256;
+    std::chrono::milliseconds title_ttl = std::chrono::minutes(4);
+    std::chrono::milliseconds negative_ttl = std::chrono::seconds(30);
 };
 
 struct ReplyLimits {

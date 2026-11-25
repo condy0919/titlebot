@@ -156,10 +156,12 @@ void FetchScheduler::Complete(std::list<Job>::iterator job, Clock::time_point st
     } else {
         ++stats_.no_title;
     }
-    const auto ttl = result && *result ? std::chrono::minutes(4) : std::chrono::seconds(30);
-    cache_.push_front({job->message.protocol, job->message.url, result, Clock::now() + ttl});
-    if (cache_.size() > 256) {
-        cache_.pop_back();
+    const auto ttl = result && *result ? limits_.title_ttl : limits_.negative_ttl;
+    if (limits_.cache_entries && ttl > std::chrono::milliseconds::zero()) {
+        cache_.push_front({job->message.protocol, job->message.url, result, Clock::now() + ttl});
+        if (cache_.size() > limits_.cache_entries) {
+            cache_.pop_back();
+        }
     }
     auto replies = std::move(job->replies);
     auto host = host_active_.find(job->host);
