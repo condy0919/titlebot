@@ -168,6 +168,7 @@ TEST_F(SchedulerTest, ReusesRecentTitlesAndFailures) {
     Submit("found", "#other");
     Submit("timeout");
     EXPECT_EQ(started.size(), 2u);
+    EXPECT_EQ(scheduler->stats().cache_hits, 2u);
     EXPECT_EQ(delivered, (std::vector<std::string>{"#room found", "#other found"}));
     EXPECT_EQ(scheduler->stats().completed, 2u);
 }

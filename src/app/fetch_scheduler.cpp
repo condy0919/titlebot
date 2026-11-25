@@ -32,12 +32,13 @@ FetchScheduler::FetchScheduler(asio::any_io_executor executor, Fetch fetch, Sche
     : executor_(std::move(executor)), fetch_(std::move(fetch)), limits_(limits) {}
 
 void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destination) {
-    ScheduleReport();
     auto cached = std::ranges::find_if(cache_, [&](const Cached& entry) {
         return entry.protocol == message.protocol && entry.url == message.url;
     });
     if (cached != cache_.end()) {
         if (Clock::now() < cached->expires) {
+            ++stats_.cache_hits;
+            ScheduleReport();
             cache_.splice(cache_.begin(), cache_, cached);
             if (cached->result && *cached->result) {
                 deliver(**cached->result);
@@ -46,6 +47,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
         }
         cache_.erase(cached);
     }
+    ScheduleReport();
     // Bound pending replies even when many requests share a single download.
     if (!limits_.per_host || !limits_.active || subscribers_ >= limits_.active + limits_.queued) {
         TB_LOG_WARN("Dropping fetch request: subscriber limit reached ({})", subscribers_);
@@ -63,6 +65,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
                                std::ranges::equal(existing.target, destination.target, {},
                                                   FoldIrcCase, FoldIrcCase);
                     })) {
+                ++stats_.duplicates;
                 return;
             }
             job.destinations.push_back(std::move(destination));
@@ -82,6 +85,10 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
     }
     if (host.ends_with('.')) {
         host.pop_back();
+    }
+    if (host.empty() || host.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789.-") != host.npos ||
+        message.url.substr(0, message.url.find_first_of("/?#")).contains("@")) {
+        host = "<invalid-host>";
     }
     jobs_.push_back({
         .message = std::move(message),
@@ -121,14 +128,14 @@ void FetchScheduler::Pump() {
                     if (!result) {
                         auto entry = std::ranges::find(kErrorNames, result.error(),
                                                        &std::pair<FetchError, const char*>::first);
-                        TB_LOG_WARN("Fetch failed: {}",
+                        TB_LOG_WARN("Fetch failed for {}: {}", job->host,
                                     entry != std::end(kErrorNames) ? entry->second : "unknown");
                     }
                 } catch (const std::exception& ex) {
-                    TB_LOG_ERROR("Fetch threw an exception: {}", ex.what());
+                    TB_LOG_ERROR("Fetch threw an exception for {}: {}", job->host, ex.what());
                     result = std::unexpected(FetchError::kNetwork);
                 } catch (...) {
-                    TB_LOG_ERROR("Fetch threw an unknown exception");
+                    TB_LOG_ERROR("Fetch threw an unknown exception for {}", job->host);
                     result = std::unexpected(FetchError::kNetwork);
                 }
                 self->Complete(job, start, result);
@@ -197,6 +204,7 @@ void FetchScheduler::Report() const {
     std::ostringstream summary;
     summary << "fetch active=" << active_ << " queued=" << jobs_.size() - active_
               << " peak_queue=" << stats_.peak_queue << " completed=" << stats_.completed
+              << " cache_hits=" << stats_.cache_hits << " duplicate_replies=" << stats_.duplicates
               << " elapsed_ms_total=" << stats_.elapsed.count() << " titles=" << stats_.titles
               << " no_title=" << stats_.no_title << " merged=" << stats_.merged
               << " queue_drops=" << stats_.queue_drops << " reply_drops=" << stats_.reply_drops;

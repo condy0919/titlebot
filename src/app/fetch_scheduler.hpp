@@ -52,6 +52,8 @@ public:
 
     struct Stats {
         std::size_t completed = 0;
+        std::size_t cache_hits = 0;
+        std::size_t duplicates = 0;
         std::size_t titles = 0;
         std::size_t no_title = 0;
         std::map<FetchError, std::size_t> failures;
