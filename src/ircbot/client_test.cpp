@@ -435,6 +435,27 @@ TEST_F(Client, ConnectsToFallbackAfterPrimaryDisconnects) {
     EXPECT_TRUE(result.get());
 }
 
+TEST_F(Client, ReportsInvalidNicknameBeforeRegistrationTimesOut) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    auto result = asio::co_spawn(io, ircbot::Run(Configuration(listener)), asio::use_future);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        for (int i = 0; i < 3; ++i) {
+            co_await Read(peer, input);
+        }
+        co_await Write(peer, ":irc 432 * bot :Erroneous nickname\r\n");
+        boost::system::error_code ec;
+        char byte;
+        co_await peer.async_read_some(asio::buffer(&byte, 1), asio::redirect_error(use_awaitable, ec));
+        EXPECT_EQ(ec, asio::error::eof);
+    };
+    Exercise(exercise());
+    io.run_for(100ms);
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kInvalidNickname);
+}
+
 TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     auto config = Configuration(listener);
