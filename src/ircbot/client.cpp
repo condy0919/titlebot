@@ -40,6 +40,7 @@ struct Session {
     Clock::time_point next_send{};
     std::optional<asio::steady_timer> write_timer;
     std::size_t write_generation = 0;
+    std::optional<asio::steady_timer> writable;
     bool writing = false;
     bool closing = false;
     std::stop_source stop;
@@ -75,6 +76,9 @@ void Diagnose(const std::shared_ptr<Session>& session, std::string_view text) {
 void Close(const std::shared_ptr<Session>& session) {
     boost::system::error_code ignored;
     session->transport.Close(ignored);
+    if (session->writable) {
+        session->writable->cancel();
+    }
     if (session->pacing) {
         session->pacing->cancel();
     }
@@ -105,6 +109,9 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
             auto line = std::move(session->queue.front().text);
             line += "\r\n";
             session->queue.pop_front();
+            if (session->writable) {
+                session->writable->cancel();
+            }
             if (!session->write_timer) {
                 session->write_timer.emplace(session->transport.get_executor());
             }
@@ -350,6 +357,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         .send_interval = config.send_interval,
         .pacing = {},
         .write_timer = {},
+        .writable = {},
         .stop = {},
         .quit_timer = {},
         .drain_timer = {},
@@ -661,6 +669,34 @@ std::expected<asio::any_io_executor, SendError> Connection::Executor() const {
         return std::unexpected(SendError::kClosed);
     }
     return session->transport.get_executor();
+}
+
+namespace {
+asio::awaitable<std::expected<void, SendError>> WaitForSpace(std::weak_ptr<Session> weak) {
+    auto session = weak.lock();
+    const auto cancellation = co_await asio::this_coro::cancellation_state;
+    while (session && !session->closing && session->transport.IsOpen()) {
+        if (cancellation.cancelled() != asio::cancellation_type::none) {
+            throw boost::system::system_error(asio::error::operation_aborted);
+        }
+        if (session->queue.size() < session->queue_limit) {
+            co_return std::expected<void, SendError>{};
+        }
+        if (!session->writable) {
+            session->writable.emplace(session->transport.get_executor(), Clock::time_point::max());
+        }
+        boost::system::error_code ec;
+        co_await session->writable->async_wait(asio::redirect_error(use_awaitable, ec));
+        if (ec && ec != asio::error::operation_aborted) {
+            throw boost::system::system_error(ec);
+        }
+    }
+    co_return std::unexpected(SendError::kClosed);
+}
+} // namespace
+
+asio::awaitable<std::expected<void, SendError>> Connection::WaitWritable() const {
+    return WaitForSpace(session_);
 }
 
 bool Connection::IsOpen() const {

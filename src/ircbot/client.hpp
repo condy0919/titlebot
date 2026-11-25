@@ -82,6 +82,9 @@ public:
     std::stop_token StopToken() const;
     /// For example, post a reply to *Executor() while the session exists.
     std::expected<boost::asio::any_io_executor, SendError> Executor() const;
+    /// Await queue capacity on the session executor. For example, after kQueueFull,
+    /// co_await connection.WaitWritable() before retrying Send; other senders can win the slot.
+    boost::asio::awaitable<std::expected<void, SendError>> WaitWritable() const;
     bool IsOpen() const;
     std::string Nick() const;
     /// For example, TextBudget("#room") reserves the server-advertised user/host limits

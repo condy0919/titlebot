@@ -108,6 +108,7 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
         auto peer = co_await listener.async_accept(use_awaitable);
         std::string input;
         co_await Register(peer, input);
+        EXPECT_TRUE(co_await saved.WaitWritable());
         co_await Write(peer, std::string(18000, 'x') + "\r\nPING :after-long-line\r\n");
         EXPECT_EQ(co_await Read(peer, input), "PONG :after-long-line");
         co_await Write(peer, ":s 005 bot CASEMAPPING=ascii :supported\r\n"
@@ -127,6 +128,38 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
     EXPECT_EQ(ready, 1u);
     EXPECT_EQ(disconnected, 1u);
     EXPECT_FALSE(saved.IsOpen());
+}
+
+TEST_F(Client, WaitsForSpaceInPacedQueueWithoutDroppingPendingMessages) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    auto config = Configuration(listener);
+    config.queued_lines = 4;
+    config.send_interval = 20ms;
+    asio::cancellation_signal stop;
+    ircbot::Connection connection;
+    ircbot::Handlers handlers;
+    handlers.ready = [&](auto active) { connection = active; };
+    auto finished = asio::co_spawn(io, ircbot::Run(config, handlers),
+                                   asio::bind_cancellation_slot(stop.slot(), asio::use_future));
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        co_await Register(peer, input);
+        for (const auto text : {"one", "two", "three", "four"}) {
+            EXPECT_TRUE(connection.Privmsg("#room", text));
+        }
+        EXPECT_EQ(connection.Privmsg("#room", "five"), std::unexpected(ircbot::SendError::kQueueFull));
+        EXPECT_TRUE(co_await connection.WaitWritable());
+        EXPECT_TRUE(connection.Privmsg("#room", "five"));
+        for (const auto text : {"one", "two", "three", "four", "five"}) {
+            EXPECT_EQ(co_await Read(peer, input), std::string("PRIVMSG #room :") + text);
+        }
+        stop.emit(asio::cancellation_type::terminal);
+        EXPECT_EQ(co_await Read(peer, input), "QUIT :Shutting down");
+    };
+    Exercise(exercise());
+    io.run();
+    EXPECT_TRUE(finished.get());
 }
 
 TEST_F(Client, OldConnectionCannotSendAfterReconnect) {
