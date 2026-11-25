@@ -392,6 +392,23 @@ TEST_F(Client, AcceptsIpv6ServerLiteralsAndRetriesShortUnicodeNicknames) {
     EXPECT_TRUE(result.get());
 }
 
+TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    auto config = Configuration(listener);
+    config.max_retries = 0;
+    auto result = asio::co_spawn(io, ircbot::Run(config), asio::use_future);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        co_await Register(peer, input);
+        peer.close();
+    };
+    Exercise(exercise());
+    io.run_for(100ms);
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kRetryLimit);
+}
+
 TEST_F(Client, UntrustedCertificateStopsReconnects) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     asio::ssl::context tls(asio::ssl::context::tls_server);

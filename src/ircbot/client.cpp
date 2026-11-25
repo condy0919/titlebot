@@ -835,7 +835,10 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
     }
     Nicknames nicknames;
     const auto cancellation = co_await asio::this_coro::cancellation_state;
-    auto delay = config.timeouts.reconnect_initial;
+    const auto initial = std::min(config.timeouts.reconnect_initial, config.timeouts.reconnect_max);
+    auto delay = initial;
+    std::size_t retries = 0;
+    std::mt19937 jitter(std::random_device{}());
     while (true) {
         try {
             auto socket = co_await Connect(config);
@@ -845,7 +848,8 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
                 co_return std::expected<void, ClientError>{};
             }
             if (*stable) {
-                delay = config.timeouts.reconnect_initial;
+                delay = initial;
+                retries = 0;
             }
         } catch (const Fatal& error) {
             if (error.exception) {
@@ -863,7 +867,19 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
         if (cancellation.cancelled() != asio::cancellation_type::none) {
             co_return std::expected<void, ClientError>{};
         }
-        asio::steady_timer timer(executor, delay);
+        if (config.max_retries && retries >= *config.max_retries) {
+            co_return std::unexpected(ClientError::kRetryLimit);
+        }
+        ++retries;
+        auto wait = delay;
+        if (config.reconnect_jitter) {
+            using Count = std::chrono::milliseconds::rep;
+            const auto low = std::max(initial, delay / 2);
+            const auto high = delay + std::min(delay / 2, config.timeouts.reconnect_max - delay);
+            wait = std::chrono::milliseconds(
+                std::uniform_int_distribution<Count>(low.count(), high.count())(jitter));
+        }
+        asio::steady_timer timer(executor, wait);
         boost::system::error_code ec;
         try {
             co_await timer.async_wait(asio::redirect_error(use_awaitable, ec));
@@ -876,7 +892,7 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
         if (ec) {
             co_return std::unexpected(ClientError::kReconnectTimer);
         }
-        delay = std::min(config.timeouts.reconnect_max, delay * 2);
+        delay = delay + std::min(delay, config.timeouts.reconnect_max - delay);
     }
 }
 } // namespace ircbot

@@ -56,10 +56,12 @@ struct Config {
     Timeouts timeouts;
     std::size_t queued_lines = 64;
     std::chrono::milliseconds send_interval{0};
+    bool reconnect_jitter = true;
+    std::optional<std::size_t> max_retries{};
 };
 
 enum class SendError { kClosed, kInvalidMessage, kQueueFull, kCapabilityRequired };
-enum class ClientError { kInvalidConfig, kTlsConfiguration, kTlsTrust, kAuthentication, kHandler, kReconnectTimer, kInvalidNickname };
+enum class ClientError { kInvalidConfig, kTlsConfiguration, kTlsTrust, kAuthentication, kHandler, kReconnectTimer, kRetryLimit, kInvalidNickname };
 
 /// A weak handle to one connection. Copies cannot send on a later reconnect.
 class Connection {
