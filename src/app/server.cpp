@@ -17,14 +17,12 @@
 #include "fetch_scheduler.hpp"
 #include "http/fetcher.hpp"
 #include "irc/irc.hpp"
+#include "irc/policy.hpp"
 
 namespace tb {
 namespace {
 namespace asio = boost::asio;
 using asio::use_awaitable;
-
-// Use the traditional IRC nickname length for retries until ISUPPORT supplies NICKLEN.
-constexpr std::size_t kDefaultNickLength = 9;
 
 // Owns the socket and protocol state for one IRC connection. Fetch callbacks hold a weak
 // reference to their originating session so a late title cannot be sent on a new connection.
@@ -32,9 +30,7 @@ struct Session {
     asio::ssl::stream<asio::ip::tcp::socket> transport;
     bool secure;
     std::string nick;
-    std::optional<unsigned> nick_suffix;
-    unsigned nick_retries = 0;
-    std::string retry_nick;
+    NicknameNegotiator& nickname;
     bool registered = false;
     Clock::time_point registered_at{};
     Clock::time_point last_input{};
@@ -43,12 +39,8 @@ struct Session {
     std::deque<std::string> queue;
     // RunBot shares the fetch scheduler across reconnects.
     std::shared_ptr<FetchScheduler> scheduler;
-    // The limiter counts title replies per target. The burst counter covers all targets
-    // on this connection and resets when the two-second window expires at burst_until.
     ReplyLimits limits;
-    ReplyLimiter limiter;
-    Clock::time_point burst_until;
-    unsigned burst = 0;
+    IrcReplyPolicy limiter;
     // Only one Drain coroutine may write to the socket at a time.
     bool writing = false;
     std::shared_ptr<asio::steady_timer> quit_timer{};
@@ -117,114 +109,17 @@ void Send(const std::shared_ptr<Session>& session, std::string line, bool priori
 
 void Reply(const std::shared_ptr<Session>& session, const std::string& target,
            std::string_view title) {
-    // Limit the entire PRIVMSG line in bytes before Drain appends CRLF.
-    const auto line_bytes = session->limits.line_bytes;
-
     if (session->quit_timer || !session->transport.next_layer().is_open()) {
         TB_LOG_DEBUG("Discarding title reply: IRC session is closed");
         return;
     }
-
-    auto prefix = "PRIVMSG " + target + " :";
-    if (title.empty()) {
-        return;
-    }
-    if (prefix.size() >= line_bytes) {
-        TB_LOG_WARN("Dropping title reply: {}-byte prefix exhausts the {}-byte IRC reply limit",
-                    prefix.size(), line_bytes);
-        return;
-    }
-
-    // If the first excluded byte is a UTF-8 continuation byte (10xxxxxx), the cut
-    // splits a code point. Move the cut back to its leading byte so it is omitted in full.
-    auto limit = line_bytes - prefix.size();
-    if (title.size() > limit) {
-        while (limit && (static_cast<unsigned char>(title[limit]) & 192) == 128) {
-            --limit;
-        }
-        title = title.substr(0, limit);
-    }
-
-    if (title.empty()) {
-        TB_LOG_WARN("Dropping title reply: first code point exceeds the remaining byte budget");
-        return;
-    }
-
-    auto now = Clock::now();
-    if (now >= session->burst_until) {
-        session->burst_until = now + session->limits.window;
-        session->burst = 0;
-    }
-    if (session->burst >= session->limits.per_session || !session->limiter.Allow(target, now)) {
-        TB_LOG_WARN("Dropping IRC title reply: {} rate limit reached",
-                    session->burst >= session->limits.per_session ? "session" : "per-target");
+    auto line = FormatReplyLine(target, title, session->limits.line_bytes);
+    if (!line || !session->limiter.Allow(target, Clock::now())) {
+        TB_LOG_WARN("Dropping unformattable or rate-limited IRC reply");
         session->scheduler->RecordReplyDrop();
         return;
     }
-    ++session->burst;
-
-    auto line = std::move(prefix);
-    // Replace ASCII control bytes (0x00-0x1F and DEL) with spaces so a title
-    // cannot insert a line break or change IRC text formatting.
-    for (char ch : title) {
-        line += static_cast<unsigned char>(ch) < 32 || ch == 127 ? ' ' : ch;
-    }
-    Send(session, std::move(line));
-}
-
-unsigned RandomNickSuffix() {
-    static std::mt19937 generator{std::random_device{}()};
-    static std::mutex mutex;
-    std::scoped_lock lock(mutex);
-    return std::uniform_int_distribution<unsigned>(0, 65535)(generator);
-}
-
-void UpdateNickLength(std::string_view params, std::size_t& limit) {
-    TakeIrcToken(params); // Skip the recipient; tokens end at the trailing description.
-    while (!params.empty() && !params.starts_with(':')) {
-        auto token = TakeIrcToken(params);
-        if (token == "-NICKLEN") {
-            limit = kDefaultNickLength;
-        } else if (token.starts_with("NICKLEN=")) {
-            token.remove_prefix(std::string_view("NICKLEN=").size());
-            std::size_t value = 0;
-            auto end = token.data() + token.size();
-            auto [ptr, ec] = std::from_chars(token.data(), end, value);
-            if (ec == std::errc{} && ptr == end && value > 0) {
-                limit = value;
-            }
-        }
-    }
-}
-
-void RetryNickname(const std::shared_ptr<Session>& session, std::string_view rejected,
-                   std::size_t& limit) {
-    // Before ISUPPORT, a 433 may echo the server-truncated form of our last NICK.
-    const auto& requested = session->retry_nick.empty() ? session->nick : session->retry_nick;
-    if (!rejected.empty() && rejected.size() < requested.size() &&
-        requested.starts_with(rejected)) {
-        limit = std::min(limit, rejected.size());
-    }
-    // Keep one leading character. Stop before a short decimal suffix cycles.
-    if (std::to_string(session->nick_retries).size() >= limit) {
-        TB_LOG_WARN("No more numeric nickname retries fit NICKLEN={}", limit);
-        return;
-    }
-    if (!session->nick_suffix) {
-        session->nick_suffix = RandomNickSuffix();
-    }
-    auto suffix = std::to_string(*session->nick_suffix + session->nick_retries++);
-    if (suffix.size() >= limit) {
-        suffix.erase(0, suffix.size() - (limit - 1));
-    }
-    auto keep = std::min(session->nick.size(), limit - suffix.size());
-    while (keep && keep < session->nick.size() &&
-           (static_cast<unsigned char>(session->nick[keep]) & 0xc0) == 0x80) {
-        --keep;
-    }
-    auto prefix = keep ? session->nick.substr(0, keep) : "_";
-    session->retry_nick = prefix + suffix;
-    Send(session, "NICK " + session->retry_nick);
+    Send(session, std::move(*line));
 }
 
 bool SameNick(std::string_view a, std::string_view b) {
@@ -293,7 +188,7 @@ std::string_view TrailingText(std::string_view params) {
 }
 
 void HandleLine(const std::shared_ptr<Session>& session, std::string_view line, // NOLINT
-                const std::string& channels, Deadline& registration, std::size_t& nick_limit) {
+                const std::string& channels, Deadline& registration) {
     std::string_view params(line);
     std::string_view source;
     if (params.starts_with(':')) {
@@ -312,10 +207,14 @@ void HandleLine(const std::shared_ptr<Session>& session, std::string_view line, 
         session->nick = TakeIrcToken(params);
         Send(session, "JOIN " + channels);
     } else if (command == "005") {
-        UpdateNickLength(params, nick_limit);
+        session->nickname.Observe(params);
     } else if (command == "433" && !session->registered) {
         TakeIrcToken(params);
-        RetryNickname(session, TakeIrcToken(params), nick_limit);
+        if (auto retry = session->nickname.Retry(session->nick, TakeIrcToken(params))) {
+            Send(session, "NICK " + *retry);
+        } else {
+            TB_LOG_WARN("Nickname retries exhausted");
+        }
     } else if (command == "NICK" && SameNick(source.substr(0, source.find('!')), session->nick)) {
         session->nick = TrailingText(params);
     } else if (command == "ERROR") {
@@ -347,19 +246,17 @@ void HandleLine(const std::shared_ptr<Session>& session, std::string_view line, 
 asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket,
                                                   const BotConfig& config,
                                                   std::shared_ptr<FetchScheduler> scheduler,
-                                                  std::size_t& nick_limit,
+                                                  NicknameNegotiator& nickname,
                                                   asio::ssl::context& tls) {
     auto session = std::make_shared<Session>(Session{
         .transport = {std::move(socket), tls},
         .secure = config.tls,
         .nick = config.nick,
-        .nick_suffix = {},
-        .retry_nick = {},
+        .nickname = nickname,
         .queue = {},
         .scheduler = scheduler,
         .limits = config.replies,
         .limiter = {config.replies},
-        .burst_until = {},
     });
     auto executor = session->transport.next_layer().get_executor();
 
@@ -399,7 +296,7 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket,
             const bool was_registered = session->registered;
             session->last_input = Clock::now();
             session->probe_sent = false;
-            HandleLine(session, line, config.channels, registration, nick_limit);
+            HandleLine(session, line, config.channels, registration);
             input.erase(0, count);
             if (!was_registered && session->registered) {
                 session->registered_at = session->last_input;
@@ -477,14 +374,15 @@ asio::awaitable<void> RunBot(BotConfig config) {
         },
         config.scheduler);
     scheduler->EnableReports();
-    std::size_t nick_limit = kDefaultNickLength;
+    NicknameNegotiator nickname;
     const auto cancellation = co_await asio::this_coro::cancellation_state;
     unsigned delay = 1;
     while (true) {
         try {
             auto socket = co_await Connect(config);
+            nickname.Begin();
             auto stable =
-                co_await ServeSession(std::move(socket), config, scheduler, nick_limit, *tls);
+                co_await ServeSession(std::move(socket), config, scheduler, nickname, *tls);
             if (!stable) {
                 co_return;
             }

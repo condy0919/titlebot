@@ -8,6 +8,8 @@
 
 #include <boost/asio.hpp>
 
+#include "irc/policy.hpp"
+
 namespace {
 namespace asio = boost::asio;
 
@@ -125,7 +127,7 @@ TEST_F(SchedulerTest, BoundsActiveAndWaitingWork) {
 }
 
 TEST_F(SchedulerTest, EquivalentIrcTargetsShareReplyQuota) {
-    tb::ReplyLimiter limiter;
+    tb::IrcReplyPolicy limiter;
     constexpr tb::Clock::time_point now{};
     EXPECT_TRUE(limiter.Allow(R"(#A[B]\C^)", now));
     EXPECT_TRUE(limiter.Allow("#a{b}|c~", now));
@@ -135,7 +137,7 @@ TEST_F(SchedulerTest, EquivalentIrcTargetsShareReplyQuota) {
 
 TEST_F(SchedulerTest, BoundsSubscribersForOneDownload) {
     constexpr tb::Clock::time_point now{};
-    tb::ReplyLimiter limiter;
+    tb::IrcReplyPolicy limiter;
     unsigned replies = 0;
     for (unsigned i = 0; i < 100; ++i) {
         scheduler->Submit(
@@ -173,7 +175,7 @@ TEST_F(SchedulerTest, ReusesRecentTitlesAndFailures) {
     EXPECT_EQ(scheduler->stats().completed, 2u);
 }
 TEST_F(SchedulerTest, AppliesCustomReplyQuotas) {
-    tb::ReplyLimiter limiter({.per_target = 1, .targets = 1});
+    tb::IrcReplyPolicy limiter({.per_target = 1, .targets = 1});
     tb::Clock::time_point start{};
     EXPECT_TRUE(limiter.Allow("#one", start));
     EXPECT_FALSE(limiter.Allow("#one", start));

@@ -99,25 +99,6 @@ private:
     Stats stats_;
 };
 
-/// Track a fixed window for each IRC target and discard expired entries.
-class ReplyLimiter {
-public:
-    ReplyLimiter(ReplyLimits limits = {}) : limits_(limits) {}
-
-    /// Consume one of two replies allowed per target in a two-second window.
-    /// For example, three calls to Allow("#room", now) on a fresh limiter yield true, true, false.
-    bool Allow(std::string target, Clock::time_point now);
-
-private:
-    struct Window {
-        std::string target;
-        Clock::time_point expires;
-        unsigned sent;
-    };
-
-    ReplyLimits limits_;
-    std::list<Window> windows_;
-};
 } // namespace tb
 
 #endif // TITLEBOT_FETCH_SCHEDULER_HPP_

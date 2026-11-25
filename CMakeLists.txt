@@ -19,6 +19,7 @@ option(TITLEBOT_ENABLE_TESTS "Enable tests" ON)
 add_library(titlebot_session OBJECT
   src/app/fetch_scheduler.cpp
   src/app/server.cpp
+  src/irc/policy.cpp
   src/irc/irc.cpp
 )
 
@@ -105,6 +106,7 @@ if(TITLEBOT_ENABLE_TESTS)
     src/common/log_test.cpp
     src/common/numfmt_test.cpp
     src/common/utils_test.cpp
+    src/irc/policy_test.cpp
     src/irc/irc_test.cpp
     src/html/title_parser_test.cpp
   )

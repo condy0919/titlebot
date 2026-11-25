@@ -218,30 +218,4 @@ void FetchScheduler::Report() const {
     TB_LOG_INFO("{}", summary.str());
 }
 
-bool ReplyLimiter::Allow(std::string target, Clock::time_point now) {
-    while (!windows_.empty() && windows_.front().expires <= now) {
-        windows_.pop_front();
-    }
-    for (char& ch : target) {
-        ch = FoldIrcCase(ch);
-    }
-    for (auto& window : windows_) {
-        if (window.target == target) {
-            if (window.sent >= limits_.per_target) {
-                return false;
-            }
-            ++window.sent;
-            return true;
-        }
-    }
-    if (!limits_.per_target || windows_.size() >= limits_.targets) {
-        return false;
-    }
-    windows_.push_back({
-        .target = std::move(target),
-        .expires = now + limits_.window,
-        .sent = 1,
-    });
-    return true;
-}
 } // namespace tb
