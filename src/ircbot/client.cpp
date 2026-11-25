@@ -512,6 +512,17 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         if (Queue(session, "QUIT :" + config.quit_reason, true)) {
             boost::system::error_code ignored;
             co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
+            if (config.tls && !session->writing && session->transport.IsOpen()) {
+                Deadline shutdown(executor, Clock::now() + std::chrono::seconds(1));
+                asio::co_spawn(executor,
+                               CloseOnTimeout(shutdown.Wait(), session, "IRC TLS shutdown timed out"),
+                               asio::detached);
+                try {
+                    co_await session->transport.Shutdown();
+                } catch (const boost::system::system_error&) {
+                    // Peers may close immediately after QUIT without sending close_notify.
+                }
+            }
         }
     }
     // Join the writer after closing so Run cannot finish while it still owns callback state.

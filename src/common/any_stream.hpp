@@ -56,6 +56,13 @@ public:
         co_await tls->async_handshake(boost::asio::ssl::stream_base::client,
                                       boost::asio::use_awaitable);
     }
+    /// For an established TLS stream, Shutdown() exchanges TLS close notifications.
+    /// A plain TCP connection completes immediately.
+    boost::asio::awaitable<void> Shutdown() {
+        if (auto* tls = std::get_if<Tls>(&stream_)) {
+            co_await tls->async_shutdown(boost::asio::use_awaitable);
+        }
+    }
     template <class Buffers, class Token>
     auto async_read_some(const Buffers& buffers, Token&& token) {
         return std::visit(
