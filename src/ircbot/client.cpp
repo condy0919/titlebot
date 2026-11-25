@@ -634,10 +634,15 @@ std::expected<void, SendError> Connection::SendLine(std::string line) const {
 std::expected<void, SendError> Connection::Privmsg(std::string_view target,
                                                    std::string_view text) const {
     const std::string_view params[] = {target, text};
-    if (!SerializeMessage("PRIVMSG", params)) {
+    auto line = SerializeMessage("PRIVMSG", params, {}, true);
+    if (!line) {
         return std::unexpected(SendError::kInvalidMessage);
     }
-    return SendLine("PRIVMSG " + std::string(target) + " :" + std::string(text));
+    auto session = session_.lock();
+    if (!session || session->closing || !session->transport.IsOpen()) {
+        return std::unexpected(SendError::kClosed);
+    }
+    return Queue(session, std::move(*line));
 }
 
 std::stop_token Connection::StopToken() const {

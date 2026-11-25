@@ -63,7 +63,7 @@ enum class SerializeError {
 /// yields "PRIVMSG #r :hello world". Reject invalid fields and separately bound tags and body.
 std::expected<std::string, SerializeError>
 SerializeMessage(std::string_view command, std::span<const std::string_view> params,
-                 std::span<const Tag> tags = {});
+                 std::span<const Tag> tags = {}, bool force_trailing = false);
 } // namespace ircbot
 
 #endif // IRCBOT_MESSAGE_HPP_

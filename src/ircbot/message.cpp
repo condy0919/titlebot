@@ -239,7 +239,7 @@ bool IsCommand(const MessageView& message, std::string_view command) {
 
 std::expected<std::string, SerializeError>
 SerializeMessage(std::string_view command, std::span<const std::string_view> params,
-                 std::span<const Tag> tags) {
+                 std::span<const Tag> tags, bool force_trailing) {
     if (!ValidCommand(command)) {
         return std::unexpected(SerializeError::kInvalidCommand);
     }
@@ -256,7 +256,7 @@ SerializeMessage(std::string_view command, std::span<const std::string_view> par
         if (HasLineBreakOrNul(param)) {
             return std::unexpected(SerializeError::kInvalidParameter);
         }
-        const bool needs_colon = param.empty() || param.starts_with(':') || param.contains(' ');
+        const bool needs_colon = (force_trailing && i + 1 == params.size()) || param.empty() || param.starts_with(':') || param.contains(' ');
         if (i + 1 != params.size() && needs_colon) {
             return std::unexpected(SerializeError::kInvalidParameter);
         }
