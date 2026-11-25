@@ -76,6 +76,8 @@ const char* ClientErrorText(ircbot::ClientError error) {
         return "IRC TLS configuration failed";
     case ircbot::ClientError::kAuthentication:
         return "IRC authentication failed";
+    case ircbot::ClientError::kReconnectTimer:
+        return "IRC reconnect timer failed";
     case ircbot::ClientError::kHandler:
         return "IRC application callback failed";
     }

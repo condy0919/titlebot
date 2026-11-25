@@ -643,7 +643,7 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             co_return std::expected<void, ClientError>{};
         }
         if (ec) {
-            co_return std::unexpected(ClientError::kHandler);
+            co_return std::unexpected(ClientError::kReconnectTimer);
         }
         delay = std::min(config.timeouts.reconnect_max, delay * 2);
     }
