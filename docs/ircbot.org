@@ -31,16 +31,29 @@ ctest --test-dir build-irc --output-on-failure
 
 * 模块关系
 
-#+begin_src mermaid
-flowchart LR
-  titlebot[titlebot 业务] --> client[ircbot::Run 与 Connection]
-  example[仓库内 echo 示例] --> client
-  client --> transport[TCP / TLS / 超时与发送队列]
-  client --> message[MessageView / 解析与序列化]
-  client --> registration[CAP / SASL 注册状态机]
-  client --> features[ISUPPORT / CASEMAPPING]
-  titlebot --> fetch[网页抓取 / 缓存 / 回复策略]
+#+begin_src dot :file modules.svg :results file
+digraph ircbot {
+  rankdir=LR;
+  node [shape=box];
+
+  titlebot      [label="titlebot 业务"];
+  example       [label="仓库内 echo 示例"];
+  client        [label="ircbot::Run 与 Connection"];
+  transport     [label="TCP / TLS / 超时与发送队列"];
+  message       [label="MessageView / 解析与序列化"];
+  registration  [label="CAP / SASL 注册状态机"];
+  features      [label="ISUPPORT / CASEMAPPING"];
+  fetch         [label="网页抓取 / 缓存 / 回复策略"];
+
+  titlebot -> client;
+  example -> client;
+  client -> { transport message registration features };
+  titlebot -> fetch;
+}
 #+end_src
+
+#+RESULTS:
+[[file:modules.svg]]
 
 协议组件可以独立进行离线解析和测试; 连接层通过事件回调把消息交给业务. 框架测试使用可注入的传输和时钟
 驱动会话; 默认连接器负责 DNS, TCP 和 TLS.
@@ -338,6 +351,6 @@ X.509 验证结果, 业务回调异常可读取原始 =exception_ptr=. 事件消
 - [[https://ircv3.net/specs/extensions/sasl-3.1.html][SASL 3.1]], [[https://ircv3.net/specs/extensions/sasl-3.2.html][SASL 3.2]]: 注册阶段认证与机制广告.
 - [[https://www.rfc-editor.org/rfc/rfc4616.html][RFC 4616]], [[https://www.rfc-editor.org/rfc/rfc4422.html][RFC 4422]]: PLAIN 与 EXTERNAL 机制.
 
-SCRAM-SHA-256, BATCH 与 labeled-response 的实现计划见 [[file:../TODO.org::*TODO SASL 与 IRCv3 后续协议扩展][后续协议扩展]]. 当前框架不维护完整频道成员/权限
+SCRAM-SHA-256, BATCH 与 labeled-response 的实现计划见 [[file:../TODO.org::*SASL 与 IRCv3 后续协议扩展][后续协议扩展]]. 当前框架不维护完整频道成员/权限
 模型, 不请求历史消息, 也不自动进行注册后的重新认证. 业务可以观察通用消息并扩展这些行为. SASL 编码前
 响应上限为 12 KiB; 发送队列配置须能容纳配置所需的注册和认证批次, 过小的容量会在连接前返回配置错误.
