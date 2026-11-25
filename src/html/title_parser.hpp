@@ -2,6 +2,8 @@
 #define TITLEBOT_TITLE_PARSER_HPP_
 
 #include <cstdint>
+#include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -17,6 +19,16 @@ public:
     template <typename Iter>
     std::optional<std::string> parse(Iter begin, Iter end) {
         while (begin != end) {
+            if constexpr (std::contiguous_iterator<Iter>) {
+                if (state_ == State::kText && bytes_.can_skip_bytes()) {
+                    std::string_view rest(std::to_address(begin), end - begin);
+                    auto next = rest.find('<');
+                    if (next == rest.npos) {
+                        break;
+                    }
+                    begin += next;
+                }
+            }
             if (auto result = ReadByte(*begin++)) {
                 return result;
             }
