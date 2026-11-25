@@ -1,0 +1,133 @@
+#+TITLE: titlebot 改进清单
+#+TODO: TODO IN_PROGRESS | DONE
+
+* 代码审查记录
+
+审查日期：2026-11-25。以下按建议处理顺序排列；优先级用于安排工作，
+不代表已确认的安全漏洞等级。本次审查未修改源码。
+
+验证情况：增量构建成功；允许本地回环连接后，现有 85 项测试全部通过。
+初次运行的 26 项网络测试因沙箱禁止创建 socket 而失败，属于环境限制。
+本地编译器为 GCC 16.2.1，本次未验证 Debian g++ 14.2.0 兼容基线。
+
+** TODO [#A] 限制标题长度和缓存总字节数
+
+相关代码：[[file:src/app/title_cache.cpp::15][缓存命中复制]]、
+[[file:src/app/title_cache.cpp::42][缓存存储]]、
+[[file:src/common/runtime_limits.hpp][资源限制]]。
+
+目前缓存仅限制条目数量，并保存完整标题；每次命中按值复制结果。
+独立样本实测：512 KiB HTML 包含 Windows-1252 编码的长标题，转为 UTF-8 后
+标题长 1,572,819 字节，两次缓存命中分别产生完整副本，最终 IRC 回复仅 429 字节。
+256 项同等大小标题的净数据约为 384 MiB，此总量为估算，尚未计入临时副本。
+
+- 增加独立标题长度限制和缓存总字节预算。
+- 避免缓存命中时复制完整长标题，明确返回值的有效期与所有权。
+- 限长处理保留 UTF-8 字符边界，并考虑字符集转换和实体解码。
+- 验证超长标题、编码转换膨胀、缓存字节淘汰和重复命中。
+
+** DONE [#A] 清理旧会话失效的排队请求
+
+完成于 2026-11-25：迁移到 ircbot 时增加失效订阅清理；业务会话在断线回调中立即失效。
+已通过单元测试及真实重连回归，保留仍有效和未绑定会话的订阅。
+
+相关代码：[[file:src/app/fetch_scheduler.cpp::45][订阅容量判断]]、
+[[file:src/app/fetch_scheduler.cpp::106][任务启动]]。
+
+已复现：并发数为 1、等待容量为 2，旧会话提交三个请求后销毁。
+新会话的请求因容量不足被丢弃，旧会话剩余两个请求仍依次启动，
+尽管已经没有有效接收者。调度器跨重连复用，因此此积压会影响新会话。
+
+- 在容量判断及启动等待任务前清理失效订阅。
+- 删除没有有效接收者的等待任务，保留仍有其他会话订阅的共享任务。
+- 区分未绑定会话的调用与已失效的会话订阅，保留现有接口语义。
+- 在途任务是否取消需权衡缓存收益和资源释放，不直接等同于等待任务。
+- 增加断线后重新提交、共享请求仍有有效订阅者等回归测试。
+
+** DONE [#B] 遵循服务器声明的 CASEMAPPING
+
+完成于 2026-11-25：[[file:src/ircbot/features.cpp][ircbot ISUPPORT 状态]]解析服务器映射；
+titlebot 的自身识别、私聊、限流和去重已使用该状态。协议与端到端回归通过。
+
+相关代码：[[file:src/irc/irc.cpp::34][固定大小写映射]]、
+[[file:src/app/server.cpp::204][ISUPPORT 处理]]、
+[[file:src/app/server.cpp::163][自身消息判断]]。
+
+当前固定使用 RFC1459 映射。已复现以下输入：
+
+#+begin_example
+机器人昵称：bot[
+:irc 005 bot[ CASEMAPPING=ascii :supported
+:bot{!u@h PRIVMSG #room :http://example.org/
+#+end_example
+
+ASCII 映射下 bot{ 是另一名用户，预期触发一次抓取，实际为零次。
+同样的规则会把不同的 #room[ 和 #room{ 错误合并，影响回复去重和限流。
+
+- 解析 005 的 CASEMAPPING，将映射规则作为会话状态。
+- 昵称判断、私聊判断、限流和订阅去重使用同一规则。
+- 缺省维持 RFC1459，覆盖 ASCII、RFC1459 和 strict 模式测试。
+- 参考 [[https://modern.ircdocs.horse/#casemapping-parameter][现代 IRC 客户端协议的 CASEMAPPING 定义]]。
+
+** TODO [#B] 在识别 HTML 标签前处理明确声明的 UTF-16 编码
+
+相关代码：[[file:src/http/fetcher.cpp::146][HTTP 字符集读取]]、
+[[file:src/http/fetcher.cpp::165][解析器构造]]、
+[[file:src/html/document_bytes.hpp::23][BOM 识别]]。
+
+HTTP 声明的字符集目前只用于找到标题后的转码，不能帮助识别标签。
+样本响应使用 Content-Type: text/html; charset=UTF-16LE，正文为
+无 BOM 的 UTF-16LE 编码 <title>Hello</title>。
+预期标题为 Hello；独立解析样本得到无标题，加上 UTF-16LE BOM 后则成功。
+
+- 将传输层编码提示传入文档字节解码器，在标签识别前增量解码。
+- 保留 BOM 的优先级，避免已转为 UTF-8 的标题再次按原字符集转码。
+- 覆盖 UTF-16LE/BE、无 BOM、跨块字符及 BOM 与 HTTP 字符集冲突。
+
+** TODO [#B] 按解码后的有效内容决定是否采用备用标题
+
+相关代码：[[file:src/http/fetcher.cpp::196][找到候选标题后提前返回]]、
+[[file:src/html/title_parser.cpp::123][原始标题处理]]。
+
+已复现样本：
+
+#+begin_src html
+<meta property="og:title" content="fallback"><title>&#32;</title>
+#+end_src
+
+原始标题 &#32; 非空，格式化后为空，抓取函数立即返回无标题。
+将 &#32; 换成普通空格时却能得到 fallback，等价输入的行为不一致。
+
+- 根据格式化后的有效文本接受标题，结果为空时继续寻找备用标题。
+- 保证当前响应块剩余内容不会丢失：现有 parse 找到候选便停止，
+  且不返回已消费长度，不能仅删除提前返回语句。
+- 增加实体空白标题及备用元数据位于同块后方、后续块的回归测试。
+
+** DONE [#B] 为 IRC 写操作增加超时
+
+完成于 2026-11-25：[[file:src/ircbot/client.cpp][框架写入队列]]增加逐次写入截止时间。
+已用持续发送但停止读取的本地对端复现背压，并验证超时关闭及退出清理。
+
+相关代码：[[file:src/app/server.cpp::55][IRC 写操作]]、
+[[file:src/app/server.cpp::136][空闲检测]]。
+
+原审查结论来自代码路径分析，当时尚未进行背压复现。原 async_write 没有截止时间；
+若对端持续发送却停止读取，发送缓冲区填满后，唯一写协程可能一直等待。
+输入仍在刷新空闲计时，优先 PONG 也无法越过当前阻塞的写操作。
+
+- 为写入增加明确的截止时间，超时关闭会话并进入重连流程。
+- 用持续发送但不读取的回环对端验证恢复行为。
+- 验证正常写入、优先 PONG、关闭和取消不会被过期定时器误伤。
+
+* DONE 通用 IRC Bot 框架及 titlebot 迁移
+
+用户确认的范围：同仓库独立 C++23 库，Boost.Asio 协程与组合式事件处理器；
+基础 IRC、CAP、消息标签、ISUPPORT、SASL；支持多个独立客户端实例，
+titlebot 第一版继续连接一个网络。
+
+- 独立目标 =ircbot::ircbot=，协议解析、能力/认证状态机与连接运行分层。
+- titlebot 通过事件回调接入，保留首个 URL、异步抓取、缓存与回复策略。
+- 提供 [[file:docs/ircbot.org][使用指南]]与 [[file:examples/echo_bot.cpp][独立 Bot 示例]]。
+- 常规构建及 ASan/UBSan 构建各 142 项测试全部通过；独立关闭应用构建的框架和示例也编译成功。
+- 源码格式检查及 git diff --check 通过。此次本地验证使用 GCC 16.2.1，
+  Debian g++ 14.2.0 基线尚未在本地执行；CI 已增加框架示例及独立构建验证。
