@@ -298,9 +298,15 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
     for (auto& line : *actions) {
         SendControl(session, std::move(line));
     }
+    if (IsCommand(message, "CAP") && message.params.size() >= 2 &&
+        (Equals(message.params[1], "NEW", CaseMapping::kAscii) ||
+         Equals(message.params[1], "DEL", CaseMapping::kAscii))) {
+        Invoke(session->handlers.capabilities_changed, Connection(session), message);
+    }
     if (IsCommand(message, "005")) {
         session->features.Observe(message);
         nicknames.limit = session->features.nick_length;
+        Invoke(session->handlers.isupport_changed, Connection(session), message);
     } else if (!session->registered && IsCommand(message, "432") && message.params.size() >= 2) {
         Diagnose(session, "IRC server rejected nickname: " + std::string(message.params[1]));
         throw Fatal{ClientError::kInvalidNickname};

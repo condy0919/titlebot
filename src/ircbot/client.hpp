@@ -161,6 +161,8 @@ struct Handlers {
     Callback<Connection> disconnected;
     Callback<std::string_view> diagnostic;
     Callback<const DiagnosticEvent&> diagnostic_event;
+    Callback<Connection, const MessageView&> capabilities_changed;
+    Callback<Connection, const MessageView&> isupport_changed;
 };
 
 /// Run one independent client on a single-threaded executor (or a strand).
