@@ -64,6 +64,8 @@ struct Config {
     Timeouts timeouts;
     std::size_t queued_lines = 64;
     std::chrono::milliseconds send_interval{0};
+    // Return the minimum interval before the next ordinary line. Protocol control bypasses pacing.
+    std::function<std::chrono::milliseconds(std::string_view)> send_delay;
     bool reconnect_jitter = true;
     std::optional<std::size_t> max_retries{};
     std::map<std::string, std::string> channel_keys;

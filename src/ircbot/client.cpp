@@ -37,6 +37,7 @@ struct Session {
     std::string nick;
     std::deque<QueuedLine> queue;
     std::chrono::milliseconds send_interval;
+    std::function<std::chrono::milliseconds(std::string_view)> send_delay;
     std::optional<asio::steady_timer> pacing;
     Clock::time_point next_send{};
     std::optional<asio::steady_timer> write_timer;
@@ -105,7 +106,7 @@ asio::awaitable<void> CloseOnTimeout(asio::awaitable<bool> expired,
 asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
     try {
         while (session->transport.IsOpen() && !session->queue.empty()) {
-            if (session->queue.front().paced && session->send_interval.count() > 0) {
+            if (session->queue.front().paced && (session->send_interval.count() > 0 || session->send_delay)) {
                 const auto now = Clock::now();
                 if (now < session->next_send) {
                     session->pacing.emplace(session->transport.get_executor(), session->next_send);
@@ -114,7 +115,13 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                     session->pacing.reset();
                     continue;
                 }
-                session->next_send = now + session->send_interval;
+                auto interval = session->send_interval;
+                if (session->send_delay) {
+                    interval = std::clamp(session->send_delay(session->queue.front().text),
+                                          std::chrono::milliseconds::zero(),
+                                          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::hours(24)));
+                }
+                session->next_send = now + interval;
             }
             auto line = std::move(session->queue.front().text);
             line += "\r\n";
@@ -382,6 +389,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         .nick = config.nick,
         .queue = {},
         .send_interval = config.send_interval,
+        .send_delay = config.send_delay,
         .pacing = {},
         .write_timer = {},
         .writable = {},
