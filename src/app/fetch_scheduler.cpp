@@ -4,13 +4,13 @@
 #include <exception>
 #include <iostream>
 #include <iterator>
-#include <locale>
 #include <utility>
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/use_awaitable.hpp>
+#include <boost/url/grammar/ci_string.hpp>
 
 #include "common/log.hpp"
 #include "irc/irc.hpp"
@@ -59,7 +59,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
     auto end = message.url.find_first_of(":/?#");
     std::string host = message.url.substr(0, end);
     for (char& ch : host) {
-        ch = std::tolower(ch, std::locale::classic());
+        ch = boost::urls::grammar::to_lower(ch);
     }
     if (host.ends_with('.')) {
         host.pop_back();

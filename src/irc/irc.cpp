@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
-#include <locale>
 
 #include <boost/beast/core/string.hpp>
+#include <boost/url/grammar/ci_string.hpp>
 
 namespace {
 // HTTP chars that need quoting.
@@ -43,7 +43,7 @@ char FoldIrcCase(char c) {
     case '^':
         return '~';
     default:
-        return std::tolower(c, std::locale::classic());
+        return boost::urls::grammar::to_lower(c);
     }
 }
 
