@@ -262,13 +262,14 @@ void HandlePrivMsg(const std::shared_ptr<Session>& session, std::string_view lin
         return;
     }
     auto target = SameNick(msg->channel, session->nick) ? msg->who : msg->channel;
+    FetchScheduler::Destination destination{session, target};
     session->scheduler->Submit(
         std::move(*msg),
         [weak = std::weak_ptr(session), target = std::move(target)](const std::string& title) {
             if (auto owner = weak.lock()) {
                 Reply(owner, target, title);
             }
-        });
+        }, std::move(destination));
 }
 
 std::string_view TrailingText(std::string_view params) {

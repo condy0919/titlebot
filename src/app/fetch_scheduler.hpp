@@ -33,7 +33,11 @@ public:
 
     /// Queue a fetch and call deliver if it yields a title. For example, two accepted
     /// Submit(msg, deliver) calls for the same pending URL fetch it once and deliver twice.
-    void Submit(PrivMsg message, Deliver deliver);
+    struct Destination {
+        std::weak_ptr<void> session;
+        std::string target;
+    };
+    void Submit(PrivMsg message, Deliver deliver, Destination destination = {});
 
     /// Count a dropped outgoing reply. RecordReplyDrop() increments stats().reply_drops by one.
     void RecordReplyDrop();
@@ -73,6 +77,7 @@ private:
         PrivMsg message;
         std::string host;
         std::vector<Deliver> replies;
+        std::vector<Destination> destinations;
         bool running = false;
     };
 

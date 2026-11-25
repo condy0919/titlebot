@@ -34,7 +34,7 @@ constexpr std::pair<FetchError, const char*> kErrorNames[] = {
 FetchScheduler::FetchScheduler(asio::any_io_executor executor, Fetch fetch)
     : executor_(std::move(executor)), fetch_(std::move(fetch)) {}
 
-void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
+void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destination) {
     ScheduleReport();
     auto cached = std::ranges::find_if(cache_, [&](const Cached& entry) {
         return entry.protocol == message.protocol && entry.url == message.url;
@@ -59,6 +59,16 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
     // A queued or running job can deliver the same title to several callers.
     for (auto& job : jobs_) {
         if (job.message.protocol == message.protocol && job.message.url == message.url) {
+            if (!destination.session.expired() && std::ranges::any_of(
+                    job.destinations, [&](const Destination& existing) {
+                        return !existing.session.owner_before(destination.session) &&
+                               !destination.session.owner_before(existing.session) &&
+                               std::ranges::equal(existing.target, destination.target, {},
+                                                  FoldIrcCase, FoldIrcCase);
+                    })) {
+                return;
+            }
+            job.destinations.push_back(std::move(destination));
             job.replies.push_back(std::move(deliver));
             ++subscribers_;
             ++stats_.merged;
@@ -80,6 +90,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
         .message = std::move(message),
         .host = std::move(host),
         .replies = {std::move(deliver)},
+        .destinations = {std::move(destination)},
     });
     ++subscribers_;
     // Give the new job a chance to start before applying the waiting-queue limit.
