@@ -330,6 +330,9 @@ Registration::Output Registration::Handle(const MessageView& message) {
     if (!started_) {
         return Fail(RegistrationError::kProtocol);
     }
+    if (IsCommand(message, "908") && message.params.size() >= 2) {
+        sasl_mechanisms_ = message.params[1];
+    }
     if (IsCommand(message, "CAP")) {
         return HandleCap(message);
     }

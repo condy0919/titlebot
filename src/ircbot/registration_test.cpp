@@ -256,6 +256,15 @@ TEST(Registration, NewCapabilityDoesNotRetryAnUnrelatedRejectedRequest) {
     EXPECT_EQ(Feed(registration, "CAP bot NEW :message-tags"), Lines{"CAP REQ :message-tags"});
 }
 
+TEST(Registration, RecordsMechanismsListedByServer) {
+    Registration registration;
+    registration.Start();
+    const auto line = ircbot::ParseMessage(":irc 908 bot PLAIN,EXTERNAL :available SASL mechanisms");
+    ASSERT_TRUE(line);
+    EXPECT_TRUE(registration.Handle(*line));
+    EXPECT_EQ(registration.sasl_mechanisms(), "PLAIN,EXTERNAL");
+}
+
 TEST(Registration, ListingSaslAsEnabledDoesNotSkipAuthentication) {
     auto registration = Plain();
     registration.Start();

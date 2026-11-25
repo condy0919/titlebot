@@ -68,6 +68,8 @@ public:
     bool done() const {
         return done_;
     }
+    /// For example, numeric 908 with "PLAIN,EXTERNAL" records that list for diagnostics.
+    std::string_view sasl_mechanisms() const { return sasl_mechanisms_; }
     bool authenticated() const {
         return authenticated_;
     }
@@ -88,6 +90,7 @@ private:
     bool SaslActive() const;
 
     RegistrationConfig config_;
+    std::string sasl_mechanisms_;
     std::unordered_map<std::string, std::string> available_;
     CapabilitySet enabled_;
     std::unordered_set<std::string> pending_;
