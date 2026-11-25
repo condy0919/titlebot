@@ -12,6 +12,8 @@
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 
+#include "common/any_stream.hpp"
+#include "common/connect.hpp"
 #include "common/deadline.hpp"
 #include "common/log.hpp"
 #include "fetch_scheduler.hpp"
@@ -27,8 +29,7 @@ using asio::use_awaitable;
 // Owns the socket and protocol state for one IRC connection. Fetch callbacks hold a weak
 // reference to their originating session so a late title cannot be sent on a new connection.
 struct Session {
-    asio::ssl::stream<asio::ip::tcp::socket> transport;
-    bool secure;
+    AnyStream transport;
     std::string nick;
     NicknameNegotiator& nickname;
     bool registered = false;
@@ -51,12 +52,7 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
         while (!session->queue.empty()) {
             auto line = std::move(session->queue.front()) + "\r\n";
             session->queue.pop_front();
-            if (session->secure) {
-                co_await asio::async_write(session->transport, asio::buffer(line), use_awaitable);
-            } else {
-                co_await asio::async_write(session->transport.next_layer(), asio::buffer(line),
-                                           use_awaitable);
-            }
+            co_await asio::async_write(session->transport, asio::buffer(line), use_awaitable);
         }
         session->writing = false;
         if (session->quit_timer) {
@@ -70,14 +66,14 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
     }
 
     boost::system::error_code close_error;
-    session->transport.next_layer().close(close_error);
+    session->transport.Close(close_error);
     if (close_error) {
         TB_LOG_WARN("Failed to close IRC socket after write failure: {}", close_error.message());
     }
 }
 
 void Send(const std::shared_ptr<Session>& session, std::string line, bool priority = false) {
-    if (!session->transport.next_layer().is_open()) {
+    if (!session->transport.IsOpen()) {
         TB_LOG_WARN("Dropping outgoing IRC line: socket is closed");
         return;
     }
@@ -102,14 +98,13 @@ void Send(const std::shared_ptr<Session>& session, std::string line, bool priori
 
     if (!session->writing) {
         session->writing = true;
-        asio::co_spawn(session->transport.next_layer().get_executor(), Drain(session),
-                       asio::detached);
+        asio::co_spawn(session->transport.get_executor(), Drain(session), asio::detached);
     }
 }
 
 void Reply(const std::shared_ptr<Session>& session, const std::string& target,
            std::string_view title) {
-    if (session->quit_timer || !session->transport.next_layer().is_open()) {
+    if (session->quit_timer || !session->transport.IsOpen()) {
         TB_LOG_DEBUG("Discarding title reply: IRC session is closed");
         return;
     }
@@ -126,12 +121,12 @@ bool SameNick(std::string_view a, std::string_view b) {
     return std::ranges::equal(a, b, {}, FoldIrcCase, FoldIrcCase);
 }
 
-asio::awaitable<void> CloseOnRegistrationTimeout(asio::awaitable<bool> expired,
-                                                 std::shared_ptr<Session> session) {
+asio::awaitable<void> CloseOnTimeout(asio::awaitable<bool> expired,
+                                     std::shared_ptr<Session> session, std::string_view reason) {
     if (co_await std::move(expired)) {
-        TB_LOG_WARN("IRC registration timed out before welcome; closing connection");
+        TB_LOG_WARN("{}", reason);
         boost::system::error_code ec;
-        session->transport.next_layer().close(ec);
+        session->transport.Close(ec);
         if (ec) {
             TB_LOG_WARN("Failed to close IRC socket after registration timeout: {}", ec.message());
         }
@@ -141,12 +136,12 @@ asio::awaitable<void> CloseOnRegistrationTimeout(asio::awaitable<bool> expired,
 asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
                                 std::shared_ptr<asio::steady_timer> timer,
                                 std::chrono::milliseconds idle, std::chrono::milliseconds grace) {
-    while (session->transport.next_layer().is_open()) {
+    while (session->transport.IsOpen()) {
         const auto expiry = session->last_input + (session->probe_sent ? grace : idle);
         timer->expires_at(expiry);
         boost::system::error_code ec;
         co_await timer->async_wait(asio::redirect_error(use_awaitable, ec));
-        if (ec || !session->transport.next_layer().is_open()) {
+        if (ec || !session->transport.IsOpen()) {
             co_return;
         }
         if (Clock::now() < session->last_input + (session->probe_sent ? grace : idle)) {
@@ -154,7 +149,7 @@ asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
         }
         if (session->probe_sent) {
             TB_LOG_WARN("IRC idle probe timed out");
-            session->transport.next_layer().close(ec);
+            session->transport.Close(ec);
             co_return;
         }
         Send(session, "PING :titlebot", true);
@@ -249,8 +244,7 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket,
                                                   NicknameNegotiator& nickname,
                                                   asio::ssl::context& tls) {
     auto session = std::make_shared<Session>(Session{
-        .transport = {std::move(socket), tls},
-        .secure = config.tls,
+        .transport = {std::move(socket), config.tls ? &tls : nullptr},
         .nick = config.nick,
         .nickname = nickname,
         .queue = {},
@@ -258,40 +252,30 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket,
         .limits = config.replies,
         .limiter = {config.replies},
     });
-    auto executor = session->transport.next_layer().get_executor();
+    auto executor = session->transport.get_executor();
 
-    if (session->secure) {
-        Deadline handshake(executor, Clock::now() + config.connect_timeout);
-        asio::co_spawn(executor, CloseOnRegistrationTimeout(handshake.Wait(), session),
+    if (config.tls) {
+        Deadline handshake(executor, Clock::now() + config.timeouts.connect_timeout);
+        asio::co_spawn(executor,
+                       CloseOnTimeout(handshake.Wait(), session, "IRC TLS handshake timed out"),
                        asio::detached);
-        session->transport.set_verify_mode(asio::ssl::verify_peer);
-        session->transport.set_verify_callback(asio::ssl::host_name_verification(config.server));
-        if (!SSL_set_tlsext_host_name(session->transport.native_handle(), config.server.c_str())) {
-            throw boost::system::system_error(asio::error::invalid_argument);
-        }
-        co_await session->transport.async_handshake(asio::ssl::stream_base::client, use_awaitable);
+        co_await session->transport.Handshake(config.server);
     }
     Send(session, "NICK " + session->nick);
     Send(session, "USER " + session->nick + " 0 * :titlebot");
 
-    Deadline registration(executor, Clock::now() + config.registration_timeout);
-    asio::co_spawn(executor, CloseOnRegistrationTimeout(registration.Wait(), session),
+    Deadline registration(executor, Clock::now() + config.timeouts.registration_timeout);
+    asio::co_spawn(executor,
+                   CloseOnTimeout(registration.Wait(), session,
+                                  "IRC registration timed out before welcome; closing connection"),
                    asio::detached);
 
     auto idle_timer = std::make_shared<asio::steady_timer>(executor);
     std::string input;
     try {
         while (true) {
-            auto read = [&](auto& stream) {
-                return asio::async_read_until(stream, asio::dynamic_buffer(input, 8192), "\r\n",
-                                              use_awaitable);
-            };
-            std::size_t count;
-            if (session->secure) {
-                count = co_await read(session->transport);
-            } else {
-                count = co_await read(session->transport.next_layer());
-            }
+            auto count = co_await asio::async_read_until(
+                session->transport, asio::dynamic_buffer(input, 8192), "\r\n", use_awaitable);
             auto line = std::string_view(input).substr(0, count - 2);
             const bool was_registered = session->registered;
             session->last_input = Clock::now();
@@ -300,23 +284,21 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket,
             input.erase(0, count);
             if (!was_registered && session->registered) {
                 session->registered_at = session->last_input;
-                asio::co_spawn(
-                    executor,
-                    WatchIdle(session, idle_timer, config.idle_timeout, config.ping_timeout),
-                    asio::detached);
+                asio::co_spawn(executor,
+                               WatchIdle(session, idle_timer, config.timeouts.idle_timeout,
+                                         config.timeouts.ping_timeout),
+                               asio::detached);
             }
         }
     } catch (const boost::system::system_error& ex) {
-        if (ex.code() != asio::error::operation_aborted &&
-            session->transport.next_layer().is_open()) {
+        if (ex.code() != asio::error::operation_aborted && session->transport.IsOpen()) {
             TB_LOG_WARN("IRC read failed: {}", ex.what());
         }
     }
     idle_timer->cancel();
     registration.Cancel();
     const auto cancellation = co_await asio::this_coro::cancellation_state;
-    if (cancellation.cancelled() != asio::cancellation_type::none &&
-        session->transport.next_layer().is_open()) {
+    if (cancellation.cancelled() != asio::cancellation_type::none && session->transport.IsOpen()) {
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
         session->quit_timer =
             std::make_shared<asio::steady_timer>(executor, std::chrono::seconds(1));
@@ -324,22 +306,22 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket,
         Send(session, "QUIT :Shutting down", true);
         boost::system::error_code ignored;
         co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
-        session->transport.next_layer().close(ignored);
+        session->transport.Close(ignored);
         scheduler->Report();
         co_return std::nullopt;
     }
     boost::system::error_code ignored;
-    session->transport.next_layer().close(ignored);
+    session->transport.Close(ignored);
     scheduler->Report();
     const auto duration = Clock::now() - session->registered_at;
-    co_return session->registered&& duration >= config.stable_session;
+    co_return session->registered&& duration >= config.timeouts.stable_session;
 }
 
 asio::awaitable<asio::ip::tcp::socket> Connect(const BotConfig& config) {
     auto executor = co_await asio::this_coro::executor;
     auto resolver = std::make_shared<asio::ip::tcp::resolver>(executor);
     auto socket = std::make_shared<asio::ip::tcp::socket>(executor);
-    const auto expires = Clock::now() + config.connect_timeout;
+    const auto expires = Clock::now() + config.timeouts.connect_timeout;
     Deadline deadline(executor, expires);
     asio::co_spawn(
         executor,
@@ -352,12 +334,7 @@ asio::awaitable<asio::ip::tcp::socket> Connect(const BotConfig& config) {
         },
         asio::detached);
     auto endpoints = co_await resolver->async_resolve(config.server, config.port, use_awaitable);
-    co_await asio::async_connect(
-        *socket, endpoints,
-        [expires](boost::system::error_code, const asio::ip::tcp::endpoint&) {
-            return Clock::now() < expires;
-        },
-        use_awaitable);
+    co_await ConnectEndpoints(socket, endpoints, expires);
     co_return std::move(*socket);
 }
 

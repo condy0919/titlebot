@@ -9,6 +9,14 @@
 #include "common/runtime_limits.hpp"
 
 namespace tb {
+struct SessionTimeouts {
+    std::chrono::milliseconds registration_timeout = std::chrono::seconds(30);
+    std::chrono::milliseconds connect_timeout = std::chrono::seconds(15);
+    std::chrono::milliseconds idle_timeout = std::chrono::seconds(90);
+    std::chrono::milliseconds ping_timeout = std::chrono::seconds(30);
+    std::chrono::milliseconds stable_session = std::chrono::minutes(1);
+};
+
 struct BotConfig {
     std::string server;
     std::string port;
@@ -18,11 +26,7 @@ struct BotConfig {
     FetchLimits fetch{};
     SchedulerLimits scheduler{};
     ReplyLimits replies{};
-    std::chrono::milliseconds registration_timeout = std::chrono::seconds(30);
-    std::chrono::milliseconds connect_timeout = std::chrono::seconds(15);
-    std::chrono::milliseconds idle_timeout = std::chrono::seconds(90);
-    std::chrono::milliseconds ping_timeout = std::chrono::seconds(30);
-    std::chrono::milliseconds stable_session = std::chrono::minutes(1);
+    SessionTimeouts timeouts{};
 };
 
 /// Connect, register, and reconnect with backoff after a disconnect or registration timeout.

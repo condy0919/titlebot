@@ -10,6 +10,7 @@
 
 #include <boost/asio.hpp>
 
+#include "common/connect.hpp"
 #include "http/fetcher.hpp"
 
 namespace {
@@ -319,8 +320,8 @@ TEST_F(Server, ProbesIdleSessionsAndClosesUnresponsivePeers) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     tb::BotConfig config{"127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
                          "#r"};
-    config.idle_timeout = std::chrono::milliseconds(40);
-    config.ping_timeout = std::chrono::milliseconds(40);
+    config.timeouts.idle_timeout = std::chrono::milliseconds(40);
+    config.timeouts.ping_timeout = std::chrono::milliseconds(40);
     asio::co_spawn(io, tb::RunBot(config), asio::detached);
     auto exercise = [&]() -> asio::awaitable<void> {
         auto peer = co_await listener.async_accept(use_awaitable);
@@ -350,7 +351,7 @@ TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
                        .port = std::to_string(listener.local_endpoint().port()),
                        .nick = "bot",
                        .channels = "#r",
-                       .registration_timeout = std::chrono::milliseconds(150),
+                       .timeouts = {.registration_timeout = std::chrono::milliseconds(150)},
                    }),
                    asio::detached);
     auto exercise = [&]() -> asio::awaitable<void> {
@@ -403,5 +404,43 @@ TEST_F(Server, SendsQuitAndCompletesOnCancellation) {
     io.run_for(std::chrono::milliseconds(100));
     ASSERT_EQ(finished.wait_for(std::chrono::seconds(0)), std::future_status::ready);
     EXPECT_NO_THROW(finished.get());
+}
+TEST_F(Server, FallsBackFromIpv6ToReachableIpv4Endpoint) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto socket = std::make_shared<tcp::socket>(io);
+        std::array<tcp::endpoint, 2> candidates{
+            tcp::endpoint(asio::ip::address_v6::loopback(), listener.local_endpoint().port()),
+            listener.local_endpoint()};
+        co_await tb::ConnectEndpoints(socket, candidates,
+                                      std::chrono::steady_clock::now() + std::chrono::seconds(1));
+        EXPECT_EQ(socket->remote_endpoint(), listener.local_endpoint());
+    };
+    RunExercise(exercise(), std::chrono::seconds(2));
+}
+
+TEST_F(Server, LogsTimeoutDuringTlsHandshake) {
+    std::ostringstream output;
+    auto previous = spdlog::default_logger();
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>(
+        "handshake", std::make_shared<spdlog::sinks::ostream_sink_st>(output)));
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    tb::BotConfig config{"127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
+                         "#r"};
+    config.tls = true;
+    config.timeouts.connect_timeout = std::chrono::milliseconds(100);
+    asio::co_spawn(io, tb::RunBot(config), asio::detached);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        char data[1024];
+        boost::system::error_code ec;
+        while (!ec) {
+            co_await peer.async_read_some(asio::buffer(data),
+                                          asio::redirect_error(use_awaitable, ec));
+        }
+    };
+    RunExercise(exercise(), std::chrono::seconds(2));
+    spdlog::set_default_logger(previous);
+    EXPECT_THAT(output.str(), testing::HasSubstr("IRC TLS handshake timed out"));
 }
 } // namespace

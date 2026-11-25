@@ -11,6 +11,8 @@
 #include <boost/beast/http.hpp>
 #include <boost/url.hpp>
 
+#include "common/any_stream.hpp"
+#include "common/connect.hpp"
 #include "common/deadline.hpp"
 #include "common/log.hpp"
 #include "common/numfmt.hpp"
@@ -238,11 +240,11 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
 using Clock = std::chrono::steady_clock;
 asio::awaitable<void> CancelOnTimeout(asio::awaitable<bool> expired,
                                       std::shared_ptr<tcp::resolver> resolver,
-                                      std::shared_ptr<asio::ssl::stream<tcp::socket>> stream) {
+                                      std::shared_ptr<AnyStream> stream) {
     if (co_await std::move(expired)) {
         resolver->cancel();
         boost::system::error_code ignored;
-        stream->next_layer().close(ignored);
+        stream->Close(ignored);
     }
 }
 
@@ -266,7 +268,7 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         path.insert(0, "/");
     }
     auto executor = co_await asio::this_coro::executor;
-    auto stream = std::make_shared<asio::ssl::stream<tcp::socket>>(executor, tls);
+    auto stream = std::make_shared<AnyStream>(tcp::socket(executor), secure ? &tls : nullptr);
     auto expires = std::min(deadline, Clock::now() + policy.connect_timeout);
     Deadline connect_timeout(executor, expires);
     asio::co_spawn(executor, CancelOnTimeout(connect_timeout.Wait(), resolver, stream),
@@ -278,43 +280,9 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
                 co_return std::unexpected(FetchError::kBlockedAddress);
             }
         }
-        boost::system::error_code ec = asio::error::host_unreachable;
-        auto remaining_endpoints = answers.size();
-        for (const auto& answer : answers) {
-            if (Clock::now() >= expires) {
-                co_return std::unexpected(FetchError::kTimeout);
-            }
-            stream->next_layer().close();
-            const auto now = Clock::now();
-            Deadline attempt(executor,
-                             now + (expires - now) / static_cast<long>(remaining_endpoints--));
-            asio::co_spawn(
-                executor,
-                [stream, wait = attempt.Wait()]() mutable -> asio::awaitable<void> {
-                    if (co_await std::move(wait)) {
-                        boost::system::error_code ignored;
-                        stream->next_layer().cancel(ignored);
-                    }
-                },
-                asio::detached);
-            co_await stream->next_layer().async_connect(answer.endpoint(),
-                                                        asio::redirect_error(use_awaitable, ec));
-            if (!ec) {
-                break;
-            }
-        }
-        if (ec) {
-            throw boost::system::system_error(ec);
-        }
-        if (secure) {
-            stream->set_verify_mode(asio::ssl::verify_peer);
-            stream->set_verify_callback(asio::ssl::host_name_verification(host));
-            if (url.host_type() == boost::urls::host_type::name &&
-                !SSL_set_tlsext_host_name(stream->native_handle(), host.c_str())) {
-                co_return std::unexpected(FetchError::kNetwork);
-            }
-            co_await stream->async_handshake(asio::ssl::stream_base::client, use_awaitable);
-        }
+        co_await ConnectEndpoints(std::shared_ptr<tcp::socket>(stream, &stream->socket()), answers,
+                                  expires);
+        co_await stream->Handshake(host);
         if (Clock::now() >= expires) {
             co_return std::unexpected(FetchError::kTimeout);
         }
@@ -323,11 +291,7 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         Deadline read_timeout(executor, expires);
         asio::co_spawn(executor, CancelOnTimeout(read_timeout.Wait(), resolver, stream),
                        asio::detached);
-        if (secure) {
-            co_return co_await ReadTitle(*stream, authority, path, location, policy.body_bytes);
-        }
-        co_return co_await ReadTitle(stream->next_layer(), authority, path, location,
-                                     policy.body_bytes);
+        co_return co_await ReadTitle(*stream, authority, path, location, policy.body_bytes);
     } catch (const boost::system::system_error& error) {
         TB_LOG_WARN("Fetch from {} failed: {}", host, error.what());
         if (Clock::now() >= expires) {
