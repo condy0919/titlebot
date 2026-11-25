@@ -386,7 +386,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
                            CloseOnTimeout(handshake.Wait(), session, "IRC TLS handshake timed out"),
                            asio::detached);
             try {
-                co_await session->transport.Handshake(config.server);
+                co_await session->transport.Handshake(config.server, config.tls_server_name);
             } catch (const boost::system::system_error&) {
                 const auto verify = session->transport.PeerVerificationResult();
                 if (verify != X509_V_OK) {
@@ -554,6 +554,9 @@ std::string_view InvalidConfigField(const Config& config) {
         std::ranges::none_of(config.server, [](unsigned char ch) { return ch <= 32 || ch == 127; });
     if (!valid_server) {
         return "server";
+    }
+    if (!config.tls_server_name.empty() && !token(config.tls_server_name)) {
+        return "tls_server_name";
     }
     if (!token(config.port)) {
         return "port";

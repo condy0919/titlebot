@@ -39,7 +39,7 @@ public:
         socket().close(ec);
     }
     /// Verify the peer certificate against host. A plain stream completes immediately.
-    boost::asio::awaitable<void> Handshake(const std::string& host) {
+    boost::asio::awaitable<void> Handshake(const std::string& host, const std::string& server_name = {}) {
         auto* tls = std::get_if<Tls>(&stream_);
         if (!tls) {
             co_return;
@@ -48,7 +48,9 @@ public:
         tls->set_verify_callback(boost::asio::ssl::host_name_verification(host));
         boost::system::error_code ec;
         boost::asio::ip::make_address(host, ec);
-        if (ec && !SSL_set_tlsext_host_name(tls->native_handle(), host.c_str())) {
+        const auto& sni = server_name.empty() ? host : server_name;
+        if ((!server_name.empty() || ec) &&
+            !SSL_set_tlsext_host_name(tls->native_handle(), sni.c_str())) {
             throw boost::system::system_error(boost::asio::error::invalid_argument);
         }
         co_await tls->async_handshake(boost::asio::ssl::stream_base::client,
