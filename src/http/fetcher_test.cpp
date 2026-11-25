@@ -199,6 +199,11 @@ TEST_F(FetcherLoopback, VerifiesTrustAndHostForEachTlsConnection) {
     client_tls.load_verify_file(fixture);
     EXPECT_EQ(Run({ok}, "https"), std::unexpected(tb::FetchError::kNetwork));
     EXPECT_EQ(Run({ok}, "https", localhost), tb::FetchResult(std::string("OK")));
+    // 测试服务端直接关闭 TCP。无长度的正文可按 EOF 结束，固定长度的正文必须完整。
+    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\n\r\nno title"}, "https", localhost),
+              tb::FetchResult(std::nullopt));
+    EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 30\r\n\r\nshort"}, "https", localhost),
+              std::unexpected(tb::FetchError::kNetwork));
 }
 
 std::string HtmlResponse(const std::string& body, const std::string& headers) {
@@ -294,5 +299,13 @@ TEST_F(Fetcher, ClassifiesPublicAddressBoundaries) {
                       "::ffff:127.0.0.1", "2001:db8::1", "2002::1", "3fff::1"}) {
         EXPECT_FALSE(tb::detail::IsPublicAddress(asio::ip::make_address(text))) << text;
     }
+}
+TEST_F(FetcherLoopback, AcceptsLegacyGzipContentEncoding) {
+    constexpr char compressed[] =
+        "\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff\xb3\x29\xc9\x2c\xc9\x49\xb5\x4b\xaf\xca\x2c\xb0"
+        "\xd1\x87\xb0\x01\x3c\xa6\x82\x28\x13\x00\x00\x00";
+    EXPECT_EQ(Run({HtmlResponse(std::string(compressed, sizeof(compressed) - 1),
+                                "Content-Encoding: x-gzip\r\n")}),
+              tb::FetchResult(std::string("gzip")));
 }
 } // namespace
