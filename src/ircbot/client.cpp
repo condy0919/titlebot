@@ -28,6 +28,7 @@ struct QueuedLine {
 
 struct Session {
     tb::AnyStream transport;
+    asio::any_io_executor executor;
     Handlers handlers;
     Timeouts timeouts;
     std::size_t queue_limit;
@@ -369,8 +370,10 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
 asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const Config& config,
                                            const Handlers& handlers, Nicknames& nicknames,
                                            asio::ssl::context& tls) {
+    const auto session_executor = socket.get_executor();
     auto session = std::make_shared<Session>(Session{
         .transport = {std::move(socket), config.tls ? &tls : nullptr},
+        .executor = session_executor,
         .handlers = handlers,
         .timeouts = config.timeouts,
         .queue_limit = config.queued_lines,
@@ -775,6 +778,24 @@ std::expected<void, SendError> Connection::Part(std::string_view channel, std::s
         return std::unexpected(SendError::kInvalidMessage);
     }
     return reason.empty() ? Send("PART", {channel}) : Send("PART", {channel, reason});
+}
+
+void Connection::PostPrivmsg(std::string target, std::string text,
+                             std::move_only_function<void(std::expected<void, SendError>)> completion) const {
+    auto session = session_.lock();
+    if (!session) {
+        if (completion) {
+            completion(std::unexpected(SendError::kClosed));
+        }
+        return;
+    }
+    asio::post(session->executor, [connection = *this, target = std::move(target),
+                                   text = std::move(text), completion = std::move(completion)]() mutable {
+        const auto result = connection.Privmsg(target, text);
+        if (completion) {
+            completion(result);
+        }
+    });
 }
 
 bool Connection::IsOpen() const {

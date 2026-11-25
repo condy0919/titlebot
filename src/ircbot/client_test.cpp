@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <future>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <boost/asio.hpp>
@@ -119,6 +120,11 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
                              "@label=hello\\sworld :bot{!u@h pRiVmSg #room :hello\r\n");
         EXPECT_EQ(co_await Read(peer, input), "PRIVMSG #room :hello");
         EXPECT_EQ(saved.Nick(), "bot[");
+        std::thread worker([saved] {
+            saved.PostPrivmsg("#room", "worker", [](auto result) { EXPECT_TRUE(result); });
+        });
+        worker.join();
+        EXPECT_EQ(co_await Read(peer, input), "PRIVMSG #room :worker");
         co_await Write(peer, "PING " + std::string(505, 'a') + "\r\n");
         EXPECT_EQ(co_await Read(peer, input), "PONG " + std::string(505, 'a'));
         stop.emit(asio::cancellation_type::terminal);

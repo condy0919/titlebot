@@ -106,6 +106,10 @@ public:
     std::expected<void, SendError> Join(std::string_view channel, std::string_view key = {}) const;
     /// For example, Part("#room", "going away") queues "PART #room :going away".
     std::expected<void, SendError> Part(std::string_view channel, std::string_view reason = {}) const;
+    /// For example, PostPrivmsg("#room", "done", callback) dispatches a send from a worker
+    /// thread and invokes callback with the enqueue result. Closed handles may complete inline.
+    void PostPrivmsg(std::string target, std::string text,
+                     std::move_only_function<void(std::expected<void, SendError>)> completion) const;
     bool IsOpen() const;
     std::string Nick() const;
     /// For example, TextBudget("#room") reserves the server-advertised user/host limits
