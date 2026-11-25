@@ -109,4 +109,11 @@ TEST_F(TitleParser, ReadsCharsetBeforeSelfClosingSlash) {
         EXPECT_EQ(document.DeclaredCharset(), "utf-8");
     }
 }
+TEST_F(TitleParser, IgnoresRawTextAndAcceptsClosingTagAttributes) {
+    for (std::string tag : {"textarea", "xmp", "noframes", "noembed"}) {
+        auto body = "<" + tag + "><title>fake</title></" + tag + "><title>real</title ignored>";
+        tb::TitleParser document;
+        EXPECT_EQ(document.parse(body.begin(), body.end()), "real");
+    }
+}
 } // namespace

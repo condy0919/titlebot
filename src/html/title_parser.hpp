@@ -62,6 +62,7 @@ private:
     unsigned svg_depth_ = 0;
     unsigned dashes_ = 0;
     char quote_ = 0;
+    std::size_t title_tag_ = std::string::npos;
     std::string title_;
 };
 } // namespace tb

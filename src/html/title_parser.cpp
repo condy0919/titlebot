@@ -154,18 +154,18 @@ std::optional<std::string> TitleParser::ReadByte(char ch) {
 
 std::optional<std::string> TitleParser::consume(char ch) {
     if (state_ == State::kTitle) {
-        if (ch == '>') {
-            constexpr std::string_view close = "</title";
-            auto end = title_.find_last_not_of(" \t\r\n\f");
-            if (end != title_.npos && end + 1 >= close.size()) {
-                auto start = end + 1 - close.size();
-                if (boost::beast::iequals(std::string_view(title_).substr(start, close.size()),
-                                          close)) {
-                    title_.resize(start);
-                    state_ = State::kText;
-                    return std::exchange(title_, {});
-                }
+        if (ch == '<') {
+            title_tag_ = title_.size();
+        } else if (ch == '>' && title_tag_ != title_.npos) {
+            auto tag = std::string_view(title_).substr(title_tag_ + 1);
+            if (tag.starts_with('/') &&
+                boost::beast::iequals(tag.substr(1, tag.find_first_of(" /\t\r\n\f", 1) - 1), "title")) {
+                title_.resize(title_tag_);
+                state_ = State::kText;
+                title_tag_ = title_.npos;
+                return std::exchange(title_, {});
             }
+            title_tag_ = title_.npos;
         }
         title_.push_back(ch);
         return {};
@@ -177,7 +177,8 @@ std::optional<std::string> TitleParser::consume(char ch) {
         dashes_ = ch == '-' ? std::min(2u, dashes_ + 1) : 0;
         return {};
     }
-    if (ch == '<' && !quote_) {
+    if (ch == '<' && (!quote_ || tag_.size() >= 16384)) {
+        quote_ = 0;
         tag_.clear();
         state_ = State::kTag;
         return {};
@@ -239,7 +240,9 @@ void TitleParser::HandleCompleteTag() {
             ++svg_depth_;
         }
     } else if (!closing &&
-               (boost::beast::iequals(name, "script") || boost::beast::iequals(name, "style"))) {
+               (boost::beast::iequals(name, "script") || boost::beast::iequals(name, "style") ||
+                boost::beast::iequals(name, "textarea") || boost::beast::iequals(name, "xmp") ||
+                boost::beast::iequals(name, "noframes") || boost::beast::iequals(name, "noembed"))) {
         raw_element_ = name;
     } else if (!svg_depth_ && boost::beast::iequals(name, "template")) {
         if (!closing) {
