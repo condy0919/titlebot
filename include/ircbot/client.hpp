@@ -69,6 +69,7 @@ struct Config {
     std::map<std::string, std::string> channel_keys;
     std::vector<ServerAddress> fallback_servers;
     std::string tls_server_name;
+    std::string quit_reason = "Shutting down";
 };
 
 enum class SendError { kClosed, kInvalidMessage, kQueueFull, kCapabilityRequired };

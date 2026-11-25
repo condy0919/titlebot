@@ -490,7 +490,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         session->quit_timer =
             std::make_shared<asio::steady_timer>(executor, std::chrono::seconds(1));
         session->queue.clear();
-        if (Queue(session, "QUIT :Shutting down", true)) {
+        if (Queue(session, "QUIT :" + config.quit_reason, true)) {
             boost::system::error_code ignored;
             co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
         }
@@ -566,6 +566,9 @@ std::string_view InvalidConfigField(const Config& config) {
     const bool valid_server =
         !config.server.empty() &&
         std::ranges::none_of(config.server, [](unsigned char ch) { return ch <= 32 || ch == 127; });
+    if (!text(config.quit_reason) || config.quit_reason.size() > 504) {
+        return "quit_reason";
+    }
     if (!valid_server) {
         return "server";
     }
