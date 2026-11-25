@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <boost/asio.hpp>
+#include <boost/asio/experimental/channel.hpp>
 #include <boost/asio/ssl.hpp>
 
 #include "common/any_stream.hpp"
@@ -52,7 +53,7 @@ struct Session {
     Clock::time_point last_input{};
     Clock::time_point registered_at{};
     std::shared_ptr<asio::steady_timer> quit_timer;
-    std::shared_ptr<asio::steady_timer> drain_timer;
+    std::optional<asio::experimental::channel<void(boost::system::error_code, bool)>> writer_done;
 };
 } // namespace detail
 namespace {
@@ -153,8 +154,8 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
         Close(session);
     }
     session->writing = false;
-    if (session->drain_timer) {
-        session->drain_timer->cancel();
+    if (session->writer_done) {
+        session->writer_done->try_send(boost::system::error_code{}, true);
     }
     if (session->quit_timer) {
         session->quit_timer->cancel();
@@ -405,7 +406,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         .writable = {},
         .stop = {},
         .quit_timer = {},
-        .drain_timer = {},
+        .writer_done = {},
     });
     auto executor = session->transport.get_executor();
     auto idle = std::make_shared<asio::steady_timer>(executor);
@@ -518,12 +519,12 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
     if (stopping) {
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
     }
-    session->drain_timer = std::make_shared<asio::steady_timer>(executor, Clock::time_point::max());
     Close(session);
     if (session->writing) {
-        boost::system::error_code ignored;
+        session->writer_done.emplace(executor, 1);
+        boost::system::error_code ec;
         try {
-            co_await session->drain_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
+            co_await session->writer_done->async_receive(asio::redirect_error(use_awaitable, ec));
         } catch (const boost::system::system_error& error) {
             if (error.code() != asio::error::operation_aborted) {
                 throw;
@@ -533,9 +534,10 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
             stopping = true;
             co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
             if (session->writing) {
-                co_await session->drain_timer->async_wait(
-                    asio::redirect_error(use_awaitable, ignored));
+                co_await session->writer_done->async_receive(use_awaitable);
             }
+        } else if (ec) {
+            throw boost::system::system_error(ec);
         }
     }
     if (connected) {
