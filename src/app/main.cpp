@@ -158,8 +158,7 @@ int main(int argc, char** argv) {
                        }));
         io.run();
     } catch (const std::exception& e) {
-        TB_LOG_ERROR("Bot failed: {}", e.what());
-        return 1;
+        TB_LOG_FATAL("Bot failed: {}", e.what());
     }
 
     return 0;

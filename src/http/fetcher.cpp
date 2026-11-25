@@ -13,6 +13,7 @@
 
 #include "common/deadline.hpp"
 #include "common/log.hpp"
+#include "common/numfmt.hpp"
 #include "common/utils.hpp"
 #include "decoder.hpp"
 #include "fetcher_internal.hpp"
@@ -221,6 +222,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
             co_return result;
         }
         if (used < count) {
+            TB_LOG_DEBUG("HTTP body from {} exceeds {}", authority, numfmt(body_limit));
             co_return std::unexpected(FetchError::kResponseLimit);
         }
     } while (!response.is_done());
