@@ -26,6 +26,12 @@ public:
     executor_type get_executor() {
         return socket().get_executor();
     }
+    /// After a failed TLS handshake, report the OpenSSL peer verification result.
+    /// For example, a self-signed peer may yield X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT.
+    long PeerVerificationResult() {
+        auto* tls = std::get_if<Tls>(&stream_);
+        return tls ? SSL_get_verify_result(tls->native_handle()) : X509_V_OK;
+    }
     bool IsOpen() {
         return socket().is_open();
     }

@@ -56,7 +56,7 @@ struct Config {
 };
 
 enum class SendError { kClosed, kInvalidMessage, kQueueFull, kCapabilityRequired };
-enum class ClientError { kInvalidConfig, kTlsConfiguration, kAuthentication, kHandler, kReconnectTimer, kInvalidNickname };
+enum class ClientError { kInvalidConfig, kTlsConfiguration, kTlsTrust, kAuthentication, kHandler, kReconnectTimer, kInvalidNickname };
 
 /// A weak handle to one connection. Copies cannot send on a later reconnect.
 class Connection {

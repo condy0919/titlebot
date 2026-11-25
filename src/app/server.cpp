@@ -74,6 +74,8 @@ const char* ClientErrorText(ircbot::ClientError error) {
         return "Invalid IRC client configuration";
     case ircbot::ClientError::kTlsConfiguration:
         return "IRC TLS configuration failed";
+    case ircbot::ClientError::kTlsTrust:
+        return "IRC TLS peer verification failed";
     case ircbot::ClientError::kAuthentication:
         return "IRC authentication failed";
     case ircbot::ClientError::kReconnectTimer:

@@ -343,6 +343,28 @@ TEST_F(Client, AcceptsIpv6ServerLiteralsAndRetriesShortUnicodeNicknames) {
     EXPECT_TRUE(result.get());
 }
 
+TEST_F(Client, UntrustedCertificateStopsReconnects) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    asio::ssl::context tls(asio::ssl::context::tls_server);
+    const auto cert = IRCBOT_TEST_ROOT "/tests/fixtures/localhost-test.pem";
+    tls.use_certificate_chain_file(cert);
+    tls.use_private_key_file(cert, asio::ssl::context::pem);
+    auto config = Configuration(listener);
+    config.tls = true;
+    auto result = asio::co_spawn(io, ircbot::Run(config), asio::use_future);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        asio::ssl::stream<tcp::socket> peer(co_await listener.async_accept(use_awaitable), tls);
+        boost::system::error_code ec;
+        co_await peer.async_handshake(asio::ssl::stream_base::server,
+                                      asio::redirect_error(use_awaitable, ec));
+        EXPECT_TRUE(ec);
+    };
+    Exercise(exercise());
+    io.run_for(100ms);
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kTlsTrust);
+}
+
 TEST_F(Client, CompletesExternalAuthenticationOverVerifiedMutualTls) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     const std::string certificate = IRCBOT_TEST_ROOT "/tests/fixtures/localhost-test.pem";

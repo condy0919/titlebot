@@ -363,7 +363,16 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
             asio::co_spawn(executor,
                            CloseOnTimeout(handshake.Wait(), session, "IRC TLS handshake timed out"),
                            asio::detached);
-            co_await session->transport.Handshake(config.server);
+            try {
+                co_await session->transport.Handshake(config.server);
+            } catch (const boost::system::system_error&) {
+                const auto verify = session->transport.PeerVerificationResult();
+                if (verify != X509_V_OK) {
+                    Diagnose(session, X509_verify_cert_error_string(verify));
+                    throw Fatal{ClientError::kTlsTrust};
+                }
+                throw;
+            }
         }
         connected = true;
         for (auto& line : session->registration.Start()) {
