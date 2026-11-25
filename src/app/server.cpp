@@ -189,6 +189,13 @@ void HandlePrivMsg(const std::shared_ptr<Session>& session, const std::string& l
         });
 }
 
+std::string_view TrailingText(std::string_view params) {
+    if (params.starts_with(':')) {
+        params.remove_prefix(1);
+    }
+    return params;
+}
+
 void HandleLine(const std::shared_ptr<Session>& session, const std::string& line, // NOLINT
                 const std::string& channels, Deadline& registration) {
     std::string_view params(line);
@@ -216,10 +223,27 @@ void HandleLine(const std::shared_ptr<Session>& session, const std::string& line
         }
         Send(session, "NICK " + session->nick + std::to_string(*session->nick_suffix));
     } else if (command == "NICK" && SameNick(source.substr(0, source.find('!')), session->nick)) {
-        if (params.starts_with(':')) {
-            params.remove_prefix(1);
+        session->nick = TrailingText(params);
+    } else if (command == "ERROR") {
+        TB_LOG_ERROR("IRC ERROR: {}", TrailingText(params));
+    } else if (command == "KICK") {
+        auto channel = TakeIrcToken(params);
+        auto nick = TakeIrcToken(params);
+        if (SameNick(nick, session->nick)) {
+            TB_LOG_WARN("IRC KICK: {} removed us from {}: {}", source, channel, TrailingText(params));
+        } else {
+            TB_LOG_INFO("IRC KICK: {} removed {} from {}: {}", source, nick, channel,
+                        TrailingText(params));
         }
-        session->nick = params;
+    } else if (command == "437" || command == "471" || command == "473" || command == "474" ||
+               command == "475") {
+        TakeIrcToken(params); // Skip the numeric reply's recipient.
+        auto target = TakeIrcToken(params);
+        if (command == "437") {
+            TB_LOG_WARN("IRC 437: {} temporarily unavailable: {}", target, TrailingText(params));
+        } else {
+            TB_LOG_WARN("IRC JOIN {} failed ({}): {}", target, command, TrailingText(params));
+        }
     } else if (command == "PRIVMSG") {
         HandlePrivMsg(session, line);
     }

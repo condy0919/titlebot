@@ -4,8 +4,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <sstream>
 
 #include <boost/asio.hpp>
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 
 #include "http/fetcher.hpp"
 
@@ -210,6 +213,50 @@ TEST_F(Server, RetriesNicknameConflictsOnTheSameConnection) {
         EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #room");
     };
     RunExercise(exercise(), std::chrono::seconds(2));
+}
+
+TEST_F(Server, LogsServerErrorsKicksAndJoinFailures) {
+    std::ostringstream output;
+    auto previous = spdlog::default_logger();
+    auto logger = std::make_shared<spdlog::logger>(
+        "irc-events", std::make_shared<spdlog::sinks::ostream_sink_st>(output));
+    logger->set_pattern("%l %v");
+    spdlog::set_default_logger(logger);
+
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    asio::co_spawn(
+        io,
+        tb::RunBot({"127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot", "#room"}),
+        asio::detached);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        EXPECT_EQ(co_await ReadLine(peer, input), "NICK bot");
+        EXPECT_EQ(co_await ReadLine(peer, input), "USER bot 0 * :titlebot");
+        std::string events = ":irc 437 * bot :Nickname unavailable\r\n"
+                             ":irc 471 bot #room :Channel full\r\n"
+                             ":irc 473 bot #room :Invite only\r\n"
+                             ":irc 474 bot #room :Banned\r\n"
+                             ":irc 475 bot #room :Bad key\r\n"
+                             ":op!u@h KICK #room BOT :reason with spaces\r\n"
+                             ":op!u@h KICK #room alice :rules\r\n"
+                             "ERROR :Closing link\r\n"
+                             "PING :done\r\n";
+        co_await asio::async_write(peer, asio::buffer(events), use_awaitable);
+        EXPECT_EQ(co_await ReadLine(peer, input), "PONG :done");
+    };
+    RunExercise(exercise(), std::chrono::seconds(3));
+    spdlog::set_default_logger(previous);
+    EXPECT_THAT(
+        output.str(),
+        testing::HasSubstr("warning IRC 437: bot temporarily unavailable: Nickname unavailable\n"
+                           "warning IRC JOIN #room failed (471): Channel full\n"
+                           "warning IRC JOIN #room failed (473): Invite only\n"
+                           "warning IRC JOIN #room failed (474): Banned\n"
+                           "warning IRC JOIN #room failed (475): Bad key\n"
+                           "warning IRC KICK: op!u@h removed us from #room: reason with spaces\n"
+                           "info IRC KICK: op!u@h removed alice from #room: rules\n"
+                           "error IRC ERROR: Closing link\n"));
 }
 
 TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
