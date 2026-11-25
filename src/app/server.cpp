@@ -78,6 +78,8 @@ const char* ClientErrorText(ircbot::ClientError error) {
         return "IRC authentication failed";
     case ircbot::ClientError::kReconnectTimer:
         return "IRC reconnect timer failed";
+    case ircbot::ClientError::kInvalidNickname:
+        return "IRC server rejected the configured nickname";
     case ircbot::ClientError::kHandler:
         return "IRC application callback failed";
     }
