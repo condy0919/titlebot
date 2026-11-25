@@ -1,5 +1,6 @@
 #include <argp.h>
 
+#include <csignal>
 #include <exception>
 #include <string_view>
 #include <utility>
@@ -132,11 +133,29 @@ int main(int argc, char** argv) {
             .channels = args.channels,
             .tls = args.tls,
         };
-        asio::co_spawn(io, tb::RunBot(std::move(config)), [](const std::exception_ptr& error) {
-            if (error) {
-                std::rethrow_exception(error);
+        asio::signal_set signals(io, SIGINT, SIGTERM);
+        asio::cancellation_signal cancel;
+        bool stopping = false;
+        signals.async_wait([&](boost::system::error_code ec, int) {
+            if (!ec) {
+                stopping = true;
+                cancel.emit(asio::cancellation_type::terminal);
             }
         });
+        asio::co_spawn(io, tb::RunBot(std::move(config)),
+                       asio::bind_cancellation_slot(cancel.slot(), [&](std::exception_ptr error) {
+                           signals.cancel();
+                           io.stop();
+                           if (error) {
+                               try {
+                                   std::rethrow_exception(error);
+                               } catch (const boost::system::system_error& ex) {
+                                   if (!stopping || ex.code() != asio::error::operation_aborted) {
+                                       throw;
+                                   }
+                               }
+                           }
+                       }));
         io.run();
     } catch (const std::exception& e) {
         TB_LOG_ERROR("Bot failed: {}", e.what());

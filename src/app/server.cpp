@@ -50,6 +50,7 @@ struct Session {
     unsigned burst = 0;
     // Only one Drain coroutine may write to the socket at a time.
     bool writing = false;
+    std::shared_ptr<asio::steady_timer> quit_timer;
 };
 
 asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
@@ -64,6 +65,9 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
             }
         }
         session->writing = false;
+        if (session->quit_timer) {
+            session->quit_timer->cancel();
+        }
         co_return;
     } catch (const std::exception& ex) {
         TB_LOG_ERROR("IRC write failed: {}", ex.what());
@@ -113,7 +117,7 @@ void Reply(const std::shared_ptr<Session>& session, const std::string& target,
     // Limit the entire PRIVMSG line in bytes before Drain appends CRLF.
     constexpr std::size_t kMaxReplyLineBytes = 430;
 
-    if (!session->transport.next_layer().is_open()) {
+    if (session->quit_timer || !session->transport.next_layer().is_open()) {
         TB_LOG_DEBUG("Discarding title reply: IRC session is closed");
         return;
     }
@@ -336,7 +340,7 @@ void HandleLine(const std::shared_ptr<Session>& session, std::string_view line, 
     }
 }
 
-asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, const BotConfig& config,
+asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, const BotConfig& config,
                                    std::shared_ptr<FetchScheduler> scheduler,
                                    std::size_t& nick_limit, asio::ssl::context& tls) {
     auto session = std::make_shared<Session>(Session{
@@ -397,16 +401,27 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, const BotConfig
             }
         }
     } catch (const boost::system::system_error& ex) {
-        if (session->transport.next_layer().is_open()) {
+        if (ex.code() != asio::error::operation_aborted && session->transport.next_layer().is_open()) {
             TB_LOG_WARN("IRC read failed: {}", ex.what());
-        }
-        boost::system::error_code ec;
-        session->transport.next_layer().close(ec);
-        if (ec) {
-            TB_LOG_WARN("Failed to close IRC socket after read failure: {}", ec.message());
         }
     }
     idle_timer->cancel();
+    registration.Cancel();
+    const auto cancellation = co_await asio::this_coro::cancellation_state;
+    if (cancellation.cancelled() != asio::cancellation_type::none &&
+        session->transport.next_layer().is_open()) {
+        co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
+        session->quit_timer = std::make_shared<asio::steady_timer>(executor, std::chrono::seconds(1));
+        session->queue.clear();
+        Send(session, "QUIT :Shutting down", true);
+        boost::system::error_code ignored;
+        co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
+        session->transport.next_layer().close(ignored);
+        scheduler->Report();
+        co_return std::nullopt;
+    }
+    boost::system::error_code ignored;
+    session->transport.next_layer().close(ignored);
     scheduler->Report();
     co_return session->registered&& Clock::now() - session -> registered_at >=
         config.stable_session;
@@ -448,14 +463,22 @@ asio::awaitable<void> RunBot(BotConfig config) {
         executor, [tls](PrivMsg msg) { return FetchTitle(std::move(msg), *tls); });
     scheduler->EnableReports();
     std::size_t nick_limit = kDefaultNickLength;
+    const auto cancellation = co_await asio::this_coro::cancellation_state;
     unsigned delay = 1;
     while (true) {
         try {
             auto socket = co_await Connect(config);
-            if (co_await ServeSession(std::move(socket), config, scheduler, nick_limit, *tls)) {
+            auto stable = co_await ServeSession(std::move(socket), config, scheduler, nick_limit, *tls);
+            if (!stable) {
+                co_return;
+            }
+            if (*stable) {
                 delay = 1;
             }
         } catch (const boost::system::system_error& ex) {
+            if (ex.code() == asio::error::operation_aborted && cancellation.cancelled() != asio::cancellation_type::none) {
+                co_return;
+            }
             TB_LOG_WARN("IRC connection failed: {}. Retrying in {}s", ex.what(), delay);
         }
         asio::steady_timer timer(executor, std::chrono::seconds(delay));
