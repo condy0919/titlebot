@@ -497,8 +497,9 @@ TEST_F(Client, LetsPolicyTerminateTransientConnectionFailures) {
 
 class ScriptedTransport final : public ircbot::Transport {
 public:
-    ScriptedTransport(asio::any_io_executor executor, std::string& transcript, bool reject = true)
-        : gate_(executor, std::chrono::steady_clock::time_point::max()), transcript_(transcript), reject_(reject) {}
+    ScriptedTransport(asio::any_io_executor executor, std::string& transcript,
+                      std::string_view incoming = ":s 432 * bot :bad nickname\r\n")
+        : gate_(executor, std::chrono::steady_clock::time_point::max()), transcript_(transcript), incoming_(incoming) {}
     asio::any_io_executor Executor() override { return gate_.get_executor(); }
     bool IsOpen() const override { return open_; }
     void Close() override {
@@ -509,32 +510,69 @@ public:
     long PeerVerificationResult() override { return X509_V_OK; }
     asio::awaitable<ircbot::IoResult<void>> Shutdown() override { co_return ircbot::IoResult<void>{}; }
     asio::awaitable<ircbot::IoResult<std::size_t>> Read(asio::mutable_buffer buffer) override {
-        if (!reject_) {
-            while (open_) {
-                boost::system::error_code ec;
-                co_await gate_.async_wait(asio::redirect_error(use_awaitable, ec));
+        const auto cancellation = co_await asio::this_coro::cancellation_state;
+        while (open_) {
+            if (!incoming_.empty() && transcript_.find("NICK bot\r\n") != transcript_.npos) {
+                const auto count = asio::buffer_copy(buffer, asio::buffer(incoming_));
+                incoming_.remove_prefix(count);
+                co_return count;
             }
-            co_return std::unexpected(boost::system::error_code(asio::error::eof));
-        }
-        // Wait for NICK to be written before returning the server's rejection.
-        if (transcript_.find("NICK bot\r\n") == transcript_.npos) {
             boost::system::error_code ec;
             co_await gate_.async_wait(asio::redirect_error(use_awaitable, ec));
+            if (cancellation.cancelled() != asio::cancellation_type::none) {
+                co_return std::unexpected(boost::system::error_code(asio::error::operation_aborted));
+            }
         }
-        constexpr std::string_view rejection = ":s 432 * bot :bad nickname\r\n";
-        co_return asio::buffer_copy(buffer, asio::buffer(rejection));
+        co_return std::unexpected(boost::system::error_code(asio::error::eof));
     }
     asio::awaitable<ircbot::IoResult<void>> Write(asio::const_buffer buffer) override {
-        transcript_.append(static_cast<const char*>(buffer.data()), buffer.size());
+        const std::string_view line(static_cast<const char*>(buffer.data()), buffer.size());
+        transcript_.append(line);
+        if (on_write) { on_write(line); }
         gate_.cancel();
         co_return ircbot::IoResult<void>{};
     }
+    std::function<void(std::string_view)> on_write;
 private:
     asio::steady_timer gate_;
     std::string& transcript_;
     bool open_ = true;
-    bool reject_;
+    std::string_view incoming_;
 };
+
+TEST_F(Client, RegistersRepliesAndQuitsUsingOnlyMemoryTransport) {
+    ircbot::Config config;
+    config.server = "example.invalid";
+    config.nick = "bot";
+    config.channels = {"#room"};
+    config.clock = std::make_shared<ircbot::ManualClock>();
+    asio::cancellation_signal stop;
+    std::string transcript;
+    ircbot::Connector connect = [&](const auto&) -> asio::awaitable<ircbot::IoResult<std::unique_ptr<ircbot::Transport>>> {
+        auto peer = std::make_unique<ScriptedTransport>(co_await asio::this_coro::executor, transcript,
+            ":s 001 bot :welcome\r\nPING :id\r\n:a!u@h PRIVMSG #room :hello\r\n");
+        peer->on_write = [&](auto line) {
+            if (line == "PRIVMSG #room :hello\r\n") {
+                asio::post(io, [&] { stop.emit(asio::cancellation_type::terminal); });
+            }
+        };
+        co_return peer;
+    };
+    ircbot::Handlers handlers;
+    handlers.subscriptions.push_back({"PRIVMSG", [](auto connection, const auto& message) {
+        const auto chat = ircbot::AsPrivmsg(message);
+        ASSERT_TRUE(chat);
+        EXPECT_TRUE(connection.Privmsg(chat->target, chat->text));
+    }});
+    auto result = asio::co_spawn(io, ircbot::Run(config, handlers, connect),
+                                 asio::bind_cancellation_slot(stop.slot(), asio::use_future));
+    io.poll();
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready) << transcript;
+    EXPECT_TRUE(result.get());
+    EXPECT_NE(transcript.find("JOIN #room\r\n"), transcript.npos);
+    EXPECT_NE(transcript.find("PONG :id\r\n"), transcript.npos);
+    EXPECT_TRUE(transcript.ends_with("QUIT :Shutting down\r\n"));
+}
 
 TEST_F(Client, AdvancesRetryBackoffWithoutSocketOrWallClockWaits) {
     ircbot::Config config;
@@ -570,7 +608,7 @@ TEST_F(Client, AdvancesRegistrationDeadlineWithoutWallClockWaits) {
     config.clock = std::make_shared<ircbot::ManualClock>();
     config.max_retries = 0;
     ircbot::Connector connector = [&](const auto&) -> asio::awaitable<ircbot::IoResult<std::unique_ptr<ircbot::Transport>>> {
-        co_return std::make_unique<ScriptedTransport>(co_await asio::this_coro::executor, transcript, false);
+        co_return std::make_unique<ScriptedTransport>(co_await asio::this_coro::executor, transcript, std::string_view{});
     };
     auto result = asio::co_spawn(io, ircbot::Run(config, {}, connector), asio::use_future);
     io.poll();

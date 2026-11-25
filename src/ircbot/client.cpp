@@ -646,7 +646,9 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         session->queue.clear();
         if (Queue(session, "QUIT :" + config.quit_reason, true)) {
             boost::system::error_code ignored;
-            co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
+            if (session->writing) {
+                co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
+            }
             if (config.tls && !session->writing && session->transport->IsOpen()) {
                 SessionDeadline shutdown(executor, session->clock, detail::Now(session->clock) + std::chrono::seconds(1));
                 asio::co_spawn(executor,
