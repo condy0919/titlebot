@@ -234,6 +234,12 @@ TEST_F(FetcherLoopback, DecodesDeclaredCharsetEntitiesAndWhitespace) {
               tb::FetchResult(std::nullopt));
 }
 
+TEST_F(FetcherLoopback, FallsBackToMetaWhenHeaderCharsetFails) {
+    EXPECT_EQ(Run({HtmlResponse("<meta charset=latin1><title>\x80</title>",
+                                "Content-Type: text/html; charset=utf-8\r\n")}),
+              tb::FetchResult(std::string("€")));
+}
+
 TEST_F(FetcherLoopback, DistinguishesMissingTitleFromInvalidOrOversizedContent) {
     const std::string coding = "Content-Encoding: deflate\r\n";
     auto body = Deflate("<html>no title</html>");

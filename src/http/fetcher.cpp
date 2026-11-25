@@ -36,8 +36,22 @@ bool IsPublic(asio::ip::address_v4 address) {
 }
 
 FetchResult FormatTitle(const std::string& title, const std::string& charset,
-                        std::string_view sample) {
-    auto text = convert_to_utf8(title, charset, sample);
+                        const TitleParser& parser) {
+    std::optional<std::string> text;
+    if (parser.unicode_bom()) {
+        text = convert_to_utf8(title, "UTF-8");
+    } else {
+        if (!charset.empty()) {
+            text = convert_to_utf8(title, charset);
+        }
+        auto meta = parser.DeclaredCharset();
+        if (!text && !meta.empty() && !boost::beast::iequals(meta, charset)) {
+            text = convert_to_utf8(title, meta);
+        }
+        if (!text) {
+            text = convert_to_utf8(title, {}, parser.sample());
+        }
+    }
     if (!text) {
         return std::unexpected(FetchError::kDecode);
     }
@@ -191,11 +205,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
                                           : FetchError::kDecode);
         }
         if (*title) {
-            co_return FormatTitle(**title,
-                                  parser.unicode_bom() ? "UTF-8"
-                                  : charset.empty()    ? parser.DeclaredCharset()
-                                                       : charset,
-                                  parser.sample());
+            co_return FormatTitle(**title, charset, parser);
         }
         if (used < count) {
             co_return std::unexpected(FetchError::kResponseLimit);

@@ -13,6 +13,8 @@
 #include <string>
 #include <tuple>
 
+#include <boost/beast/core/string.hpp>
+
 namespace {
 // Each entry maps an HTML entity name to its Unicode code point, written in decimal.
 // For example, {"euro", 8364} maps &euro; to U+20AC, which the decoder encodes as UTF-8.
@@ -433,8 +435,18 @@ std::string decode_html_entities(std::string_view text) {
 
 std::optional<std::string> convert_to_utf8(const std::string& in, // NOLINT
                                            const std::string& charset, std::string_view sample) {
-    const char* declared[] = {charset.c_str()};
     if (!charset.empty()) {
+        const char* encoding = charset.c_str();
+        for (auto [label, backend] : {std::pair{"gb2312", "GB18030"}, {"gbk", "GB18030"},
+                                      {"iso-8859-1", "WINDOWS-1252"}, {"latin1", "WINDOWS-1252"},
+                                      {"shift_jis", "CP932"}, {"big5", "BIG5-HKSCS"},
+                                      {"euc-kr", "CP949"}}) {
+            if (boost::beast::iequals(charset, label)) {
+                encoding = backend;
+                break;
+            }
+        }
+        const char* declared[] = {encoding};
         return try_source_encodings(in, declared, 1);
     }
 
@@ -466,7 +478,12 @@ std::optional<std::string> convert_to_utf8(const std::string& in, // NOLINT
     // Prefer legacy Chinese encodings when a short sample also fits the single-byte guess.
     const char* fallback[] = {"GB18030", "Big5", "EUC-JP", "EUC-KR", "SJIS"};
     std::string_view guess(guessed[0]);
-    if (sample.size() < 64 && (guess.starts_with("WINDOWS-") || guess.starts_with("ISO-8859"))) {
+    auto non_ascii = [](unsigned char c) { return c >= 128; };
+    auto evidence = std::ranges::count_if(sample, non_ascii);
+    if (sample.find(in) == sample.npos) {
+        evidence += std::ranges::count_if(in, non_ascii);
+    }
+    if (evidence < 64 && (guess.starts_with("WINDOWS-") || guess.starts_with("ISO-8859"))) {
         if (auto text = try_source_encodings(in, fallback, std::size(fallback))) {
             return text;
         }
