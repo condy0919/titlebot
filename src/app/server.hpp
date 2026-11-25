@@ -13,6 +13,10 @@ struct BotConfig {
     std::string nick;
     std::string channels;
     std::chrono::milliseconds registration_timeout = std::chrono::seconds(30);
+    std::chrono::milliseconds connect_timeout = std::chrono::seconds(15);
+    std::chrono::milliseconds idle_timeout = std::chrono::seconds(90);
+    std::chrono::milliseconds ping_timeout = std::chrono::seconds(30);
+    std::chrono::milliseconds stable_session = std::chrono::minutes(1);
 };
 
 /// Connect, register, and reconnect with backoff after a disconnect or registration timeout.

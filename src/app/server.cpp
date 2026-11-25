@@ -35,6 +35,9 @@ struct Session {
     unsigned nick_retries = 0;
     std::string retry_nick;
     bool registered = false;
+    Clock::time_point registered_at{};
+    Clock::time_point last_input{};
+    bool probe_sent = false;
     // Pending IRC lines without CRLF. A PONG can move ahead of queued title replies.
     std::deque<std::string> queue;
     // RunBot shares the fetch scheduler across reconnects.
@@ -228,6 +231,31 @@ asio::awaitable<void> CloseOnRegistrationTimeout(asio::awaitable<bool> expired,
     }
 }
 
+asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
+                                std::shared_ptr<asio::steady_timer> timer,
+                                std::chrono::milliseconds idle, std::chrono::milliseconds grace) {
+    while (session->socket.is_open()) {
+        const auto expiry = session->last_input + (session->probe_sent ? grace : idle);
+        timer->expires_at(expiry);
+        boost::system::error_code ec;
+        co_await timer->async_wait(asio::redirect_error(use_awaitable, ec));
+        if (ec || !session->socket.is_open()) {
+            co_return;
+        }
+        if (Clock::now() < session->last_input + (session->probe_sent ? grace : idle)) {
+            continue;
+        }
+        if (session->probe_sent) {
+            TB_LOG_WARN("IRC idle probe timed out");
+            session->socket.close(ec);
+            co_return;
+        }
+        Send(session, "PING :titlebot", true);
+        session->probe_sent = true;
+        session->last_input = Clock::now();
+    }
+}
+
 void HandlePrivMsg(const std::shared_ptr<Session>& session, const std::string& line) {
     auto msg = parse_privmsg(line);
     if (!msg || SameNick(msg->who, session->nick)) {
@@ -282,7 +310,8 @@ void HandleLine(const std::shared_ptr<Session>& session, const std::string& line
         auto channel = TakeIrcToken(params);
         auto nick = TakeIrcToken(params);
         if (SameNick(nick, session->nick)) {
-            TB_LOG_WARN("IRC KICK: {} removed us from {}: {}", source, channel, TrailingText(params));
+            TB_LOG_WARN("IRC KICK: {} removed us from {}: {}", source, channel,
+                        TrailingText(params));
         } else {
             TB_LOG_INFO("IRC KICK: {} removed {} from {}: {}", source, nick, channel,
                         TrailingText(params));
@@ -301,13 +330,12 @@ void HandleLine(const std::shared_ptr<Session>& session, const std::string& line
     }
 }
 
-asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nick, // NOLINT
-                                   std::string channels, std::shared_ptr<FetchScheduler> scheduler,
-                                   std::chrono::milliseconds registration_timeout,
+asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, const BotConfig& config,
+                                   std::shared_ptr<FetchScheduler> scheduler,
                                    std::size_t& nick_limit) {
     auto session = std::make_shared<Session>(Session{
         .socket = std::move(socket),
-        .nick = std::move(nick),
+        .nick = config.nick,
         .nick_suffix = {},
         .retry_nick = {},
         .queue = {},
@@ -320,10 +348,11 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
     Send(session, "NICK " + session->nick);
     Send(session, "USER " + session->nick + " 0 * :titlebot");
 
-    Deadline registration(executor, Clock::now() + registration_timeout);
+    Deadline registration(executor, Clock::now() + config.registration_timeout);
     asio::co_spawn(executor, CloseOnRegistrationTimeout(registration.Wait(), session),
                    asio::detached);
 
+    auto idle_timer = std::make_shared<asio::steady_timer>(executor);
     std::string input;
     try {
         while (true) {
@@ -331,7 +360,17 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
                 session->socket, asio::dynamic_buffer(input, 8192), "\r\n", use_awaitable);
             auto line = input.substr(0, count - 2);
             input.erase(0, count);
-            HandleLine(session, line, channels, registration, nick_limit);
+            const bool was_registered = session->registered;
+            session->last_input = Clock::now();
+            session->probe_sent = false;
+            HandleLine(session, line, config.channels, registration, nick_limit);
+            if (!was_registered && session->registered) {
+                session->registered_at = session->last_input;
+                asio::co_spawn(
+                    executor,
+                    WatchIdle(session, idle_timer, config.idle_timeout, config.ping_timeout),
+                    asio::detached);
+            }
         }
     } catch (const boost::system::system_error& ex) {
         if (session->socket.is_open()) {
@@ -343,8 +382,36 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, std::string nic
             TB_LOG_WARN("Failed to close IRC socket after read failure: {}", ec.message());
         }
     }
+    idle_timer->cancel();
     scheduler->Report();
-    co_return session->registered;
+    co_return session->registered&& Clock::now() - session -> registered_at >=
+        config.stable_session;
+}
+
+asio::awaitable<asio::ip::tcp::socket> Connect(const BotConfig& config) {
+    auto executor = co_await asio::this_coro::executor;
+    auto resolver = std::make_shared<asio::ip::tcp::resolver>(executor);
+    auto socket = std::make_shared<asio::ip::tcp::socket>(executor);
+    const auto expires = Clock::now() + config.connect_timeout;
+    Deadline deadline(executor, expires);
+    asio::co_spawn(
+        executor,
+        [resolver, socket, wait = deadline.Wait()]() mutable -> asio::awaitable<void> {
+            if (co_await std::move(wait)) {
+                resolver->cancel();
+                boost::system::error_code ignored;
+                socket->close(ignored);
+            }
+        },
+        asio::detached);
+    auto endpoints = co_await resolver->async_resolve(config.server, config.port, use_awaitable);
+    co_await asio::async_connect(
+        *socket, endpoints,
+        [expires](boost::system::error_code, const asio::ip::tcp::endpoint&) {
+            return Clock::now() < expires;
+        },
+        use_awaitable);
+    co_return std::move(*socket);
 }
 
 } // namespace
@@ -355,17 +422,12 @@ asio::awaitable<void> RunBot(BotConfig config) {
     auto executor = co_await asio::this_coro::executor;
     auto scheduler = std::make_shared<FetchScheduler>(
         executor, [tls](PrivMsg msg) { return FetchTitle(std::move(msg), *tls); });
-    asio::ip::tcp::resolver resolver(executor);
     std::size_t nick_limit = kDefaultNickLength;
     unsigned delay = 1;
     while (true) {
         try {
-            auto endpoints =
-                co_await resolver.async_resolve(config.server, config.port, asio::use_awaitable);
-            asio::ip::tcp::socket socket(executor);
-            co_await asio::async_connect(socket, endpoints, asio::use_awaitable);
-            if (co_await ServeSession(std::move(socket), config.nick, config.channels, scheduler,
-                                      config.registration_timeout, nick_limit)) {
+            auto socket = co_await Connect(config);
+            if (co_await ServeSession(std::move(socket), config, scheduler, nick_limit)) {
                 delay = 1;
             }
         } catch (const boost::system::system_error& ex) {

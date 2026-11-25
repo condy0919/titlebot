@@ -2,13 +2,13 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <sstream>
 
 #include <boost/asio.hpp>
-#include <spdlog/sinks/ostream_sink.h>
-#include <spdlog/spdlog.h>
 
 #include "http/fetcher.hpp"
 
@@ -315,6 +315,33 @@ TEST_F(Server, LogsServerErrorsKicksAndJoinFailures) {
                            "warning IRC KICK: op!u@h removed us from #room: reason with spaces\n"
                            "info IRC KICK: op!u@h removed alice from #room: rules\n"
                            "error IRC ERROR: Closing link\n"));
+}
+
+TEST_F(Server, ProbesIdleSessionsAndClosesUnresponsivePeers) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    tb::BotConfig config{"127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
+                         "#r"};
+    config.idle_timeout = std::chrono::milliseconds(40);
+    config.ping_timeout = std::chrono::milliseconds(40);
+    asio::co_spawn(io, tb::RunBot(config), asio::detached);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        co_await ReadLine(peer, input);
+        co_await ReadLine(peer, input);
+        co_await asio::async_write(peer, asio::buffer(std::string_view(":irc 001 bot :ok\r\n")),
+                                   use_awaitable);
+        EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #r");
+        EXPECT_EQ(co_await ReadLine(peer, input), "PING :titlebot");
+        co_await asio::async_write(peer, asio::buffer(std::string_view("PONG :titlebot\r\n")),
+                                   use_awaitable);
+        EXPECT_EQ(co_await ReadLine(peer, input), "PING :titlebot");
+        char c;
+        boost::system::error_code ec;
+        co_await peer.async_read_some(asio::buffer(&c, 1), asio::redirect_error(use_awaitable, ec));
+        EXPECT_EQ(ec, asio::error::eof);
+    };
+    RunExercise(exercise(), std::chrono::seconds(3));
 }
 
 TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
