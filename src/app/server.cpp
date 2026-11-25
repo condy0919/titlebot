@@ -422,6 +422,7 @@ asio::awaitable<void> RunBot(BotConfig config) {
     auto executor = co_await asio::this_coro::executor;
     auto scheduler = std::make_shared<FetchScheduler>(
         executor, [tls](PrivMsg msg) { return FetchTitle(std::move(msg), *tls); });
+    scheduler->EnableReports();
     std::size_t nick_limit = kDefaultNickLength;
     unsigned delay = 1;
     while (true) {

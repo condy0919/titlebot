@@ -7,11 +7,13 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/steady_timer.hpp>
 
 #include "http/fetcher.hpp"
 #include "irc/irc.hpp"
@@ -40,6 +42,9 @@ public:
     /// before the first fetch completes.
     void Report() const;
 
+    /// 启用按分钟汇总，空闲期间没有统计变化时不打印。
+    void EnableReports();
+
     struct Stats {
         std::size_t completed = 0;
         std::size_t titles = 0;
@@ -66,11 +71,12 @@ private:
 
     void Pump();
     void Complete(std::list<Job>::iterator job, Clock::time_point start, const FetchResult& result);
-    void MaybeReport();
+    void ScheduleReport();
 
     boost::asio::any_io_executor executor_;
     Fetch fetch_;
-    Clock::time_point next_report_;
+    std::optional<boost::asio::steady_timer> report_timer_;
+    bool report_pending_ = false;
     std::list<Job> jobs_;
     std::map<std::string, std::size_t> host_active_;
     std::size_t active_ = 0;

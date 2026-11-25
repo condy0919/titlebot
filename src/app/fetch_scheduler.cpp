@@ -32,11 +32,10 @@ constexpr std::pair<FetchError, const char*> kErrorNames[] = {
 } // namespace
 
 FetchScheduler::FetchScheduler(asio::any_io_executor executor, Fetch fetch)
-    : executor_(std::move(executor)), fetch_(std::move(fetch)),
-      next_report_(Clock::now() + std::chrono::minutes(1)) {}
+    : executor_(std::move(executor)), fetch_(std::move(fetch)) {}
 
 void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
-    MaybeReport();
+    ScheduleReport();
     // Bound pending replies even when many requests share a single download.
     if (subscribers_ >= kMaxActive + kQueue) {
         TB_LOG_WARN("Dropping fetch request: subscriber limit reached ({})", subscribers_);
@@ -141,20 +140,31 @@ void FetchScheduler::Complete(std::list<Job>::iterator job, Clock::time_point st
             deliver(**result);
         }
     }
-    MaybeReport();
+    ScheduleReport();
     Pump();
 }
 
 void FetchScheduler::RecordReplyDrop() {
     ++stats_.reply_drops;
-    MaybeReport();
+    ScheduleReport();
 }
 
-void FetchScheduler::MaybeReport() {
-    if (Clock::now() >= next_report_) {
-        Report();
-        next_report_ = Clock::now() + std::chrono::minutes(1);
+void FetchScheduler::EnableReports() {
+    report_timer_.emplace(executor_);
+}
+
+void FetchScheduler::ScheduleReport() {
+    if (!report_timer_ || report_pending_) {
+        return;
     }
+    report_pending_ = true;
+    report_timer_->expires_after(std::chrono::minutes(1));
+    report_timer_->async_wait([weak = weak_from_this()](boost::system::error_code ec) {
+        if (auto self = weak.lock(); self && !ec) {
+            self->report_pending_ = false;
+            self->Report();
+        }
+    });
 }
 
 void FetchScheduler::Report() const {
