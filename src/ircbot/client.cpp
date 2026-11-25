@@ -69,6 +69,7 @@ struct Session {
     std::optional<SessionTimer> write_timer;
     std::size_t write_generation = 0;
     std::optional<asio::steady_timer> writable;
+    std::exception_ptr background_error{};
     bool writing = false;
     bool closing = false;
     std::stop_source stop;
@@ -159,9 +160,15 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                 }
                 auto interval = session->send_interval;
                 if (session->send_delay) {
-                    interval = std::clamp(session->send_delay(session->queue.front().text),
-                                          std::chrono::milliseconds::zero(),
-                                          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::hours(24)));
+                    try {
+                        interval = std::clamp(session->send_delay(session->queue.front().text),
+                                              std::chrono::milliseconds::zero(),
+                                              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::hours(24)));
+                    } catch (...) {
+                        session->background_error = std::current_exception();
+                        Close(session);
+                        break;
+                    }
                 }
                 session->next_send = now + interval;
             }
@@ -683,6 +690,9 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         Invoke(handlers.disconnected, Connection(session));
     }
     session->handlers = {};
+    if (session->background_error) {
+        throw Fatal{ClientError::kHandler, session->background_error};
+    }
     if (fatal) {
         throw *fatal;
     }
@@ -1019,7 +1029,14 @@ void Connection::Post(std::move_only_function<void(Connection)> operation) const
     }
     if (auto session = session_.lock()) {
         asio::post(session->executor, [connection = *this, op = std::move(operation)]() mutable {
-            op(connection);
+            try {
+                op(connection);
+            } catch (...) {
+                if (auto active = connection.session_.lock(); active && !active->closing) {
+                    active->background_error = std::current_exception();
+                    Close(active);
+                }
+            }
         });
     } else {
         operation(*this);

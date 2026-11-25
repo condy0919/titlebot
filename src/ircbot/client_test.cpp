@@ -666,6 +666,34 @@ TEST_F(Client, AcquiresNewCredentialsOnReconnect) {
     EXPECT_TRUE(result.get());
 }
 
+TEST_F(Client, PropagatesPacingPolicyExceptionAndJoinsWriter) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    auto config = Configuration(listener);
+    config.send_delay = [](std::string_view) -> std::chrono::milliseconds { throw 42; };
+    std::exception_ptr failure;
+    ircbot::Handlers handlers;
+    handlers.diagnostic_event = [&](const auto& event) {
+        if (event.exception) { failure = event.exception; }
+    };
+    auto result = asio::co_spawn(io, ircbot::Run(config, handlers), asio::use_future);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        for (int i = 0; i < 3; ++i) { co_await Read(peer, input); }
+        co_await Write(peer, ":s 001 bot :welcome\r\n");
+        char byte;
+        boost::system::error_code ec;
+        co_await peer.async_read_some(asio::buffer(&byte, 1), asio::redirect_error(use_awaitable, ec));
+        EXPECT_EQ(ec, asio::error::eof);
+    };
+    Exercise(exercise());
+    io.run_for(100ms);
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kHandler);
+    ASSERT_TRUE(failure);
+    EXPECT_THROW(std::rethrow_exception(failure), int);
+}
+
 TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     auto config = Configuration(listener);
