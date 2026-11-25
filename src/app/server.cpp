@@ -140,7 +140,13 @@ asio::awaitable<void> RunBot(BotConfig config, TitleFetcher fetch) {
         current.reset();
         scheduler->Report();
     };
-    handlers.diagnostic = [](std::string_view message) { TB_LOG_WARN("{}", message); };
+    handlers.diagnostic_event = [](const ircbot::DiagnosticEvent& event) {
+        if (event.severity == ircbot::Severity::kError) {
+            TB_LOG_ERROR("{}", event.message);
+        } else {
+            TB_LOG_WARN("{}", event.message);
+        }
+    };
     auto result = co_await ircbot::Run(ClientConfig(config), std::move(handlers));
     current.reset();
     scheduler->Report();

@@ -48,9 +48,14 @@ public:
             co_return;
         }
         tls->set_verify_mode(boost::asio::ssl::verify_peer);
-        tls->set_verify_callback(boost::asio::ssl::host_name_verification(host));
         boost::system::error_code ec;
         boost::asio::ip::make_address(host, ec);
+        auto* params = SSL_get0_param(tls->native_handle());
+        const int verified = ec ? X509_VERIFY_PARAM_set1_host(params, host.data(), host.size())
+                                : X509_VERIFY_PARAM_set1_ip_asc(params, host.c_str());
+        if (!verified) {
+            throw boost::system::system_error(boost::asio::error::invalid_argument);
+        }
         const auto& sni = server_name.empty() ? host : server_name;
         if ((!server_name.empty() || ec) &&
             !SSL_set_tlsext_host_name(tls->native_handle(), sni.c_str())) {

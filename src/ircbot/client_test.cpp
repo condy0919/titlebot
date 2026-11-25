@@ -628,6 +628,35 @@ TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
     EXPECT_EQ(result.get().error(), ircbot::ClientError::kRetryLimit);
 }
 
+TEST_F(Client, ReportsHostnameMismatchEvenWhenIssuerIsTrusted) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    asio::ssl::context tls(asio::ssl::context::tls_server);
+    const auto cert = IRCBOT_TEST_ROOT "/tests/fixtures/localhost-test.pem";
+    tls.use_certificate_chain_file(cert);
+    tls.use_private_key_file(cert, asio::ssl::context::pem);
+    auto config = Configuration(listener);
+    config.tls = true;
+    config.ca_file = cert;
+    config.tls_server_name = "localhost";
+    ircbot::Handlers handlers;
+    std::optional<long> reason;
+    handlers.diagnostic_event = [&](const ircbot::DiagnosticEvent& event) {
+        if (event.certificate_error) { reason = event.certificate_error; }
+    };
+    auto result = asio::co_spawn(io, ircbot::Run(config, handlers), asio::use_future);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        asio::ssl::stream<tcp::socket> peer(co_await listener.async_accept(use_awaitable), tls);
+        boost::system::error_code ec;
+        co_await peer.async_handshake(asio::ssl::stream_base::server, asio::redirect_error(use_awaitable, ec));
+        EXPECT_TRUE(ec);
+    };
+    Exercise(exercise());
+    io.run_for(100ms);
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kTlsTrust);
+    EXPECT_EQ(reason, X509_V_ERR_IP_ADDRESS_MISMATCH);
+}
+
 TEST_F(Client, UntrustedCertificateStopsReconnects) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     asio::ssl::context tls(asio::ssl::context::tls_server);

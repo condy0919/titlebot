@@ -153,6 +153,7 @@ struct DiagnosticEvent {
     boost::system::error_code code;
     std::optional<RegistrationError> registration;
     std::exception_ptr exception;
+    std::optional<long> certificate_error;
 };
 
 template <class... Args>

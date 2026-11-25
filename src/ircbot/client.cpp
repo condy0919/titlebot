@@ -89,10 +89,10 @@ using SessionDeadline = tb::BasicDeadline<SessionTimer>;
 void Diagnose(const Handlers& handlers, std::string_view text,
               DiagnosticKind kind = DiagnosticKind::kProtocol, Severity level = Severity::kWarning,
               boost::system::error_code code = {}, std::optional<RegistrationError> registration = {},
-              std::exception_ptr exception = {}) {
+              std::exception_ptr exception = {}, std::optional<long> certificate_error = {}) {
     if (handlers.diagnostic_event) {
         try {
-            handlers.diagnostic_event({level, kind, text, code, registration, exception});
+            handlers.diagnostic_event({level, kind, text, code, registration, exception, certificate_error});
         } catch (...) {
         }
     }
@@ -491,11 +491,11 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
             try {
                 auto verified = co_await session->transport->Handshake(config.server, config.tls_server_name);
                 if (!verified) { throw boost::system::system_error(verified.error()); }
-            } catch (const boost::system::system_error&) {
+            } catch (const boost::system::system_error& error) {
                 const auto verify = session->transport->PeerVerificationResult();
                 if (verify != X509_V_OK) {
                     Diagnose(session->handlers, X509_verify_cert_error_string(verify),
-                             DiagnosticKind::kTransport, Severity::kError);
+                             DiagnosticKind::kTransport, Severity::kError, error.code(), {}, {}, verify);
                     throw Fatal{ClientError::kTlsTrust};
                 }
                 throw;
