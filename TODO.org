@@ -121,7 +121,8 @@ HTTP 声明的字符集目前只用于找到标题后的转码，不能帮助识
 
 * DONE 通用 IRC Bot 框架及 titlebot 迁移
 
-用户确认的范围：同仓库独立 C++23 库，Boost.Asio 协程与组合式事件处理器；
+项目定位：=src/ircbot/= 是为 titlebot 开发的内部 C++23 模块，保留通用 IRC 客户端能力。
+实现范围：Boost.Asio 协程与组合式事件处理器；
 基础 IRC、CAP、消息标签、ISUPPORT、SASL；支持多个独立客户端实例，
 titlebot 第一版继续连接一个网络。
 
@@ -131,3 +132,174 @@ titlebot 第一版继续连接一个网络。
 - 常规构建及 ASan/UBSan 构建各 142 项测试全部通过；独立关闭应用构建的框架和示例也编译成功。
 - 源码格式检查及 git diff --check 通过。此次本地验证使用 GCC 16.2.1，
   Debian g++ 14.2.0 基线尚未在本地执行；CI 已增加框架示例及独立构建验证。
+
+* ircbot 框架架构审查
+
+审查日期：2026-11-25。审查对象：[[file:docs/ircbot.org][ircbot 使用指南]]及对应实现
+[[file:src/ircbot/client.hpp][client.hpp]]、[[file:src/ircbot/client.cpp][client.cpp]]、
+[[file:src/ircbot/message.hpp][message.hpp]]、[[file:src/ircbot/registration.hpp][registration.hpp]]、
+[[file:src/ircbot/features.hpp][features.hpp]] 与 [[file:CMakeLists.txt][CMakeLists.txt]]。
+
+总体评价：当前架构在分层上很清晰——离线协议状态机（解析、序列化、ISUPPORT、CAP/SASL）
+与 Asio 网络层解耦，=MessageView= 零拷贝视图、弱句柄 =Connection= 跨重连隔离、有界队列与
+ISUPPORT 内存预算以及 =std::expected= 错误返回都符合现代 C++ 工程实践。作为项目内通用的现代
+C++23 IRC Bot 框架，在出站防刷屏、诊断与错误模型、事件组合与结构化并发、热路径开销、
+协议完备性以及库封装边界上仍有以下问题需要改进（按建议优先级排序）。
+
+** TODO [#A] 增加连接级出站限流、安全行长预算与异步发送背压
+
+相关位置：[[file:docs/ircbot.org::133][发送队列说明]]、[[file:src/ircbot/client.cpp::74][Drain 写循环]]、
+[[file:src/ircbot/client.cpp::99][Queue 入队]]、[[file:src/ircbot/message.cpp::226][SerializeMessage]]。
+
+文档将业务限流完全交由应用处理，但真实 IRC 服务器的 =Excess Flood= 配额是连接级共享的：
+当 Bot 接入多个功能模块或重连后批量 =JOIN= / 回复时，=Drain()= 全速连续写出极易触发服务器断开。
+此外，=SerializeMessage= 按 510 字节校验发送行，未计入服务器向其他客户端转发时附加的
+=:nick!user@host = 前缀长度，长消息仍可能被对端静默截断；同步入队满时只能立即返回 =kQueueFull= 丢弃，
+缺少协程背压接口。
+
+- 在发送调度层提供可配置、可插拔的连接级出站速率限制器（如令牌桶 / burst + refill pacing），
+  区分控制帧（PONG/CAP/AUTHENTICATE/QUIT 高优先级）与普通业务消息。
+- 基于当前昵称与 hostmask（或保守上限）提供安全的出站文本字节预算查询，
+  并提供可选的 UTF-8 字符边界安全分行辅助工具。
+- 在保留非阻塞入队的同时，评估提供 =co_await= 背压发送接口或队列可写通知，避免业务自行轮询。
+
+核对与处理：成立。Queue 的优先入队只解决排队顺序。先增加可关闭的发送节流，再测试队满等待、控制帧唤醒及转发预算。前缀取决于服务器，只能提供估算。
+
+实施进度：已增加 =Config::send_interval=，默认零以兼容现有调用。普通发送与自动 JOIN 共享间隔，内部心跳和退出可唤醒写循环。文本预算与可等待入队仍待实现。
+
+** TODO [#A] 建立结构化诊断与细粒度错误模型
+
+相关位置：[[file:docs/ircbot.org::274][错误结果说明]]、[[file:src/ircbot/client.hpp::56][错误枚举]]、
+[[file:src/ircbot/client.cpp::201][回调异常捕获]]、[[file:src/ircbot/client.cpp::354][连接异常诊断]]、
+[[file:src/ircbot/client.cpp::645][定时器错误处理]]。
+
+=Handlers::diagnostic= 仅传递无结构的 =std::string_view= 文本，丢失严重级别、事件分类和底层
+=boost::system::error_code= / OpenSSL 错误栈，应用难以按级别路由日志或采集监控指标。
+=ClientError= 粒度过粗：=RegistrationError= 的细分原因被全部坍缩为 =kAuthentication=，
+业务回调抛出的原始异常被吞掉转为 =kHandler=，重连定时器异常也被误报为 =kHandler=，
+=ValidConfig= 失败只返回单一 =kInvalidConfig= 无法定位非法字段。
+同时，TLS 证书校验失败或主机名不匹配等确定性信任错误被归入普通连接失败无限重试，不利于快速排障。
+
+- 引入结构化 =DiagnosticEvent=（严重级别、分类、错误码、可读消息与可选结构化上下文），
+  同时可保留简易文本适配层。
+- 扩展 =ClientError= 或改为携带错误码、详细原因、底层 =error_code= 及原始 =std::exception_ptr=
+  的错误对象；配置校验明确指出失败项。
+- 区分临时网络故障与确定性 TLS 校验/认证配置错误，提供重连策略钩子允许应用按错误类型决定重试或终止。
+
+核对与处理：成立。先单独标识退避定时器错误，再沿诊断路径保留分类、配置字段、TLS 验证结果与回调异常。
+
+实施进度：已拆出 =kReconnectTimer= 并更新应用错误文本。结构化诊断与 TLS 信任错误分类仍待实现。
+
+** TODO [#A] 改进事件组合模型与会话级结构化并发
+
+相关位置：[[file:docs/ircbot.org::70][回调表]]、[[file:docs/ircbot.org::238][异步任务与旧连接隔离]]、
+[[file:src/ircbot/client.hpp::91][Handlers 定义]]、[[file:src/app/server.cpp::103][业务层双层 shared_ptr 包装]]。
+
+=Handlers= 对每类事件只提供单个 =std::function= 槽位，不支持 C++23 =std::move_only_function=，
+无法直接捕获只移动资源；所有原始 IRC 消息（含注册过程消息与业务命令）均进入同一个 =message= 回调，
+缺少可组合的多订阅者、中间件、命令路由及类型化事件分发，复杂 Bot 只能手写巨型分发分支。
+在异步生命周期方面，=Connection= 未暴露 =executor()= 与会话级取消信号，且 =Connection::Identity()=
+因内部写协程和定时器清理可能在 =disconnected= 回调后短暂存活，迫使业务（如 titlebot）自己维护双层
+=std::shared_ptr= 作为失效锚点；外部也无法动态调整运行期状态或指定自定义 =QUIT= 消息。
+
+- 将回调类型升级为 =std::move_only_function=，在保留底层 raw =message= 钩子的前提下，
+  提供可组合的事件分发器 / 中间件与类型化事件视图（如 PRIVMSG/NOTICE/JOIN/PART/KICK/NICK）。
+- 将对外暴露的会话身份令牌与内部 =Session= 传输清理寿命解耦，确保进入 =closing= / =disconnected=
+  时令牌立刻失效。
+- 在 =Connection= 上暴露执行器与会话级取消令牌（如 =cancellation_slot= 或 =std::stop_token=），
+  并评估提供可选的控制器句柄（支持自定义 =QUIT= 原因、主动触发重连、运行期观察状态）。
+
+核对与处理：部分成立。会话身份直接引用传输对象，关闭时应释放独立的身份令牌。多订阅者与路由属于扩展，宜在原始事件之上实现。
+
+实施进度：已在进入关闭流程时释放独立身份令牌。执行器、取消令牌与多订阅者仍待实现。
+
+** TODO [#B] 消除热路径重复解析、隐藏拷贝与每行 detached 超时协程
+
+相关位置：[[file:src/ircbot/client.cpp::74][Drain 超时协程]]、[[file:src/ircbot/client.cpp::335][读循环与 erase]]、
+[[file:src/ircbot/client.cpp::491][Send/SendLine/Privmsg]]、[[file:src/ircbot/client.cpp::564][Features 与 HasCapability]]。
+
+当前实现在消息收发热路径存在多处可避免的开销与边界问题：
+=Connection::Send()= 序列化后再经 =SendLine()= 重新 =ParseMessage()=，带标签消息还会触发
+=O(K^2)= 的标签重扫描、UTF-8 重解码并再次 =SerializeMessage()=；=Privmsg()= 先序列化校验后丢弃结果、
+手工拼接字符串再进 =SendLine()= 二次解析。=Drain()= 每发送一行就构造 =Deadline=（=make_shared=
++ 新建 =steady_timer=）并 =co_spawn= 一个 =detached= 协程。=Connection::Features()= 每次深拷贝整张
+=std::map=（最高 64 KiB），=HasCapability()= 每次构造临时 =std::string= 查询。
+读循环中每次 =input.erase(0, count)= 在粘包时频繁搬移内存，且超过 8703 字节的异常行会导致
+=async_read_until= 返回 =not_found= 直接断开整条连接。
+
+- 区分已由 =SerializeMessage= 组装的内部快速入队路径与 =SendLine= 校验路径，消除重复解析与二次序列化。
+- 复用单个写超时定时器（或基于 Asio 取消原语 / =parallel_group=）替代每行 =co_spawn= detached 协程，
+  并用结构化等待替代 =steady_timer(max)= 手工 join 写协程。
+- 为 =enabled_= 集合引入透明哈希（heterogeneous lookup）实现 =string_view= 零分配查询，
+  增加轻量只读特性查询接口（如 =Feature(name)= / =NickLength()=）避免整体拷贝 =ServerFeatures=。
+- 读缓冲改用读写游标（批量消费后再压缩），并对超长行提供明确诊断和按行丢弃恢复而非直接断线。
+
+核对与处理：成立。先保留 SendLine 原始校验，使结构化发送直接入队；再分别验证超时、分块读取及按键查询。
+
+实施进度：结构化 Send 已直接入队，保留 message-tags 能力检查。Privmsg、读缓冲、特性查询及写超时仍待改进。
+
+** TODO [#B] 补齐现代 IRC 协议能力与常用 Bot 辅助接口
+
+相关位置：[[file:docs/ircbot.org::137][能力协商与 SASL]]、[[file:docs/ircbot.org::306][首版边界]]、
+[[file:src/ircbot/client.cpp::241][433 与 JOIN 处理]]、[[file:src/ircbot/message.hpp::23][MessageView]]、
+[[file:src/ircbot/registration.hpp::15][SASL 配置]]。
+
+作为通用 Bot 框架，若干高频协议场景尚未覆盖：=Config::channels= 仅支持无空格频道名，
+不支持带密钥频道（=JOIN #chan key=）及运行期动态加入频道的重连同步；=Connection= 仅提供 =Privmsg=，
+缺少 Bot 常用的 =Notice=、=Join=、=Part=、=Quit= 快捷方法；=MessageView= 仅解析 =Nick()=，
+缺少 =User()=、=Host()= 及标签零拷贝迭代；注册阶段只处理 =433=，未处理 =432=（非法昵称）和
+=437=（昵称暂不可用，注册期会卡到超时），登录后无主昵称回收策略；支持 =cap-notify= 与 =005 ISUPPORT=
+更新但未暴露变更通知回调；SASL 仅支持 =PLAIN= / =EXTERNAL=，缺少 =SCRAM-SHA-256=、=908= 机制发现
+及按需获取凭据的回调接口（减少明文密码长期驻留 =Config=）。
+
+- 扩展频道配置支持可选密钥，补齐 =Notice= / =Join= / =Part= 等便捷发送接口与 =MessageView= 前缀/标签零拷贝访问。
+- 完善注册阶段 =432= / =437= 昵称恢复策略，增加 =CAP NEW/DEL= 与 =ISUPPORT= 变更钩子。
+- 规划 =SCRAM-SHA-256= 认证、动态凭据提供者，以及 =BATCH=、=labeled-response=、=echo-message=、
+  =account-tag=、=server-time= 解析等常用 IRCv3 扩展的基础设施支持。
+
+核对与处理：部分成立。注册期昵称拒绝需要有界恢复或立即报告。频道密钥、SCRAM 和类型化标签属于协议扩展，应分别用协议对话样本验证。
+
+实施进度：已处理注册期昵称 437，保留频道错误处理。432、带密钥频道及其余协议扩展仍待实现。
+
+** TODO [#B] 增强网络重连、TLS 策略与传输层可测试性
+
+相关位置：[[file:src/ircbot/client.cpp::612][重连退避循环]]、[[file:src/ircbot/detail/connect.hpp::13][ConnectEndpoints]]、
+[[file:src/ircbot/detail/any_stream.hpp::32][AnyStream 握手与关闭]]。
+
+重连退避采用确定性 =delay * 2=，缺少随机抖动（jitter）和多服务器地址列表（failover）、
+代理或本地源地址绑定支持；=ConnectEndpoints= 按候选地址数量串行均分超时，在 IPv6 丢包黑洞下
+会白白等待半数超时才能回退到 IPv4（缺少 RFC 8305 Happy Eyeballs）；TLS 缺少最低协议版本约束、
+证书指纹 pinning、独立 SNI 配置以及优雅退出时的 =async_shutdown=；=Run= 硬编码真实 TCP/OpenSSL，
+导致连接/超时/重连/退出流程在无 socket 沙箱下无法运行，且依赖真实墙上时钟。
+
+- 为重连退避增加可配置随机抖动、最大重试策略及多端点/备用服务器支持。
+- 改进多地址建连为 Happy Eyeballs 交错尝试；补充 TLS 最低版本、可选 SNI 覆盖与优雅 shutdown。
+- 抽离可注入的传输/连接器抽象（支持内存双工流与虚拟时钟），使 =Run= 的完整状态机可离线确定性测试。
+
+核对与处理：部分成立。固定退避容易导致同步重连，可加入抖动。代理、备用服务器、证书固定与传输注入属于独立扩展，需要分别验证取消和资源释放。
+
+实施进度：已明确最低 TLS 版本为 1.2。重连抖动、多服务器和可注入传输仍待实现。
+
+** TODO [#C] 规范 C++ API 命名、线程安全语义与 CMake 库边界
+
+相关位置：[[file:CMakeLists.txt::26][ircbot 目标配置]]、[[file:src/ircbot/client.hpp::60][Connection 接口]]、
+[[file:docs/ircbot.org::259][多线程使用约束]]、[[file:src/common/any_stream.hpp][common 引用 ircbot/detail]]。
+
+公开接口命名风格不统一（=Connection::Nick()= / =Features()= 与 =casemapping()=、=Registration::done()=
+混用）；=Connection= 所有成员函数均为 =const= 但非线程安全，仅靠文档约束调用方先 =post= 到 strand，
+容易误用。构建边界上，=CMakeLists.txt= 将整个 =src/= 作为 =ircbot= 的 =PUBLIC= include 路径，
+暴露了 =titlebot= 的应用头文件与 =ircbot/detail/=；同时把未出现在任何公开头文件中的 =OpenSSL::SSL=
+声明为 =PUBLIC= 依赖；=src/common/= 直接反向引用 =ircbot/detail/= 内部实现。
+
+- 统一公开 API 命名约定，明确 =Connection= 的线程亲和性（提供线程安全 =PostSend= 封装或 Debug 期 strand 校验）。
+- 将公开头文件整理至独立的 =include/ircbot/= 目录，缩小 =PUBLIC= include 范围，将 =OpenSSL::SSL=
+  降级为 =PRIVATE= 依赖，并解除 =src/common/= 对 =ircbot/detail/= 的依赖。
+- 保留库与公开头文件的安装规则。
+
+核对与处理：部分成立。公开包含目录过宽，应先拆分公开头及共享传输实现，再以 titlebot、示例及单元测试验证依赖边界。命名迁移应兼容现有调用。
+
+实施进度：已支持安装库与公开头文件，并收窄 OpenSSL 链接可见性。源码树头文件隔离、共享传输和线程亲和性仍待处理。
+
+** 整体修复计划
+
+先修正可独立验证的错误分类、会话失效和昵称恢复，再优化发送路径。随后处理限流、传输测试和库封装。各项分别构建、运行相关用例及完整测试并提交。
