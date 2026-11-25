@@ -32,8 +32,11 @@ public:
         auto* tls = std::get_if<Tls>(&stream_);
         return tls ? SSL_get_verify_result(tls->native_handle()) : X509_V_OK;
     }
-    bool IsOpen() {
-        return socket().is_open();
+    bool IsOpen() const {
+        if (const auto* plain = std::get_if<Socket>(&stream_)) {
+            return plain->is_open();
+        }
+        return std::get<Tls>(stream_).next_layer().is_open();
     }
     void Close(boost::system::error_code& ec) {
         socket().close(ec);

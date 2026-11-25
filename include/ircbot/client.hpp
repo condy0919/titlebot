@@ -26,6 +26,7 @@
 #include "features.hpp"
 #include "message.hpp"
 #include "registration.hpp"
+#include "transport.hpp"
 
 namespace ircbot {
 namespace detail {
@@ -184,13 +185,17 @@ struct Handlers {
     std::vector<MessageSubscription> subscriptions;
 };
 
+// A connector supplies a connected transport on Run's executor and observes config.timeouts.
+// For example, a test may return an in-memory transport seeded with "PING :test\r\n".
+using Connector = std::function<boost::asio::awaitable<IoResult<std::unique_ptr<Transport>>>(const Config&)>;
+
 /// Run one independent client on a single-threaded executor (or a strand).
 /// For example, Run({.server="irc.example.org", .nick="bot", .tls=true}, handlers)
 /// negotiates capabilities, registers, and dispatches messages until cancelled.
 /// Network failures reconnect; invalid configuration, required SASL failure, and non-diagnostic
 /// callback exceptions return an error. Terminal cancellation sends QUIT before completing
 /// successfully.
-boost::asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers = {});
+boost::asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers = {}, Connector connector = {});
 
 } // namespace ircbot
 

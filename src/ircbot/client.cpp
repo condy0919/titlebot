@@ -29,7 +29,7 @@ struct QueuedLine {
 };
 
 struct Session {
-    tb::AnyStream transport;
+    std::unique_ptr<Transport> transport;
     asio::any_io_executor executor;
     Handlers handlers;
     Timeouts timeouts;
@@ -87,8 +87,7 @@ void Diagnose(const std::shared_ptr<Session>& session, std::string_view text) {
 }
 
 void Close(const std::shared_ptr<Session>& session) {
-    boost::system::error_code ignored;
-    session->transport.Close(ignored);
+    session->transport->Close();
     if (session->writable) {
         session->writable->cancel();
     }
@@ -107,11 +106,11 @@ asio::awaitable<void> CloseOnTimeout(asio::awaitable<bool> expired,
 
 asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
     try {
-        while (session->transport.IsOpen() && !session->queue.empty()) {
+        while (session->transport->IsOpen() && !session->queue.empty()) {
             if (session->queue.front().paced && (session->send_interval.count() > 0 || session->send_delay)) {
                 const auto now = Clock::now();
                 if (now < session->next_send) {
-                    session->pacing.emplace(session->transport.get_executor(), session->next_send);
+                    session->pacing.emplace(session->executor, session->next_send);
                     boost::system::error_code ec;
                     co_await session->pacing->async_wait(asio::redirect_error(use_awaitable, ec));
                     session->pacing.reset();
@@ -132,7 +131,7 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                 session->writable->cancel();
             }
             if (!session->write_timer) {
-                session->write_timer.emplace(session->transport.get_executor());
+                session->write_timer.emplace(session->executor);
             }
             const auto generation = ++session->write_generation;
             session->write_timer->expires_after(session->timeouts.write_timeout);
@@ -142,7 +141,8 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                     Close(session);
                 }
             });
-            co_await asio::async_write(session->transport, asio::buffer(line), use_awaitable);
+            auto written = co_await session->transport->Write(asio::buffer(line));
+            if (!written) { throw boost::system::system_error(written.error()); }
             ++session->write_generation;
             session->write_timer->cancel();
         }
@@ -172,7 +172,7 @@ bool PaceCommand(std::string_view command) {
 
 std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, std::string line,
                                      bool priority = false, bool paced = true) {
-    if (!session->transport.IsOpen()) {
+    if (!session->transport->IsOpen()) {
         return std::unexpected(SendError::kClosed);
     }
     if (session->queue.size() >= session->queue_limit) {
@@ -195,7 +195,7 @@ std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, st
     }
     if (!session->writing) {
         session->writing = true;
-        asio::co_spawn(session->transport.get_executor(), Drain(session), asio::detached);
+        asio::co_spawn(session->executor, Drain(session), asio::detached);
     }
     return {};
 }
@@ -211,13 +211,13 @@ void SendControl(const std::shared_ptr<Session>& session, std::string line) {
 
 asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
                                 std::shared_ptr<asio::steady_timer> timer) {
-    while (session->transport.IsOpen()) {
+    while (session->transport->IsOpen()) {
         auto interval =
             session->probe_sent ? session->timeouts.ping_timeout : session->timeouts.idle_timeout;
         timer->expires_at(session->last_input + interval);
         boost::system::error_code ec;
         co_await timer->async_wait(asio::redirect_error(use_awaitable, ec));
-        if (ec || !session->transport.IsOpen()) {
+        if (ec || !session->transport->IsOpen()) {
             co_return;
         }
         interval =
@@ -386,12 +386,54 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
     }
 }
 
-asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const Config& config,
-                                           const Handlers& handlers, Nicknames& nicknames,
-                                           asio::ssl::context& tls) {
-    const auto session_executor = socket.get_executor();
+class SocketTransport final : public Transport {
+public:
+    SocketTransport(asio::ip::tcp::socket socket, asio::ssl::context* tls)
+        : stream_(std::move(socket), tls) {}
+    asio::any_io_executor Executor() override { return stream_.get_executor(); }
+    bool IsOpen() const override { return stream_.IsOpen(); }
+    void Close() override {
+        boost::system::error_code ignored;
+        stream_.Close(ignored);
+    }
+    asio::awaitable<IoResult<void>> Handshake(const std::string& host, const std::string& name) override {
+        try {
+            co_await stream_.Handshake(host, name);
+            co_return IoResult<void>{};
+        } catch (const boost::system::system_error& error) {
+            co_return std::unexpected(error.code());
+        }
+    }
+    long PeerVerificationResult() override { return stream_.PeerVerificationResult(); }
+    asio::awaitable<IoResult<std::size_t>> Read(asio::mutable_buffer buffer) override {
+        boost::system::error_code ec;
+        auto count = co_await stream_.async_read_some(buffer, asio::redirect_error(use_awaitable, ec));
+        if (ec) { co_return std::unexpected(ec); }
+        co_return count;
+    }
+    asio::awaitable<IoResult<void>> Write(asio::const_buffer buffer) override {
+        boost::system::error_code ec;
+        co_await asio::async_write(stream_, buffer, asio::redirect_error(use_awaitable, ec));
+        if (ec) { co_return std::unexpected(ec); }
+        co_return IoResult<void>{};
+    }
+    asio::awaitable<IoResult<void>> Shutdown() override {
+        try {
+            co_await stream_.Shutdown();
+            co_return IoResult<void>{};
+        } catch (const boost::system::system_error& error) {
+            co_return std::unexpected(error.code());
+        }
+    }
+private:
+    tb::AnyStream stream_;
+};
+
+asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport, const Config& config,
+                                           const Handlers& handlers, Nicknames& nicknames) {
+    const auto session_executor = transport->Executor();
     auto session = std::make_shared<Session>(Session{
-        .transport = {std::move(socket), config.tls ? &tls : nullptr},
+        .transport = std::move(transport),
         .executor = session_executor,
         .handlers = handlers,
         .timeouts = config.timeouts,
@@ -409,7 +451,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         .quit_timer = {},
         .writer_done = {},
     });
-    auto executor = session->transport.get_executor();
+    auto executor = session->executor;
     auto idle = std::make_shared<asio::steady_timer>(executor);
     std::optional<Fatal> fatal;
     bool connected = false;
@@ -420,9 +462,10 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
                            CloseOnTimeout(handshake.Wait(), session, "IRC TLS handshake timed out"),
                            asio::detached);
             try {
-                co_await session->transport.Handshake(config.server, config.tls_server_name);
+                auto verified = co_await session->transport->Handshake(config.server, config.tls_server_name);
+                if (!verified) { throw boost::system::system_error(verified.error()); }
             } catch (const boost::system::system_error&) {
-                const auto verify = session->transport.PeerVerificationResult();
+                const auto verify = session->transport->PeerVerificationResult();
                 if (verify != X509_V_OK) {
                     Diagnose(session->handlers, X509_verify_cert_error_string(verify),
                              DiagnosticKind::kTransport, Severity::kError);
@@ -454,9 +497,12 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         std::size_t used = 0;
         bool discarding = false;
         while (true) {
-            const auto count = co_await session->transport.async_read_some(
-                asio::buffer(input.data() + used, input.size() - used), use_awaitable);
-            const std::string_view batch(input.data(), used + count);
+            const auto count = co_await session->transport->Read(
+                asio::buffer(input.data() + used, input.size() - used));
+            if (!count) { throw boost::system::system_error(count.error()); }
+            if (!*count) { throw boost::system::system_error(asio::error::eof); }
+            if (*count > input.size() - used) { throw Fatal{ClientError::kInvalidConfig}; }
+            const std::string_view batch(input.data(), used + *count);
             std::size_t begin = 0;
             auto end = batch.find("\r\n", used == 0 ? 0 : used - 1);
             while (end != batch.npos) {
@@ -492,7 +538,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
     } catch (const Fatal& error) {
         fatal = error;
     } catch (const boost::system::system_error& error) {
-        if (error.code() != asio::error::operation_aborted && session->transport.IsOpen()) {
+        if (error.code() != asio::error::operation_aborted && session->transport->IsOpen()) {
             Diagnose(session->handlers, "IRC connection lost", DiagnosticKind::kTransport,
                      Severity::kWarning, error.code());
         }
@@ -505,7 +551,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
     session->stop.request_stop();
     const auto cancellation = co_await asio::this_coro::cancellation_state;
     bool stopping = cancellation.cancelled() != asio::cancellation_type::none;
-    if (stopping && connected && session->transport.IsOpen()) {
+    if (stopping && connected && session->transport->IsOpen()) {
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
         session->quit_timer =
             std::make_shared<asio::steady_timer>(executor, std::chrono::seconds(1));
@@ -513,13 +559,13 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         if (Queue(session, "QUIT :" + config.quit_reason, true)) {
             boost::system::error_code ignored;
             co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
-            if (config.tls && !session->writing && session->transport.IsOpen()) {
+            if (config.tls && !session->writing && session->transport->IsOpen()) {
                 Deadline shutdown(executor, Clock::now() + std::chrono::seconds(1));
                 asio::co_spawn(executor,
                                CloseOnTimeout(shutdown.Wait(), session, "IRC TLS shutdown timed out"),
                                asio::detached);
                 try {
-                    co_await session->transport.Shutdown();
+                    co_await session->transport->Shutdown();
                 } catch (const boost::system::system_error&) {
                     // Peers may close immediately after QUIT without sending close_notify.
                 }
@@ -740,7 +786,7 @@ std::expected<void, SendError> Connection::Send(std::string_view command,
         return std::unexpected(SendError::kInvalidMessage);
     }
     auto session = session_.lock();
-    if (!session || session->closing || !session->transport.IsOpen()) {
+    if (!session || session->closing || !session->transport->IsOpen()) {
         return std::unexpected(SendError::kClosed);
     }
     if ((!tags.empty() || Equals(command, "TAGMSG", CaseMapping::kAscii)) &&
@@ -752,7 +798,7 @@ std::expected<void, SendError> Connection::Send(std::string_view command,
 
 std::expected<void, SendError> Connection::SendLine(std::string line) const {
     auto session = session_.lock();
-    if (!session || session->closing || !session->transport.IsOpen()) {
+    if (!session || session->closing || !session->transport->IsOpen()) {
         return std::unexpected(SendError::kClosed);
     }
     auto parsed = ParseMessage(line);
@@ -798,7 +844,7 @@ std::expected<void, SendError> Connection::Privmsg(std::string_view target,
         return std::unexpected(SendError::kInvalidMessage);
     }
     auto session = session_.lock();
-    if (!session || session->closing || !session->transport.IsOpen()) {
+    if (!session || session->closing || !session->transport->IsOpen()) {
         return std::unexpected(SendError::kClosed);
     }
     return Queue(session, std::move(*line));
@@ -818,14 +864,14 @@ std::expected<asio::any_io_executor, SendError> Connection::Executor() const {
     if (!session || session->closing) {
         return std::unexpected(SendError::kClosed);
     }
-    return session->transport.get_executor();
+    return session->executor;
 }
 
 namespace {
 asio::awaitable<std::expected<void, SendError>> WaitForSpace(std::weak_ptr<Session> weak) {
     auto session = weak.lock();
     const auto cancellation = co_await asio::this_coro::cancellation_state;
-    while (session && !session->closing && session->transport.IsOpen()) {
+    while (session && !session->closing && session->transport->IsOpen()) {
         if (cancellation.cancelled() != asio::cancellation_type::none) {
             throw boost::system::system_error(asio::error::operation_aborted);
         }
@@ -833,7 +879,7 @@ asio::awaitable<std::expected<void, SendError>> WaitForSpace(std::weak_ptr<Sessi
             co_return std::expected<void, SendError>{};
         }
         if (!session->writable) {
-            session->writable.emplace(session->transport.get_executor(), Clock::time_point::max());
+            session->writable.emplace(session->executor, Clock::time_point::max());
         }
         boost::system::error_code ec;
         co_await session->writable->async_wait(asio::redirect_error(use_awaitable, ec));
@@ -888,7 +934,7 @@ void Connection::PostPrivmsg(std::string target, std::string text,
 
 bool Connection::IsOpen() const {
     auto session = session_.lock();
-    return session && !session->closing && session->transport.IsOpen();
+    return session && !session->closing && session->transport->IsOpen();
 }
 
 std::string Connection::Nick() const {
@@ -958,7 +1004,7 @@ std::weak_ptr<void> Connection::Identity() const {
     return session ? session->identity : std::weak_ptr<void>{};
 }
 
-asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers) {
+asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers handlers, Connector connector) {
     if (config.port.empty()) {
         config.port = config.tls ? "6697" : "6667";
     }
@@ -1005,9 +1051,20 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             config.server = server.host;
             config.port = server.port.empty() ? primary.port : server.port;
             next_server = next_server == config.fallback_servers.size() ? 0 : next_server + 1;
-            auto socket = co_await Connect(config);
+            std::unique_ptr<Transport> transport;
+            if (connector) {
+                auto connected = co_await connector(config);
+                if (!connected) { throw boost::system::system_error(connected.error()); }
+                transport = std::move(*connected);
+                if (!transport || transport->Executor() != executor) {
+                    co_return std::unexpected(ClientError::kInvalidConfig);
+                }
+            } else {
+                auto socket = co_await Connect(config);
+                transport = std::make_unique<SocketTransport>(std::move(socket), config.tls ? &tls : nullptr);
+            }
             nicknames.Begin();
-            auto stable = co_await Serve(std::move(socket), config, handlers, nicknames, tls);
+            auto stable = co_await Serve(std::move(transport), config, handlers, nicknames);
             if (!stable) {
                 co_return std::expected<void, ClientError>{};
             }

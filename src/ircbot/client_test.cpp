@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstring>
 #include <future>
 #include <string>
 #include <thread>
@@ -476,6 +477,53 @@ TEST_F(Client, LetsPolicyTerminateTransientConnectionFailures) {
     io.run();
     EXPECT_EQ(result.get().error(), ircbot::ClientError::kNetwork);
     EXPECT_EQ(failures, (std::vector{ircbot::ClientError::kNetwork}));
+}
+
+class ScriptedTransport final : public ircbot::Transport {
+public:
+    ScriptedTransport(asio::any_io_executor executor, std::string& transcript)
+        : gate_(executor, std::chrono::steady_clock::time_point::max()), transcript_(transcript) {}
+    asio::any_io_executor Executor() override { return gate_.get_executor(); }
+    bool IsOpen() const override { return open_; }
+    void Close() override {
+        open_ = false;
+        gate_.cancel();
+    }
+    asio::awaitable<ircbot::IoResult<void>> Handshake(const std::string&, const std::string&) override { co_return ircbot::IoResult<void>{}; }
+    long PeerVerificationResult() override { return X509_V_OK; }
+    asio::awaitable<ircbot::IoResult<void>> Shutdown() override { co_return ircbot::IoResult<void>{}; }
+    asio::awaitable<ircbot::IoResult<std::size_t>> Read(asio::mutable_buffer buffer) override {
+        // Wait for NICK to be written before returning the server's rejection.
+        if (transcript_.find("NICK bot\r\n") == transcript_.npos) {
+            boost::system::error_code ec;
+            co_await gate_.async_wait(asio::redirect_error(use_awaitable, ec));
+        }
+        constexpr std::string_view rejection = ":s 432 * bot :bad nickname\r\n";
+        co_return asio::buffer_copy(buffer, asio::buffer(rejection));
+    }
+    asio::awaitable<ircbot::IoResult<void>> Write(asio::const_buffer buffer) override {
+        transcript_.append(static_cast<const char*>(buffer.data()), buffer.size());
+        gate_.cancel();
+        co_return ircbot::IoResult<void>{};
+    }
+private:
+    asio::steady_timer gate_;
+    std::string& transcript_;
+    bool open_ = true;
+};
+
+TEST_F(Client, ExercisesRegistrationWithoutSockets) {
+    std::string transcript;
+    ircbot::Connector connect = [&](const auto&) -> asio::awaitable<ircbot::IoResult<std::unique_ptr<ircbot::Transport>>> {
+        co_return std::make_unique<ScriptedTransport>(co_await asio::this_coro::executor, transcript);
+    };
+    ircbot::Config config;
+    config.server = "test.invalid";
+    config.nick = "bot";
+    auto result = asio::co_spawn(io, ircbot::Run(config, {}, connect), asio::use_future);
+    io.run();
+    ASSERT_EQ(result.get().error(), ircbot::ClientError::kInvalidNickname);
+    EXPECT_NE(transcript.find("NICK bot\r\n"), transcript.npos);
 }
 
 TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
