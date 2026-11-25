@@ -117,6 +117,9 @@ bool Registration::SaslActive() const {
 void Registration::MaybeFinish(std::vector<std::string>& output) {
     if (!done_ && initial_ls_done_ && pending_.empty() && !SaslActive() &&
         (!config_.sasl || !config_.sasl->required || authenticated_)) {
+        if (config_.sasl) {
+            std::string{}.swap(config_.sasl->password);
+        }
         done_ = true;
         output.emplace_back("CAP END");
     }
@@ -354,6 +357,7 @@ Registration::Output Registration::Handle(const MessageView& message) {
             reading_ls_ = false;
             reading_list_ = false;
             initial_ls_done_ = false;
+            if (config_.sasl) { std::string{}.swap(config_.sasl->password); }
             done_ = true;
             sasl_state_ = SaslState::kFinished;
         }
@@ -377,6 +381,7 @@ Registration::Output Registration::Handle(const MessageView& message) {
             response += sasl.username;
             response += '\0';
             response += sasl.password;
+            std::string{}.swap(config_.sasl->password);
         }
         const auto encoded = Base64(response);
         std::vector<std::string> output;

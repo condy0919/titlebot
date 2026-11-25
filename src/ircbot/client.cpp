@@ -59,6 +59,7 @@ struct Session {
     ServerFeatures features;
     std::shared_ptr<Channels> channels;
     Registration registration;
+    bool require_auth;
     std::string nick;
     std::deque<QueuedLine> queue;
     std::chrono::milliseconds send_interval;
@@ -365,8 +366,7 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
             Diagnose(session, "Nickname retries exhausted");
         }
     } else if (IsCommand(message, "001") && !message.params.empty() && !session->registered) {
-        if (config.registration.sasl && config.registration.sasl->required &&
-            !session->registration.Authenticated()) {
+        if (session->require_auth && !session->registration.Authenticated()) {
             throw Fatal{ClientError::kAuthentication};
         }
         registration.Cancel();
@@ -453,7 +453,7 @@ private:
     tb::AnyStream stream_;
 };
 
-asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport, const Config& config,
+asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport, Config& config,
                                            const Handlers& handlers, Nicknames& nicknames,
                                            const std::shared_ptr<detail::Channels>& channels) {
     const auto session_executor = transport->Executor();
@@ -467,6 +467,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         .features = {},
         .channels = channels,
         .registration = Registration(config.registration),
+        .require_auth = config.registration.sasl && config.registration.sasl->required,
         .nick = config.nick,
         .queue = {},
         .send_interval = config.send_interval,
@@ -478,6 +479,9 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         .quit_timer = {},
         .writer_done = {},
     });
+    if (config.sasl_credentials) {
+        config.registration.sasl.reset();
+    }
     auto executor = session->executor;
     auto idle = std::make_shared<SessionTimer>(executor, session->clock);
     std::optional<Fatal> fatal;
@@ -1102,6 +1106,23 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             config.server = server.host;
             config.port = server.port.empty() ? primary.port : server.port;
             next_server = next_server == config.fallback_servers.size() ? 0 : next_server + 1;
+            if (config.sasl_credentials) {
+                try {
+                    config.registration.sasl = config.sasl_credentials();
+                } catch (...) {
+                    Diagnose(handlers, "IRC credential provider failed", DiagnosticKind::kCallback,
+                             Severity::kError, {}, {}, std::current_exception());
+                    co_return std::unexpected(ClientError::kHandler);
+                }
+                if (!config.registration.sasl) {
+                    co_return std::unexpected(ClientError::kAuthentication);
+                }
+                if (const auto field = InvalidConfigField(config); !field.empty()) {
+                    Diagnose(handlers, "Invalid IRC configuration: " + std::string(field),
+                             DiagnosticKind::kConfiguration, Severity::kError);
+                    co_return std::unexpected(ClientError::kInvalidConfig);
+                }
+            }
             std::unique_ptr<Transport> transport;
             if (connector) {
                 auto connected = co_await connector(config);
@@ -1141,6 +1162,9 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
         }
         if (cancellation.cancelled() != asio::cancellation_type::none) {
             co_return std::expected<void, ClientError>{};
+        }
+        if (config.sasl_credentials) {
+            config.registration.sasl.reset();
         }
         if (config.should_retry) {
             try {

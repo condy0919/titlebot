@@ -78,6 +78,8 @@ struct Config {
     std::vector<ServerAddress> fallback_servers;
     std::string tls_server_name;
     std::shared_ptr<ManualClock> clock;
+    // Obtain fresh SASL credentials on the session executor before each connection attempt.
+    std::function<std::optional<SaslConfig>()> sasl_credentials;
     std::string quit_reason = "Shutting down";
 };
 

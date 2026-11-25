@@ -611,6 +611,45 @@ TEST_F(Client, RestoresDynamicKeyedChannelAfterReconnect) {
     EXPECT_TRUE(result.get());
 }
 
+TEST_F(Client, AcquiresNewCredentialsOnReconnect) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    auto config = Configuration(listener);
+    int attempts = 0;
+    config.sasl_credentials = [&] {
+        ircbot::SaslConfig credentials;
+        credentials.mechanism = ircbot::SaslMechanism::kExternal;
+        credentials.authzid = ++attempts == 1 ? "a" : "b";
+        return std::optional{std::move(credentials)};
+    };
+    asio::cancellation_signal stop;
+    auto result = asio::co_spawn(io, ircbot::Run(config),
+                                 asio::bind_cancellation_slot(stop.slot(), asio::use_future));
+    auto exercise = [&]() -> asio::awaitable<void> {
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            auto peer = co_await listener.async_accept(use_awaitable);
+            std::string input;
+            for (int i = 0; i < 3; ++i) { co_await Read(peer, input); }
+            co_await Write(peer, ":s CAP * LS :sasl=EXTERNAL\r\n");
+            EXPECT_EQ(co_await Read(peer, input), "CAP REQ :sasl");
+            co_await Write(peer, ":s CAP bot ACK :sasl\r\n");
+            EXPECT_EQ(co_await Read(peer, input), "AUTHENTICATE EXTERNAL");
+            co_await Write(peer, "AUTHENTICATE +\r\n");
+            EXPECT_EQ(co_await Read(peer, input), attempt == 0 ? "AUTHENTICATE YQ==" : "AUTHENTICATE Yg==");
+            co_await Write(peer, ":s 903 bot :success\r\n:s 001 bot :welcome\r\n");
+            EXPECT_EQ(co_await Read(peer, input), "CAP END");
+            EXPECT_EQ(co_await Read(peer, input), "JOIN #room");
+            if (attempt == 1) {
+                stop.emit(asio::cancellation_type::terminal);
+                EXPECT_EQ(co_await Read(peer, input), "QUIT :Shutting down");
+            }
+        }
+    };
+    Exercise(exercise());
+    io.run();
+    EXPECT_EQ(attempts, 2);
+    EXPECT_TRUE(result.get());
+}
+
 TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     auto config = Configuration(listener);
