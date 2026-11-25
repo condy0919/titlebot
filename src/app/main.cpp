@@ -24,26 +24,11 @@ struct Arguments {
 };
 
 constexpr argp_option kOptions[] = {
-    {
-        .name = "server",
-        .key = 's',
-        .arg = "SERVER",
-        .doc = "IRC server (required)",
-    },
-    {
-        .name = "port",
-        .key = 'p',
-        .arg = "PORT",
-        .doc = "IRC server port (defaults to 6697 with --tls)",
-    },
-    {
-        .name = "nick",
-        .key = 'n',
-        .arg = "NICK",
-        .doc = "Bot nickname (required)",
-    },
-    {.name = "tls", .key = 't', .doc = "Connect to IRC over TLS (default port 6697)"},
-    {.name = "verbose", .key = 'v', .doc = "Enable debug logging"},
+    {"server", 's', "SERVER", 0, "IRC server (required)", 0},
+    {"port", 'p', "PORT", 0, "IRC server port (defaults to 6697 with --tls)", 0},
+    {"nick", 'n', "NICK", 0, "Bot nickname (required)", 0},
+    {"tls", 't', nullptr, 0, "Connect to IRC over TLS (default port 6697)", 0},
+    {"verbose", 'v', nullptr, 0, "Enable debug logging", 0},
     {},
 };
 
