@@ -176,7 +176,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     }
     auto coding = response.get()[http::field::content_encoding];
     ContentEncoding encoding = ContentEncoding::kIdentity;
-    if (boost::beast::iequals(coding, "gzip")) {
+    if (boost::beast::iequals(coding, "gzip") || boost::beast::iequals(coding, "x-gzip")) {
         encoding = ContentEncoding::kGzip;
     } else if (boost::beast::iequals(coding, "deflate")) {
         encoding = ContentEncoding::kDeflate;
