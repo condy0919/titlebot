@@ -57,7 +57,16 @@ namespace {
 using tb::Deadline;
 using detail::Session;
 
-void Diagnose(const Handlers& handlers, std::string_view text) {
+void Diagnose(const Handlers& handlers, std::string_view text,
+              DiagnosticKind kind = DiagnosticKind::kProtocol, Severity level = Severity::kWarning,
+              boost::system::error_code code = {}, std::optional<RegistrationError> registration = {},
+              std::exception_ptr exception = {}) {
+    if (handlers.diagnostic_event) {
+        try {
+            handlers.diagnostic_event({level, kind, text, code, registration, exception});
+        } catch (...) {
+        }
+    }
     if (handlers.diagnostic) {
         // Diagnostics must never throw out of a socket/timer completion.
         try {
@@ -281,7 +290,8 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
     }
     auto actions = session->registration.Handle(message);
     if (!actions) {
-        Diagnose(session, "IRC capability negotiation or SASL authentication failed");
+        Diagnose(session->handlers, "IRC capability negotiation or SASL authentication failed",
+                 DiagnosticKind::kRegistration, Severity::kError, {}, actions.error());
         throw Fatal{ClientError::kAuthentication};
     }
     for (auto& line : *actions) {
@@ -377,7 +387,8 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
             } catch (const boost::system::system_error&) {
                 const auto verify = session->transport.PeerVerificationResult();
                 if (verify != X509_V_OK) {
-                    Diagnose(session, X509_verify_cert_error_string(verify));
+                    Diagnose(session->handlers, X509_verify_cert_error_string(verify),
+                             DiagnosticKind::kTransport, Severity::kError);
                     throw Fatal{ClientError::kTlsTrust};
                 }
                 throw;
@@ -445,7 +456,8 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         fatal = error.error;
     } catch (const boost::system::system_error& error) {
         if (error.code() != asio::error::operation_aborted && session->transport.IsOpen()) {
-            Diagnose(session, "IRC connection lost");
+            Diagnose(session->handlers, "IRC connection lost", DiagnosticKind::kTransport,
+                     Severity::kWarning, error.code());
         }
     } catch (...) {
         fatal = ClientError::kHandler;
@@ -836,11 +848,12 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             }
         } catch (const Fatal& error) {
             co_return std::unexpected(error.error);
-        } catch (const boost::system::system_error&) {
+        } catch (const boost::system::system_error& error) {
             if (cancellation.cancelled() != asio::cancellation_type::none) {
                 co_return std::expected<void, ClientError>{};
             }
-            Diagnose(handlers, "IRC connection failed; retrying");
+            Diagnose(handlers, "IRC connection failed; retrying", DiagnosticKind::kTransport,
+                     Severity::kWarning, error.code());
         }
         if (cancellation.cancelled() != asio::cancellation_type::none) {
             co_return std::expected<void, ClientError>{};

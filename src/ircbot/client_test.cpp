@@ -230,6 +230,12 @@ TEST_F(Client, RequiredSaslDoesNotSilentlyJoinUnauthenticated) {
                                                   .authzid = {}};
     bool ready = false;
     ircbot::Handlers handlers;
+    std::optional<ircbot::RegistrationError> negotiation_error;
+    handlers.diagnostic_event = [&](const ircbot::DiagnosticEvent& event) {
+        if (event.kind == ircbot::DiagnosticKind::kRegistration) {
+            negotiation_error = event.registration;
+        }
+    };
     handlers.ready = [&](auto) { ready = true; };
     auto finished = asio::co_spawn(io, ircbot::Run(config, handlers), asio::use_future);
     auto exercise = [&]() -> asio::awaitable<void> {
@@ -249,6 +255,7 @@ TEST_F(Client, RequiredSaslDoesNotSilentlyJoinUnauthenticated) {
     io.run_for(100ms);
     ASSERT_EQ(finished.wait_for(0s), std::future_status::ready);
     EXPECT_EQ(finished.get().error(), ircbot::ClientError::kAuthentication);
+    EXPECT_EQ(negotiation_error, ircbot::RegistrationError::kSaslUnavailable);
     EXPECT_FALSE(ready);
 }
 

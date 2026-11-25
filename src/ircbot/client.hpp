@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <exception>
 #include <expected>
 #include <functional>
 #include <initializer_list>
@@ -17,6 +18,7 @@
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
+#include <boost/system/error_code.hpp>
 
 #include "features.hpp"
 #include "message.hpp"
@@ -110,6 +112,18 @@ private:
     std::weak_ptr<detail::Session> session_;
 };
 
+enum class Severity { kWarning, kError };
+enum class DiagnosticKind { kProtocol, kTransport, kRegistration, kCallback, kConfiguration };
+
+struct DiagnosticEvent {
+    Severity severity;
+    DiagnosticKind kind;
+    std::string_view message;
+    boost::system::error_code code;
+    std::optional<RegistrationError> registration;
+    std::exception_ptr exception;
+};
+
 struct Handlers {
     // Callbacks run on Run's executor and must not block. Message views last only for the call;
     // copy fields needed by a co_spawn task, and retain Connection to isolate late replies.
@@ -118,6 +132,7 @@ struct Handlers {
     std::function<void(Connection, const MessageView&)> message;
     std::function<void(Connection)> disconnected;
     std::function<void(std::string_view)> diagnostic;
+    std::function<void(const DiagnosticEvent&)> diagnostic_event;
 };
 
 /// Run one independent client on a single-threaded executor (or a strand).
