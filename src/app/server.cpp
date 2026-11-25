@@ -28,7 +28,7 @@ void Reply(const std::shared_ptr<ReplySession>& session, const std::string& targ
         return;
     }
     auto line = FormatReplyLine(target, title, limits.line_bytes);
-    if (!line || !session->limiter.Allow(target, Clock::now(), session->connection.casemapping())) {
+    if (!line || !session->limiter.Allow(target, Clock::now(), session->connection.Casemapping())) {
         scheduler.RecordReplyDrop();
         TB_LOG_WARN("Dropping unformattable or rate-limited IRC reply");
         return;
@@ -125,7 +125,7 @@ asio::awaitable<void> RunBot(BotConfig config, TitleFetcher fetch) {
         auto target = connection.IsSelf(parsed->channel) ? parsed->who : parsed->channel;
         // Application identity expires at disconnected, even while transport cleanup owns
         // the old framework session until its pending timers and writes finish.
-        FetchScheduler::Destination destination{*current, target, connection.casemapping()};
+        FetchScheduler::Destination destination{*current, target, connection.Casemapping()};
         scheduler->Submit(
             std::move(*parsed),
             [weak = std::weak_ptr(*current), target = std::move(target), limits,

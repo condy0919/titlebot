@@ -115,7 +115,8 @@ public:
     /// For example, TextBudget("#room") reserves the server-advertised user/host limits
     /// and the current nickname when computing a forwarded PRIVMSG budget.
     std::size_t TextBudget(std::string_view target) const;
-    CaseMapping casemapping() const;
+    CaseMapping Casemapping() const;
+    CaseMapping casemapping() const { return Casemapping(); }
     ServerFeatures Features() const;
     /// For example, Feature("NETWORK") returns the current 005 value when advertised.
     std::optional<std::string> Feature(std::string_view name) const;

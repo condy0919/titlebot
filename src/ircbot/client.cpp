@@ -808,7 +808,7 @@ std::string Connection::Nick() const {
     return session ? session->nick : std::string{};
 }
 
-CaseMapping Connection::casemapping() const {
+CaseMapping Connection::Casemapping() const {
     auto session = session_.lock();
     return session ? session->features.casemapping : CaseMapping::kRfc1459;
 }
