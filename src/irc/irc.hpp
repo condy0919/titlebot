@@ -6,19 +6,19 @@
 #include <string_view>
 
 namespace tb {
-/// Return a view of the field before the first ASCII space in rest. Remove the field and any
-/// following spaces from rest. A leading space yields an empty field. With no space, consume all of
-/// rest.
-/// For example, given `"PRIVMSG  #room :hello"`, return `"PRIVMSG"` and leave `"#room :hello"` in
-/// rest.
-std::string_view TakeIrcToken(std::string_view& rest);
-
 struct PrivMsg {
     std::string who;
     std::string channel;
     std::string protocol;
     std::string url;
 };
+
+/// Return a view of the field before the first ASCII space in rest. Remove the field and any
+/// following spaces from rest. A leading space yields an empty field. With no space, consume all of
+/// rest.
+/// For example, given `"PRIVMSG  #room :hello"`, return `"PRIVMSG"` and leave `"#room :hello"` in
+/// rest.
+std::string_view TakeIrcToken(std::string_view& rest);
 
 /// Strip IRC color sequences and control bytes, preserving tabs and printable text.
 /// For example, `normalize("\00304red")` returns `"red"` (color 04 followed by text).
