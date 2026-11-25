@@ -26,12 +26,12 @@ std::string_view TakeIrcToken(std::string_view& rest);
 
 /// Strip IRC color sequences and control bytes, preserving tabs and printable text.
 /// For example, `normalize("\00304red")` returns `"red"` (color 04 followed by text).
-std::string normalize(const std::string& s);
+std::string normalize(std::string_view s);
 
 /// Extract the first HTTP or HTTPS link from a PRIVMSG. Return std::nullopt for an
 /// unhandled line. For example, parse_privmsg(":a!u@h PRIVMSG #r :https://one/ http://two/")
 /// returns a PrivMsg with who="a", channel="#r", protocol="https", and url="one/".
-std::optional<PrivMsg> parse_privmsg(const std::string& s);
+std::optional<PrivMsg> parse_privmsg(std::string_view s);
 } // namespace tb
 
 #endif // TITLEBOT_IRC_HPP_

@@ -60,8 +60,9 @@ std::string_view TakeIrcToken(std::string_view& rest) {
 // Strip IRC formatting before looking for links. For the color parameter syntax, see
 // https://modern.ircdocs.horse/formatting#color and
 // https://modern.ircdocs.horse/formatting#hex-color
-std::string normalize(const std::string& s) {
+std::string normalize(std::string_view s) {
     std::string out;
+    out.reserve(s.size());
     for (size_t i = 0; i < s.size();) {
         auto c = static_cast<unsigned char>(s[i++]);
         // IRC color control bytes: 0x03 takes a palette index (1 or 2 decimal digits),
@@ -100,7 +101,7 @@ std::string normalize(const std::string& s) {
 // target: #linuxba
 // schema: http
 // url: www.baidu.com
-std::optional<PrivMsg> parse_privmsg(const std::string& s) {
+std::optional<PrivMsg> parse_privmsg(std::string_view s) {
     if (s.empty() || s.front() != ':') {
         return std::nullopt;
     }
@@ -123,7 +124,15 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
     } else if (rest.find(' ') != rest.npos) {
         return std::nullopt;
     }
-    const auto norm = normalize(std::string(rest));
+    std::string normalized;
+    if (std::ranges::any_of(rest, control)) {
+        if (rest.find_first_of("hH") == rest.npos) {
+            return std::nullopt;
+        }
+        normalized = normalize(rest);
+        rest = normalized;
+    }
+    auto norm = rest;
 
     for (auto pos = norm.find_first_of("hH"); pos != norm.npos;
          pos = norm.find_first_of("hH", pos + 1)) {

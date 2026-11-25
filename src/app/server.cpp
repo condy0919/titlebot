@@ -256,7 +256,7 @@ asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
     }
 }
 
-void HandlePrivMsg(const std::shared_ptr<Session>& session, const std::string& line) {
+void HandlePrivMsg(const std::shared_ptr<Session>& session, std::string_view line) {
     auto msg = parse_privmsg(line);
     if (!msg || SameNick(msg->who, session->nick)) {
         return;
@@ -278,7 +278,7 @@ std::string_view TrailingText(std::string_view params) {
     return params;
 }
 
-void HandleLine(const std::shared_ptr<Session>& session, const std::string& line, // NOLINT
+void HandleLine(const std::shared_ptr<Session>& session, std::string_view line, // NOLINT
                 const std::string& channels, Deadline& registration, std::size_t& nick_limit) {
     std::string_view params(line);
     std::string_view source;
@@ -358,12 +358,12 @@ asio::awaitable<bool> ServeSession(asio::ip::tcp::socket socket, const BotConfig
         while (true) {
             auto count = co_await asio::async_read_until(
                 session->socket, asio::dynamic_buffer(input, 8192), "\r\n", use_awaitable);
-            auto line = input.substr(0, count - 2);
-            input.erase(0, count);
+            auto line = std::string_view(input).substr(0, count - 2);
             const bool was_registered = session->registered;
             session->last_input = Clock::now();
             session->probe_sent = false;
             HandleLine(session, line, config.channels, registration, nick_limit);
+            input.erase(0, count);
             if (!was_registered && session->registered) {
                 session->registered_at = session->last_input;
                 asio::co_spawn(
