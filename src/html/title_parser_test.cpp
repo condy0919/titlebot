@@ -101,4 +101,12 @@ TEST_F(TitleParser, IgnoresNestedTemplateMetadata) {
         EXPECT_EQ(parser.DeclaredCharset(), "utf-8");
     }
 }
+TEST_F(TitleParser, ReadsCharsetBeforeSelfClosingSlash) {
+    for (std::string tag : {"<meta charset=utf-8/>",
+                            "<meta content='text/html; charset=utf-8' http-equiv=Content-Type/>"}) {
+        tb::TitleParser document;
+        document.parse(tag.begin(), tag.end());
+        EXPECT_EQ(document.DeclaredCharset(), "utf-8");
+    }
+}
 } // namespace

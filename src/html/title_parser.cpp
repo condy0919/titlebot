@@ -65,11 +65,14 @@ std::optional<Attribute> NextAttribute(std::string_view& attrs) {
             attrs.remove_prefix(1);
         }
         const auto end = quoted ? attrs.find(quote) : attrs.find_first_of(kHtmlWhitespace);
-        const auto value = attrs.substr(0, end);
+        auto value = attrs.substr(0, end);
         attrs.remove_prefix(value.size());
         if (quoted && !attrs.empty()) {
             // Skip the matching closing quote before scanning the next attribute.
             attrs.remove_prefix(1);
+        }
+        if (!quoted && attrs.empty() && value.ends_with('/')) {
+            value.remove_suffix(1);
         }
         return Attribute{key, value};
     }
