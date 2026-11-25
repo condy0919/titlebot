@@ -106,29 +106,25 @@ asio::awaitable<void> RunBot(BotConfig config, TitleFetcher fetch) {
     }
     auto scheduler = std::make_shared<FetchScheduler>(executor, std::move(fetch), config.scheduler);
     scheduler->EnableReports();
-    // The holder keeps reply policy alive for the current connection only. Fetch callbacks
-    // retain weak policy and Connection handles, so reconnects cannot revive an old session.
-    auto current = std::make_shared<std::shared_ptr<ReplySession>>();
+    std::shared_ptr<ReplySession> current;
     ircbot::Handlers handlers;
-    handlers.connected = [current, limits = config.replies](ircbot::Connection connection) {
-        *current = std::make_shared<ReplySession>(ReplySession{connection, IrcReplyPolicy(limits)});
+    handlers.connected = [&current, limits = config.replies](ircbot::Connection connection) {
+        current = std::make_shared<ReplySession>(ReplySession{connection, IrcReplyPolicy(limits)});
     };
     handlers.ready = [](ircbot::Connection connection) {
         TB_LOG_INFO("IRC registered as {}", connection.Nick());
     };
-    handlers.message = [current, scheduler, limits = config.replies](
+    handlers.message = [&current, scheduler, limits = config.replies](
                            ircbot::Connection connection, const ircbot::MessageView& message) {
         auto parsed = parse_privmsg(message);
-        if (!parsed || !*current || connection.IsSelf(parsed->who)) {
+        if (!parsed || !current || connection.IsSelf(parsed->who)) {
             return;
         }
         auto target = connection.IsSelf(parsed->channel) ? parsed->who : parsed->channel;
-        // Application identity expires at disconnected, even while transport cleanup owns
-        // the old framework session until its pending timers and writes finish.
-        FetchScheduler::Destination destination{*current, target, connection.Casemapping()};
+        FetchScheduler::Destination destination{connection.Identity(), target, connection.Casemapping()};
         scheduler->Submit(
             std::move(*parsed),
-            [weak = std::weak_ptr(*current), target = std::move(target), limits,
+            [weak = std::weak_ptr(current), target = std::move(target), limits,
              scheduler = std::weak_ptr(scheduler)](const std::string& title) {
                 auto session = weak.lock();
                 auto owner = scheduler.lock();
@@ -138,13 +134,13 @@ asio::awaitable<void> RunBot(BotConfig config, TitleFetcher fetch) {
             },
             std::move(destination));
     };
-    handlers.disconnected = [current, scheduler](ircbot::Connection) {
-        current->reset();
+    handlers.disconnected = [&current, scheduler](ircbot::Connection) {
+        current.reset();
         scheduler->Report();
     };
     handlers.diagnostic = [](std::string_view message) { TB_LOG_WARN("{}", message); };
     auto result = co_await ircbot::Run(ClientConfig(config), std::move(handlers));
-    current->reset();
+    current.reset();
     scheduler->Report();
     if (!result) {
         throw std::runtime_error(ClientErrorText(result.error()));
