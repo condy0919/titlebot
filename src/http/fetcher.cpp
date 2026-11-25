@@ -12,6 +12,7 @@
 #include <boost/url.hpp>
 
 #include "common/deadline.hpp"
+#include "common/log.hpp"
 #include "common/utils.hpp"
 #include "decoder.hpp"
 #include "fetcher_internal.hpp"
@@ -163,6 +164,7 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
         co_return std::nullopt;
     }
     if (response.get().result() != http::status::ok) {
+        TB_LOG_INFO("HTTP {} from {}", response.get().result_int(), authority);
         co_return std::nullopt;
     }
     auto type = response.get()[http::field::content_type];
@@ -212,7 +214,11 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
                                           : FetchError::kDecode);
         }
         if (*title) {
-            co_return FormatTitle(**title, charset, parser);
+            auto result = FormatTitle(**title, charset, parser);
+            if (!result) {
+                TB_LOG_WARN("Title decoding failed for {} (declared charset {:.64})", authority, charset);
+            }
+            co_return result;
         }
         if (used < count) {
             co_return std::unexpected(FetchError::kResponseLimit);
@@ -310,6 +316,7 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         }
         co_return co_await ReadTitle(stream->next_layer(), authority, path, location);
     } catch (const boost::system::system_error& error) {
+        TB_LOG_WARN("Fetch from {} failed: {}", host, error.what());
         if (Clock::now() >= expires) {
             co_return std::unexpected(FetchError::kTimeout);
         }
