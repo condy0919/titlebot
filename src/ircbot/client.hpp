@@ -51,6 +51,7 @@ struct Config {
     RegistrationConfig registration;
     Timeouts timeouts;
     std::size_t queued_lines = 64;
+    std::chrono::milliseconds send_interval{0};
 };
 
 enum class SendError { kClosed, kInvalidMessage, kQueueFull, kCapabilityRequired };

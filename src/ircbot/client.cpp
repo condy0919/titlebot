@@ -19,6 +19,11 @@ namespace asio = boost::asio;
 using asio::use_awaitable;
 using Clock = std::chrono::steady_clock;
 namespace detail {
+struct QueuedLine {
+    std::string text;
+    bool paced;
+};
+
 struct Session {
     AnyStream transport;
     Handlers handlers;
@@ -27,7 +32,10 @@ struct Session {
     ServerFeatures features;
     Registration registration;
     std::string nick;
-    std::deque<std::string> queue;
+    std::deque<QueuedLine> queue;
+    std::chrono::milliseconds send_interval;
+    std::optional<asio::steady_timer> pacing;
+    Clock::time_point next_send{};
     bool writing = false;
     bool closing = false;
     std::shared_ptr<void> identity = std::make_shared<char>();
@@ -62,6 +70,9 @@ void Diagnose(const std::shared_ptr<Session>& session, std::string_view text) {
 void Close(const std::shared_ptr<Session>& session) {
     boost::system::error_code ignored;
     session->transport.Close(ignored);
+    if (session->pacing) {
+        session->pacing->cancel();
+    }
 }
 
 asio::awaitable<void> CloseOnTimeout(asio::awaitable<bool> expired,
@@ -74,8 +85,20 @@ asio::awaitable<void> CloseOnTimeout(asio::awaitable<bool> expired,
 
 asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
     try {
-        while (!session->queue.empty()) {
-            auto line = std::move(session->queue.front()) + "\r\n";
+        while (session->transport.IsOpen() && !session->queue.empty()) {
+            if (session->queue.front().paced && session->send_interval.count() > 0) {
+                const auto now = Clock::now();
+                if (now < session->next_send) {
+                    session->pacing.emplace(session->transport.get_executor(), session->next_send);
+                    boost::system::error_code ec;
+                    co_await session->pacing->async_wait(asio::redirect_error(use_awaitable, ec));
+                    session->pacing.reset();
+                    continue;
+                }
+                session->next_send = now + session->send_interval;
+            }
+            auto line = std::move(session->queue.front().text);
+            line += "\r\n";
             session->queue.pop_front();
             Deadline deadline(session->transport.get_executor(),
                               Clock::now() + session->timeouts.write_timeout);
@@ -98,7 +121,7 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
 }
 
 std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, std::string line,
-                                     bool priority = false) {
+                                     bool priority = false, bool paced = true) {
     if (!session->transport.IsOpen()) {
         return std::unexpected(SendError::kClosed);
     }
@@ -110,9 +133,12 @@ std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, st
         Diagnose(session, "Evicting outgoing IRC line for priority send");
     }
     if (priority) {
-        session->queue.push_front(std::move(line));
+        session->queue.push_front({std::move(line), false});
+        if (session->pacing) {
+            session->pacing->cancel();
+        }
     } else {
-        session->queue.push_back(std::move(line));
+        session->queue.push_back({std::move(line), paced});
     }
     if (!session->writing) {
         session->writing = true;
@@ -123,7 +149,8 @@ std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, st
 
 // Registration lines are ordered and must not be silently lost to application backpressure.
 void SendControl(const std::shared_ptr<Session>& session, std::string line) {
-    if (!Queue(session, std::move(line))) {
+    const bool paced = line.starts_with("JOIN ");
+    if (!Queue(session, std::move(line), false, paced)) {
         Diagnose(session, "IRC control queue is full; closing connection");
         Close(session);
     }
@@ -300,6 +327,8 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         .registration = Registration(config.registration),
         .nick = config.nick,
         .queue = {},
+        .send_interval = config.send_interval,
+        .pacing = {},
         .quit_timer = {},
         .drain_timer = {},
     });
@@ -451,6 +480,7 @@ bool ValidConfig(const Config& config) {
     if (!valid_server || !token(config.port) || !token(config.nick) || !token(config.username) ||
         !text(config.realname) || !text(config.server_password) || config.nick.size() > 100 ||
         config.username.size() + config.realname.size() + 12 > 510 ||
+        config.send_interval.count() < 0 || config.send_interval > std::chrono::hours(24) ||
         config.server_password.size() > 503 || !config.queued_lines ||
         config.certificate_file.empty() != config.private_key_file.empty()) {
         return false;
