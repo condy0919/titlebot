@@ -233,6 +233,23 @@ std::expected<MessageView, ParseError> ParseMessage(std::string_view line) {
     return message;
 }
 
+namespace {
+std::optional<TextMessageView> AsTextMessage(const MessageView& message, std::string_view command) {
+    if (!IsCommand(message, command) || message.params.size() != 2) {
+        return {};
+    }
+    return TextMessageView{message.Nick(), message.params[0], message.params[1]};
+}
+} // namespace
+
+std::optional<TextMessageView> AsPrivmsg(const MessageView& message) {
+    return AsTextMessage(message, "PRIVMSG");
+}
+
+std::optional<TextMessageView> AsNotice(const MessageView& message) {
+    return AsTextMessage(message, "NOTICE");
+}
+
 std::size_t PrivmsgTextBudget(std::string_view target, std::size_t prefix_bytes) {
     // "PRIVMSG " and " :" add ten bytes; ":" and " " surround the relay prefix.
     constexpr auto available = kBodyLimit - 12;

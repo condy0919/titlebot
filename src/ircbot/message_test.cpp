@@ -26,6 +26,9 @@ TEST(IrcMessage, SplitsAtUtf8Boundaries) {
 TEST(MessagePrefix, ExtractsUserAndHost) {
     auto message = ircbot::ParseMessage(":nick!alice@host NOTICE bot :hello");
     ASSERT_TRUE(message);
+    ASSERT_TRUE(ircbot::AsNotice(*message));
+    EXPECT_EQ(ircbot::AsNotice(*message)->text, "hello");
+    EXPECT_FALSE(ircbot::AsPrivmsg(*message));
     EXPECT_EQ(message->User(), "alice");
     EXPECT_EQ(message->Host(), "host");
     message = ircbot::ParseMessage(":nick@host NOTICE bot :hello");

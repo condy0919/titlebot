@@ -44,6 +44,17 @@ struct MessageView {
 /// The caller must keep line alive and unchanged for the lifetime of the returned views.
 std::expected<MessageView, ParseError> ParseMessage(std::string_view line);
 
+struct TextMessageView {
+    std::string_view sender;
+    std::string_view target;
+    std::string_view text;
+};
+
+/// For example, ":bot!u@h PRIVMSG #room :hello" yields {"bot", "#room", "hello"}.
+std::optional<TextMessageView> AsPrivmsg(const MessageView& message);
+/// For example, ":server NOTICE bot :welcome" yields {"server", "bot", "welcome"}.
+std::optional<TextMessageView> AsNotice(const MessageView& message);
+
 /// Compare command names using ASCII case folding, e.g. IsCommand(parsed_ping, "PING") is true
 /// when parsed_ping.command is "pInG". Numeric commands compare byte for byte.
 bool IsCommand(const MessageView& message, std::string_view command);
