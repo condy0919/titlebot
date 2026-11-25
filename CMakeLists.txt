@@ -23,14 +23,21 @@ add_library(ircbot
   src/ircbot/registration.cpp
 )
 add_library(ircbot::ircbot ALIAS ircbot)
-target_include_directories(ircbot PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+include(GNUInstallDirs)
+target_include_directories(ircbot PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+)
 target_compile_features(ircbot PUBLIC cxx_std_23)
 target_compile_definitions(ircbot PUBLIC
   BOOST_ASIO_NO_DEPRECATED
   BOOST_ASIO_NO_TS_EXECUTORS
   BOOST_ASIO_NO_DYNAMIC_BUFFER_V1
 )
-target_link_libraries(ircbot PUBLIC Boost::headers OpenSSL::SSL Threads::Threads)
+target_link_libraries(ircbot PUBLIC Boost::headers Threads::Threads PRIVATE OpenSSL::SSL)
+install(TARGETS ircbot)
+install(FILES src/ircbot/client.hpp src/ircbot/features.hpp src/ircbot/message.hpp
+  src/ircbot/registration.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ircbot)
 
 if(IRCBOT_BUILD_EXAMPLES)
   add_executable(ircbot_echo examples/echo_bot.cpp)
@@ -63,7 +70,7 @@ if(TITLEBOT_BUILD_APP)
   target_include_directories(titlebot PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_compile_definitions(titlebot PUBLIC SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
   target_link_libraries(titlebot PUBLIC ircbot::ircbot
-    PRIVATE PkgConfig::uchardet ZLIB::ZLIB Boost::url spdlog::spdlog)
+    PRIVATE OpenSSL::SSL PkgConfig::uchardet ZLIB::ZLIB Boost::url spdlog::spdlog)
   add_executable(titlebot_cli src/app/main.cpp)
   set_target_properties(titlebot_cli PROPERTIES OUTPUT_NAME titlebot)
   target_link_libraries(titlebot_cli PRIVATE titlebot spdlog::spdlog)
@@ -85,7 +92,7 @@ if(TITLEBOT_ENABLE_TESTS)
     src/ircbot/registration_test.cpp
   )
   target_compile_definitions(ircbot_tests PRIVATE IRCBOT_TEST_ROOT="${PROJECT_SOURCE_DIR}")
-  target_link_libraries(ircbot_tests PRIVATE ircbot::ircbot GTest::gtest_main)
+  target_link_libraries(ircbot_tests PRIVATE ircbot::ircbot OpenSSL::SSL GTest::gtest_main)
   gtest_discover_tests(ircbot_tests)
 
   if(TITLEBOT_BUILD_APP)
@@ -103,7 +110,7 @@ if(TITLEBOT_ENABLE_TESTS)
       src/html/title_parser_test.cpp
     )
     target_compile_definitions(titlebot_unittests PRIVATE TITLEBOT_PROJ_ROOT="${PROJECT_SOURCE_DIR}")
-    target_link_libraries(titlebot_unittests PRIVATE titlebot ZLIB::ZLIB
+    target_link_libraries(titlebot_unittests PRIVATE titlebot OpenSSL::SSL ZLIB::ZLIB
       spdlog::spdlog GTest::gtest_main)
     add_executable(titlebot_server_tests src/app/server_test.cpp)
     target_link_libraries(titlebot_server_tests PRIVATE titlebot Boost::url
