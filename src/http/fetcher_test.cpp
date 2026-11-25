@@ -267,4 +267,7 @@ TEST_F(FetcherLoopback, ReturnsCompleteTitleBeforeBodyEnds) {
     EXPECT_EQ(Run({"HTTP/1.1 200 OK\r\nContent-Length: 8192\r\n\r\n<title>early</title>"}),
               tb::FetchResult(std::string("early")));
 }
+TEST_F(FetcherLoopback, ReportsBlankAndControlOnlyTitlesAsMissing) {
+    EXPECT_EQ(Run({HtmlResponse("<title> \x01\t </title>", "")}), tb::FetchResult(std::nullopt));
+}
 } // namespace

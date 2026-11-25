@@ -59,7 +59,7 @@ FetchResult FormatTitle(const std::string& title, const std::string& charset,
     std::string normalized;
     bool space = false;
     for (char ch : decoded) {
-        if (std::isspace(static_cast<unsigned char>(ch))) {
+        if (static_cast<unsigned char>(ch) <= 32 || ch == 127) {
             space = !normalized.empty();
         } else {
             if (space) {
@@ -68,6 +68,9 @@ FetchResult FormatTitle(const std::string& title, const std::string& charset,
             }
             normalized += ch;
         }
+    }
+    if (normalized.empty()) {
+        return std::nullopt;
     }
     return normalized;
 }
