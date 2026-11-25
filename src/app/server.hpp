@@ -12,6 +12,7 @@ struct BotConfig {
     std::string port;
     std::string nick;
     std::string channels;
+    bool tls = false;
     std::chrono::milliseconds registration_timeout = std::chrono::seconds(30);
     std::chrono::milliseconds connect_timeout = std::chrono::seconds(15);
     std::chrono::milliseconds idle_timeout = std::chrono::seconds(90);

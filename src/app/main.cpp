@@ -15,6 +15,7 @@ namespace asio = boost::asio;
 
 namespace {
 struct Arguments {
+    bool tls = false;
     bool verbose = false;
     const char* server = nullptr;
     const char* port = nullptr;
@@ -33,7 +34,7 @@ constexpr argp_option kOptions[] = {
         .name = "port",
         .key = 'p',
         .arg = "PORT",
-        .doc = "IRC server port (required)",
+        .doc = "IRC server port (defaults to 6697 with --tls)",
     },
     {
         .name = "nick",
@@ -41,6 +42,7 @@ constexpr argp_option kOptions[] = {
         .arg = "NICK",
         .doc = "Bot nickname (required)",
     },
+    {.name = "tls", .key = 't', .doc = "Connect to IRC over TLS (default port 6697)"},
     {.name = "verbose", .key = 'v', .doc = "Enable debug logging"},
     {},
 };
@@ -48,6 +50,10 @@ constexpr argp_option kOptions[] = {
 error_t ParseArgument(int key, char* arg, argp_state* state) {
     auto& args = *static_cast<Arguments*>(state->input);
     switch (key) {
+    case 't':
+        args.tls = true;
+        return 0;
+
     case 'v':
         args.verbose = true;
         return 0;
@@ -72,6 +78,9 @@ error_t ParseArgument(int key, char* arg, argp_state* state) {
         break;
 
     case ARGP_KEY_END:
+        if (args.tls && !args.port) {
+            args.port = "6697";
+        }
         if (!args.server || !args.port || !args.nick || !args.channels) {
             argp_error(state, "expected -s SERVER -p PORT -n NICK CHANNEL[,CHANNEL...]");
         }
@@ -121,6 +130,7 @@ int main(int argc, char** argv) {
             .port = args.port,
             .nick = args.nick,
             .channels = args.channels,
+            .tls = args.tls,
         };
         asio::co_spawn(io, tb::RunBot(std::move(config)), [](const std::exception_ptr& error) {
             if (error) {

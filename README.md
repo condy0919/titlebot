@@ -36,3 +36,10 @@ ctest --test-dir build --output-on-failure
 - 网页抓取跳过以方括号直接指定 IPv6 地址的 URL。域名可解析为 IPv4 或 IPv6，只连接允许的公网地址，每次重定向都会重新检查目标，最多跟随五次重定向。抓取 HTTPS 网页时使用系统信任的证书验证服务器身份。
 - 抓取器收到 `103 Early Hints` 后会继续等待最终响应。解析 HTML 时跳过模板中的标题和字符集声明，读到完整的文档标题即可回复。
 - 抓取失败或页面缺少标题时，频道里不会收到回复。可查看标准错误中的汇总日志：`no_title` 统计无标题结果，`timeouts` 和 `decode` 分别统计超时和解码失败，`queue_drops` 和 `reply_drops` 分别统计入队丢弃和回复丢弃。
+
+连接启用 TLS 的 IRC 服务时可省略默认端口 6697，例如
+
+```sh
+titlebot --tls -s irc.example.org -n titlebot '#room'
+```
+客户端使用系统信任库校验证书和服务器名称。
