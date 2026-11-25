@@ -187,9 +187,6 @@ std::optional<std::string> TitleParser::consume(char ch) {
     }
     if (ch != '>' || quote_) {
         if (tag_.empty()) {
-            if (std::isspace(static_cast<unsigned char>(ch))) {
-                return {};
-            }
             if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '/' || ch == '!' ||
                   ch == '?')) {
                 state_ = State::kText;

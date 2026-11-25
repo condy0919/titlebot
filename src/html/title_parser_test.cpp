@@ -24,7 +24,7 @@ TEST_F(TitleParser, HandlesAttributes) {
 }
 
 TEST_F(TitleParser, HandlesWhitespace) {
-    const std::string s = "<  title >facebook</title>";
+    const std::string s = "<p>1 < script and 2 > 1</p><title >facebook</title>";
     ASSERT_EQ(parser.parse(s.begin(), s.end()).value(), "facebook");
 }
 
