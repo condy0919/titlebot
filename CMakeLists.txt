@@ -76,6 +76,7 @@ find_package(Boost 1.81 CONFIG REQUIRED COMPONENTS url)
 add_library(ircbot
   src/ircbot/message.cpp
   src/ircbot/features.cpp
+  src/ircbot/registration.cpp
 )
 add_library(ircbot::ircbot ALIAS ircbot)
 target_include_directories(ircbot PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -108,6 +109,7 @@ if(TITLEBOT_ENABLE_TESTS)
   add_executable(ircbot_tests
     src/ircbot/message_test.cpp
     src/ircbot/features_test.cpp
+    src/ircbot/registration_test.cpp
   )
   target_link_libraries(ircbot_tests PRIVATE ircbot::ircbot GTest::gtest_main)
 
