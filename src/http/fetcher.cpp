@@ -261,11 +261,20 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
             }
         }
         boost::system::error_code ec = asio::error::host_unreachable;
+        auto remaining_endpoints = answers.size();
         for (const auto& answer : answers) {
             if (Clock::now() >= expires) {
                 co_return std::unexpected(FetchError::kTimeout);
             }
             stream->next_layer().close();
+            const auto now = Clock::now();
+            Deadline attempt(executor, now + (expires - now) / static_cast<long>(remaining_endpoints--));
+            asio::co_spawn(executor, [stream, wait = attempt.Wait()]() mutable -> asio::awaitable<void> {
+                if (co_await std::move(wait)) {
+                    boost::system::error_code ignored;
+                    stream->next_layer().cancel(ignored);
+                }
+            }, asio::detached);
             co_await stream->next_layer().async_connect(answer.endpoint(),
                                                         asio::redirect_error(use_awaitable, ec));
             if (!ec) {
