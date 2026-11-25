@@ -21,6 +21,7 @@ add_library(ircbot
   src/ircbot/features.cpp
   src/ircbot/message.cpp
   src/ircbot/registration.cpp
+  src/ircbot/tcp_transport.cpp
 )
 add_library(ircbot::ircbot ALIAS ircbot)
 include(GNUInstallDirs)
