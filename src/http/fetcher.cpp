@@ -233,6 +233,7 @@ asio::awaitable<void> CancelOnTimeout(asio::awaitable<bool> expired,
 }
 
 asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::context& tls,
+                                      const std::shared_ptr<tcp::resolver>& resolver,
                                       const detail::FetchPolicy& policy, Clock::time_point deadline,
                                       std::string& location) {
     bool secure = url.scheme_id() == boost::urls::scheme::https;
@@ -251,7 +252,6 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         path.insert(0, "/");
     }
     auto executor = co_await asio::this_coro::executor;
-    auto resolver = std::make_shared<tcp::resolver>(executor);
     auto stream = std::make_shared<asio::ssl::stream<tcp::socket>>(executor, tls);
     auto expires = std::min(deadline, Clock::now() + policy.connect_timeout);
     Deadline connect_timeout(executor, expires);
@@ -333,9 +333,10 @@ asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::con
         co_return std::unexpected(FetchError::kInvalidUrl);
     }
     current = *parsed;
+    auto resolver = std::make_shared<tcp::resolver>(co_await asio::this_coro::executor);
     for (unsigned redirects = 0;; ++redirects) {
         std::string location;
-        auto result = co_await FetchHop(current, tls, policy, deadline, location);
+        auto result = co_await FetchHop(current, tls, resolver, policy, deadline, location);
         if (!result || location.empty()) {
             co_return result;
         }
