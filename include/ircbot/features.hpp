@@ -33,7 +33,7 @@ struct ServerFeatures {
     /// new unknown fields are ignored when full. For example,
     /// ":s 005 bot CASEMAPPING=ascii NICKLEN=20 :supported" selects ASCII and a 20-byte nick limit.
     /// A later "-NICKLEN" token restores the default limit of 9.
-    void Observe(const MessageView& message);
+    bool Observe(const MessageView& message);
 };
 } // namespace ircbot
 

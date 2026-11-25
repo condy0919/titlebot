@@ -53,10 +53,11 @@ std::string DecodeFeatureValue(std::string_view value) {
 }
 } // namespace
 
-void ServerFeatures::Observe(const MessageView& message) {
+bool ServerFeatures::Observe(const MessageView& message) {
     if (!IsCommand(message, "005") || message.params.size() < 3) {
-        return;
+        return false;
     }
+    bool changed = false;
     // Compute from the public snapshot so callers cannot invalidate a hidden byte counter.
     std::size_t stored_bytes = 0;
     for (const auto& [name, value] : values) {
@@ -92,6 +93,7 @@ void ServerFeatures::Observe(const MessageView& message) {
             }
             stored_bytes -= previous_bytes;
             values.erase(previous);
+            changed = true;
         } else {
             auto decoded =
                 equal == token.npos ? std::string{} : DecodeFeatureValue(token.substr(equal + 1));
@@ -116,11 +118,13 @@ void ServerFeatures::Observe(const MessageView& message) {
                     }
                     stored_bytes -= victim->first.size() + victim->second.size();
                     values.erase(victim);
+                    changed = true;
                 }
                 if (!fits()) {
                     continue;
                 }
             }
+            changed |= inserted || previous->second != decoded;
             const auto entry = values.insert_or_assign(name, std::move(decoded)).first;
             stored_bytes = stored_bytes - previous_bytes + incoming_bytes;
             value = entry->second;
@@ -150,5 +154,6 @@ void ServerFeatures::Observe(const MessageView& message) {
             status_prefixes = removed ? "" : std::string(value);
         }
     }
+    return changed;
 }
 } // namespace ircbot

@@ -105,6 +105,8 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
         EXPECT_EQ(connection.SendLine("PRIVMSG #room :injection\r\nQUIT").error(),
                   ircbot::SendError::kInvalidMessage);
     };
+    unsigned isupport_changes = 0;
+    handlers.isupport_changed = [&](auto, const auto&) { ++isupport_changes; };
     unsigned routed = 0;
     handlers.subscriptions.push_back({"pRiVmSg", [&](auto, const auto&) { ++routed; }});
     auto finished = asio::co_spawn(io, ircbot::Run(config, handlers),
@@ -117,6 +119,7 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
         co_await Write(peer, std::string(18000, 'x') + "\r\nPING :after-long-line\r\n");
         EXPECT_EQ(co_await Read(peer, input), "PONG :after-long-line");
         co_await Write(peer, ":s 005 bot CASEMAPPING=ascii :supported\r\n"
+                             ":s 005 bot CASEMAPPING=ascii :supported\r\n"
                              ":bot!u@h NICK :bot[\r\n"
                              "@label=hello\\sworld :bot{!u@h pRiVmSg #room :hello\r\n");
         EXPECT_EQ(co_await Read(peer, input), "PRIVMSG #room :hello");
@@ -137,6 +140,7 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
     EXPECT_TRUE(finished.get());
     EXPECT_EQ(ready, 1u);
     EXPECT_EQ(routed, 1u);
+    EXPECT_EQ(isupport_changes, 1u);
     EXPECT_EQ(disconnected, 1u);
     EXPECT_FALSE(saved.IsOpen());
 }
