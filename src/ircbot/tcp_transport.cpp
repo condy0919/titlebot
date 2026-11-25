@@ -101,7 +101,7 @@ asio::awaitable<asio::ip::tcp::socket> Connect(const Config& config) {
     auto executor = co_await asio::this_coro::executor;
     auto resolver = std::make_shared<asio::ip::tcp::resolver>(executor);
     auto socket = std::make_shared<asio::ip::tcp::socket>(executor);
-    const auto expires = Clock::now() + config.timeouts.connect_timeout;
+    const auto expires = tb::DeadlineAfter(Clock::now(), config.timeouts.connect_timeout);
     Deadline deadline(executor, expires);
     asio::co_spawn(
         executor,

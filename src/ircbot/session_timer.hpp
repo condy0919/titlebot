@@ -9,6 +9,7 @@
 
 #include <boost/asio.hpp>
 
+#include "common/deadline.hpp"
 #include "ircbot/manual_clock.hpp"
 
 namespace ircbot::detail {
@@ -66,8 +67,8 @@ public:
             state_->Advance(clock_->Now());
         }
     }
-    void expires_after(std::chrono::steady_clock::duration duration) {
-        expires_at(Now(clock_) + duration);
+    void expires_after(std::chrono::milliseconds duration) {
+        expires_at(tb::DeadlineAfter(Now(clock_), duration));
     }
 
     template <class Token>

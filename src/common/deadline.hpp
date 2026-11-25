@@ -1,6 +1,7 @@
 #ifndef TITLEBOT_DEADLINE_HPP_
 #define TITLEBOT_DEADLINE_HPP_
 
+#include <chrono>
 #include <memory>
 #include <utility>
 
@@ -12,6 +13,18 @@
 #include <boost/system/error_code.hpp>
 
 namespace tb {
+
+/// For example, adding 10ms to time_point::max() - 1ms yields time_point::max().
+inline std::chrono::steady_clock::time_point DeadlineAfter(std::chrono::steady_clock::time_point now,
+                                                           std::chrono::milliseconds delay) {
+    using Clock = std::chrono::steady_clock;
+    if (delay <= delay.zero()) { return now; }
+    if (delay > std::chrono::duration_cast<std::chrono::milliseconds>(Clock::duration::max())) {
+        return Clock::time_point::max();
+    }
+    const auto delta = std::chrono::duration_cast<Clock::duration>(delay);
+    return now > Clock::time_point::max() - delta ? Clock::time_point::max() : now + delta;
+}
 
 /// A one-shot deadline for operations on the same single-threaded executor.
 /// Wait() returns true on expiry. For example, cancelling the registration deadline

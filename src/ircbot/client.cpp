@@ -174,7 +174,7 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                         break;
                     }
                 }
-                session->next_send = now + interval;
+                session->next_send = tb::DeadlineAfter(now, interval);
             }
             if (!session->transport->IsOpen()) { break; }
             line += "\r\n";
@@ -273,7 +273,7 @@ asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
     while (session->transport->IsOpen()) {
         auto interval =
             session->probe_sent ? session->timeouts.ping_timeout : session->timeouts.idle_timeout;
-        timer->expires_at(session->last_input + interval);
+        timer->expires_at(tb::DeadlineAfter(session->last_input, interval));
         boost::system::error_code ec;
         co_await timer->async_wait(asio::redirect_error(use_awaitable, ec));
         if (ec || !session->transport->IsOpen()) {
@@ -281,7 +281,7 @@ asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
         }
         interval =
             session->probe_sent ? session->timeouts.ping_timeout : session->timeouts.idle_timeout;
-        if (detail::Now(session->clock) < session->last_input + interval) {
+        if (detail::Now(session->clock) < tb::DeadlineAfter(session->last_input, interval)) {
             continue;
         }
         if (session->probe_sent) {
@@ -510,7 +510,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
     bool connected = false;
     try {
         if (config.tls) {
-            SessionDeadline handshake(executor, session->clock, detail::Now(session->clock) + config.timeouts.connect_timeout);
+            SessionDeadline handshake(executor, session->clock, tb::DeadlineAfter(detail::Now(session->clock), config.timeouts.connect_timeout));
             asio::co_spawn(executor,
                            CloseOnTimeout(handshake.Wait(), session, "IRC TLS handshake timed out"),
                            asio::detached);
@@ -545,7 +545,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         SendControl(session, "NICK " + config.nick);
         SendControl(session, "USER " + config.username + " 0 * :" + config.realname);
         Invoke(handlers.connected, Connection(session));
-        SessionDeadline registration(executor, session->clock, detail::Now(session->clock) + config.timeouts.registration_timeout);
+        SessionDeadline registration(executor, session->clock, tb::DeadlineAfter(detail::Now(session->clock), config.timeouts.registration_timeout));
         asio::co_spawn(
             executor,
             CloseOnTimeout(registration.Wait(), session,
@@ -611,7 +611,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
     if (stopping && connected && session->transport->IsOpen()) {
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
         session->quit_timer =
-            std::make_shared<SessionTimer>(executor, session->clock, detail::Now(session->clock) + std::chrono::seconds(1));
+            std::make_shared<SessionTimer>(executor, session->clock, tb::DeadlineAfter(detail::Now(session->clock), std::chrono::seconds(1)));
         session->queue.clear();
         if (Queue(session, "QUIT :" + config.quit_reason, true)) {
             boost::system::error_code ignored;
@@ -619,7 +619,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
                 co_await session->quit_timer->async_wait(asio::redirect_error(use_awaitable, ignored));
             }
             if (config.tls && !session->writing && session->transport->IsOpen()) {
-                SessionDeadline shutdown(executor, session->clock, detail::Now(session->clock) + std::chrono::seconds(1));
+                SessionDeadline shutdown(executor, session->clock, tb::DeadlineAfter(detail::Now(session->clock), std::chrono::seconds(1)));
                 asio::co_spawn(executor,
                                CloseOnTimeout(shutdown.Wait(), session, "IRC TLS shutdown timed out"),
                                asio::detached);
@@ -671,7 +671,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         co_return std::nullopt;
     }
     const bool stable = session->registered &&
-                        detail::Now(session->clock) - session->registered_at >= config.timeouts.stable_session;
+                        std::chrono::duration_cast<std::chrono::milliseconds>(detail::Now(session->clock) - session->registered_at) >= config.timeouts.stable_session;
     co_return stable;
 }
 
@@ -1177,7 +1177,7 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             wait = std::chrono::milliseconds(
                 std::uniform_int_distribution<Count>(low.count(), high.count())(jitter));
         }
-        SessionTimer timer(executor, config.clock, detail::Now(config.clock) + wait);
+        SessionTimer timer(executor, config.clock, tb::DeadlineAfter(detail::Now(config.clock), wait));
         boost::system::error_code ec;
         try {
             co_await timer.async_wait(asio::redirect_error(use_awaitable, ec));

@@ -601,6 +601,28 @@ TEST_F(Client, AdvancesRetryBackoffWithoutSocketOrWallClockWaits) {
     EXPECT_EQ(attempts, 2u);
 }
 
+TEST_F(Client, CapsRetryDeadlineAtEndOfManualClockRange) {
+    ircbot::Config config;
+    config.server = "example.invalid";
+    config.nick = "bot";
+    config.clock = std::make_shared<ircbot::ManualClock>();
+    config.reconnect_jitter = false;
+    config.max_retries = 1;
+    ASSERT_TRUE(config.clock->Advance(ircbot::ManualClock::TimePoint::max().time_since_epoch() - 1ms));
+    int attempts = 0;
+    ircbot::Connector connect = [&](const auto&) -> asio::awaitable<ircbot::IoResult<std::unique_ptr<ircbot::Transport>>> {
+        ++attempts;
+        co_return std::unexpected(boost::system::error_code(asio::error::host_unreachable));
+    };
+    auto result = asio::co_spawn(io, ircbot::Run(config, {}, connect), asio::use_future);
+    io.poll();
+    EXPECT_EQ(attempts, 1);
+    ASSERT_TRUE(config.clock->Advance(1ms));
+    io.poll();
+    ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
+    EXPECT_EQ(result.get().error(), ircbot::ClientError::kRetryLimit);
+}
+
 TEST_F(Client, AdvancesRegistrationDeadlineWithoutWallClockWaits) {
     std::string transcript;
     ircbot::Config config;
