@@ -8,9 +8,10 @@
 #include <boost/locale/utf.hpp>
 
 namespace tb {
-/// Decode BOM-marked UTF-16 incrementally and otherwise pass bytes through.
+/// 按 BOM 识别 UTF-16 并逐字节转为 UTF-8，其他输入保留原始字节。
 class DocumentBytes {
 public:
+    /// 返回本次输入产生的字节，视图有效至下次调用。例如 UTF-16 字符的首个字节返回空视图。
     std::string_view Push(char ch) {
         if (sample_.size() < 1024) {
             sample_.push_back(ch);

@@ -32,19 +32,18 @@ public:
     /// the scheduler alive until their coroutines finish delivering results.
     FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch, SchedulerLimits limits = {});
 
-    /// Queue a fetch and call deliver if it yields a title. For example, two accepted
-    /// Submit(msg, deliver) calls for the same pending URL fetch it once and deliver twice.
     struct Destination {
         std::weak_ptr<void> session;
         std::string target;
     };
+    /// 为消息抓取标题。相同链接共用一次下载，同一会话的同一目标仅接收一次在途结果。
+    /// 例如 #a 和 #b 同时提交相同链接时，两个频道各收到一次回复。
     void Submit(PrivMsg message, Deliver deliver, Destination destination = {});
 
     /// Count a dropped outgoing reply. RecordReplyDrop() increments stats().reply_drops by one.
     void RecordReplyDrop();
 
-    /// Log current counters. For example, Report() includes completed=0
-    /// before the first fetch completes.
+    /// 记录抓取统计。例如，首个任务完成前汇总包含 completed=0。
     void Report() const;
 
     /// 启用按分钟汇总，空闲期间没有统计变化时不打印。
