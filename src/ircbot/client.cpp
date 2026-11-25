@@ -623,10 +623,11 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
                 asio::co_spawn(executor,
                                CloseOnTimeout(shutdown.Wait(), session, "IRC TLS shutdown timed out"),
                                asio::detached);
-                try {
-                    co_await session->transport->Shutdown();
-                } catch (const boost::system::system_error&) {
-                    // Peers may close immediately after QUIT without sending close_notify.
+                auto closed = co_await session->transport->Shutdown();
+                if (!closed && closed.error() != asio::ssl::error::stream_truncated &&
+                    closed.error() != asio::error::eof && closed.error() != asio::error::operation_aborted) {
+                    Diagnose(handlers, "IRC TLS shutdown failed", DiagnosticKind::kTransport,
+                             Severity::kWarning, closed.error());
                 }
             }
         }

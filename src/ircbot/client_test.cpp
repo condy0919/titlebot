@@ -867,6 +867,7 @@ TEST_F(Client, CompletesExternalAuthenticationOverVerifiedMutualTls) {
     auto config = Configuration(listener);
     config.server = "localhost";
     config.tls = true;
+    config.quit_reason = "test complete";
     config.channel_keys["#room"] = "secret";
     config.peer_certificate_sha256 = "8f7731281683aa1d3383adbceef2aac2e78c9488edddd50c0167386d6968e9cf";
     config.ca_file = certificate;
@@ -896,7 +897,8 @@ TEST_F(Client, CompletesExternalAuthenticationOverVerifiedMutualTls) {
         co_await Write(peer, ":s 001 bot :Welcome\r\n");
         EXPECT_EQ(co_await Read(peer, input), "JOIN #room secret");
         stop.emit(asio::cancellation_type::terminal);
-        EXPECT_EQ(co_await Read(peer, input), "QUIT :Shutting down");
+        EXPECT_EQ(co_await Read(peer, input), "QUIT :test complete");
+        co_await peer.async_shutdown(use_awaitable);
     };
     Exercise(exercise());
     io.run_for(100ms);
