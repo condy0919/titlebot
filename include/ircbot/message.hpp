@@ -100,6 +100,10 @@ enum class SerializeError {
 std::expected<std::vector<std::string_view>, SerializeError>
 SplitText(std::string_view text, std::size_t budget);
 
+/// Validate the raw tag section of a parsed outgoing message. For example, "a=1;a=2"
+/// fails because a client cannot send duplicate keys.
+std::expected<void, SerializeError> ValidateClientTags(const MessageView& message);
+
 /// Serialize a client message without CRLF. For example, ("PRIVMSG", {"#r", "hello world"})
 /// yields "PRIVMSG #r :hello world". Reject invalid fields and separately bound tags and body.
 std::expected<std::string, SerializeError>

@@ -119,6 +119,34 @@ char Escape(char ch) {
         return 0;
     }
 }
+std::optional<std::string> DecodeTagValue(std::string_view value) {
+    std::string decoded;
+    decoded.reserve(value.size());
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        auto ch = value[i];
+        if (ch == '\\') {
+            if (++i == value.size()) {
+                break;
+            }
+            switch (ch = value[i]) {
+            case ':':
+                ch = ';';
+                break;
+            case 's':
+                ch = ' ';
+                break;
+            case 'r':
+                ch = '\r';
+                break;
+            case 'n':
+                ch = '\n';
+                break;
+            }
+        }
+        decoded += ch;
+    }
+    return ValidUtf8(decoded) ? std::optional(std::move(decoded)) : std::nullopt;
+}
 } // namespace
 
 std::string_view MessageView::Nick() const {
@@ -154,32 +182,7 @@ std::optional<std::string> MessageView::Tag(std::string_view key) const {
     if (!value) {
         return {};
     }
-    std::string decoded;
-    decoded.reserve(value->size());
-    for (std::size_t i = 0; i < value->size(); ++i) {
-        auto ch = (*value)[i];
-        if (ch == '\\') {
-            if (++i == value->size()) {
-                break;
-            }
-            switch (ch = (*value)[i]) {
-            case ':':
-                ch = ';';
-                break;
-            case 's':
-                ch = ' ';
-                break;
-            case 'r':
-                ch = '\r';
-                break;
-            case 'n':
-                ch = '\n';
-                break;
-            }
-        }
-        decoded += ch;
-    }
-    return ValidUtf8(decoded) ? std::optional(std::move(decoded)) : std::nullopt;
+    return DecodeTagValue(*value);
 }
 
 std::expected<MessageView, ParseError> ParseMessage(std::string_view line) {
@@ -305,6 +308,32 @@ std::optional<MembershipView> AsMembershipChange(const MessageView& message) {
 
 bool IsCommand(const MessageView& message, std::string_view command) {
     return std::ranges::equal(message.command, command, {}, Lower, Lower);
+}
+
+std::expected<void, SerializeError> ValidateClientTags(const MessageView& message) {
+    if (message.tags.size() > kOutgoingTagDataLimit || message.tags.ends_with(';')) {
+        return std::unexpected(SerializeError::kInvalidTag);
+    }
+    boost::container::small_vector<std::string_view, 8> keys;
+    for (auto item : message.RawTags()) {
+        const auto equal = item.find('=');
+        const auto key = item.substr(0, equal);
+        if (!ValidTagKey(key)) {
+            return std::unexpected(SerializeError::kInvalidTag);
+        }
+        if (equal != item.npos) {
+            const auto value = item.substr(equal + 1);
+            if (value.contains('\\') ? !DecodeTagValue(value).has_value() : !ValidUtf8(value)) {
+                return std::unexpected(SerializeError::kInvalidTag);
+            }
+        }
+        keys.push_back(key);
+    }
+    std::ranges::sort(keys);
+    if (std::adjacent_find(keys.begin(), keys.end()) != keys.end()) {
+        return std::unexpected(SerializeError::kInvalidTag);
+    }
+    return {};
 }
 
 std::expected<std::string, SerializeError>

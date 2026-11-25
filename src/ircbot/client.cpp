@@ -825,27 +825,8 @@ std::expected<void, SendError> Connection::SendLine(std::string line) const {
         (line.starts_with('@') && line.find(' ') + 1 > 4096)) {
         return std::unexpected(SendError::kInvalidMessage);
     }
-    if (line.starts_with('@')) {
-        if (parsed->tags.ends_with(';')) {
-            return std::unexpected(SendError::kInvalidMessage);
-        }
-        std::vector<Tag> tags;
-        auto remaining = parsed->tags;
-        while (!remaining.empty()) {
-            const auto separator = remaining.find(';');
-            const auto item = remaining.substr(0, separator);
-            const auto key = item.substr(0, item.find('='));
-            auto value = parsed->Tag(key);
-            if (!value) {
-                return std::unexpected(SendError::kInvalidMessage);
-            }
-            tags.push_back({std::string(key), std::move(*value)});
-            remaining.remove_prefix(separator == remaining.npos ? remaining.size() : separator + 1);
-        }
-        if (!SerializeMessage(parsed->command, {parsed->params.data(), parsed->params.size()},
-                              tags)) {
-            return std::unexpected(SendError::kInvalidMessage);
-        }
+    if (line.starts_with('@') && !ValidateClientTags(*parsed)) {
+        return std::unexpected(SendError::kInvalidMessage);
     }
     if ((line.starts_with('@') || IsCommand(*parsed, "TAGMSG")) &&
         !session->registration.enabled().contains("message-tags")) {
