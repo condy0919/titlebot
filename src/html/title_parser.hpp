@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include "document_bytes.hpp"
+
 namespace tb {
 class TitleParser {
 public:
@@ -24,7 +26,7 @@ public:
 
     /// View the first 1024 input bytes or the shorter prefix consumed so far.
     std::string_view sample() const {
-        return head_;
+        return bytes_.sample();
     }
 
     /// Return the first recognized meta charset declaration, or an empty string.
@@ -34,7 +36,7 @@ public:
 
     /// Report whether the input began with a UTF-8 or UTF-16 byte order mark.
     bool unicode_bom() const {
-        return utf16_ || head_.starts_with("\xef\xbb\xbf");
+        return bytes_.has_bom();
     }
 
 private:
@@ -49,10 +51,7 @@ private:
     std::optional<std::string> consume(char ch);
     void HandleCompleteTag();
 
-    std::string head_;
-    int utf16_ = 0;
-    int first_byte_ = -1;
-    unsigned surrogate_ = 0;
+    DocumentBytes bytes_;
 
     State state_ = State::kText;
     std::string tag_;

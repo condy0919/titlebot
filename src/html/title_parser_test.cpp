@@ -116,4 +116,23 @@ TEST_F(TitleParser, IgnoresRawTextAndAcceptsClosingTagAttributes) {
         EXPECT_EQ(document.parse(body.begin(), body.end()), "real");
     }
 }
+TEST_F(TitleParser, ReadsSplitByteOrderMarksAndSurrogates) {
+    for (bool little : {false, true}) {
+        std::string data = little ? "\xff\xfe" : "\xfe\xff";
+        for (char16_t unit : std::u16string_view(u"<title>🙂</title>")) {
+            data += static_cast<char>(little ? unit : unit >> 8);
+            data += static_cast<char>(little ? unit >> 8 : unit);
+        }
+        tb::TitleParser document;
+        std::optional<std::string> title;
+        for (char byte : data) {
+            title = document.parse(&byte, &byte + 1);
+        }
+        EXPECT_TRUE(document.unicode_bom());
+        EXPECT_EQ(title, "🙂");
+    }
+    std::string utf8 = "\xef\xbb\xbf<title>中文</title>";
+    EXPECT_EQ(parser.parse(utf8.begin(), utf8.end()), "中文");
+    EXPECT_TRUE(parser.unicode_bom());
+}
 } // namespace

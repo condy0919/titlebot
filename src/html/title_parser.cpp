@@ -115,37 +115,8 @@ std::string MetaCharset(std::string_view attrs) {
 } // namespace
 
 std::optional<std::string> TitleParser::ReadByte(char ch) {
-    if (head_.size() < 1024) {
-        head_.push_back(ch);
-        if (head_.size() == 2 && (head_ == "\xff\xfe" || head_ == "\xfe\xff")) {
-            utf16_ = head_[0] == '\xff' ? 1 : 2;
-            return {};
-        }
-    }
-    if (!utf16_) {
-        return consume(ch);
-    }
-    auto byte = static_cast<unsigned char>(ch);
-    if (first_byte_ < 0) {
-        first_byte_ = byte;
-        return {};
-    }
-    unsigned unit = utf16_ == 1 ? first_byte_ | (byte << 8) : (first_byte_ << 8) | byte;
-    first_byte_ = -1;
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-        surrogate_ = unit;
-        return {};
-    }
-    if (surrogate_ && unit >= 0xdc00 && unit <= 0xdfff) {
-        unit = 0x10000 + ((surrogate_ - 0xd800) << 10) + unit - 0xdc00;
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
-        unit = 0xfffd;
-    }
-    surrogate_ = 0;
-    char bytes[4];
-    auto end = boost::locale::utf::utf_traits<char>::encode(unit, bytes);
-    for (auto p = bytes; p != end; ++p) {
-        if (auto title = consume(*p)) {
+    for (char decoded : bytes_.Push(ch)) {
+        if (auto title = consume(decoded)) {
             return title;
         }
     }
