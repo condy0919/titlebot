@@ -581,6 +581,13 @@ std::string_view InvalidConfigField(const Config& config) {
             return "channels";
         }
     }
+    for (const auto& server : config.fallback_servers) {
+        if (server.host.empty() || std::ranges::any_of(server.host, [](unsigned char ch) {
+                return ch <= 32 || ch == 127;
+            }) || (!server.port.empty() && !token(server.port))) {
+            return "fallback_servers";
+        }
+    }
     for (const auto& [channel, key] : config.channel_keys) {
         if (std::ranges::find(config.channels, channel) == config.channels.end() ||
             channel.contains(',') || !token(key) || key.contains(',') ||
@@ -865,9 +872,15 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
     const auto initial = std::min(config.timeouts.reconnect_initial, config.timeouts.reconnect_max);
     auto delay = initial;
     std::size_t retries = 0;
+    std::size_t next_server = 0;
+    const ServerAddress primary{config.server, config.port};
     std::mt19937 jitter(std::random_device{}());
     while (true) {
         try {
+            const auto& server = next_server == 0 ? primary : config.fallback_servers[next_server - 1];
+            config.server = server.host;
+            config.port = server.port.empty() ? primary.port : server.port;
+            next_server = next_server == config.fallback_servers.size() ? 0 : next_server + 1;
             auto socket = co_await Connect(config);
             nicknames.Begin();
             auto stable = co_await Serve(std::move(socket), config, handlers, nicknames, tls);

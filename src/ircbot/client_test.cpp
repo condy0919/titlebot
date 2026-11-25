@@ -400,6 +400,31 @@ TEST_F(Client, AcceptsIpv6ServerLiteralsAndRetriesShortUnicodeNicknames) {
     EXPECT_TRUE(result.get());
 }
 
+TEST_F(Client, ConnectsToFallbackAfterPrimaryDisconnects) {
+    tcp::acceptor primary(io, {asio::ip::address_v4::loopback(), 0});
+    tcp::acceptor fallback(io, {asio::ip::address_v4::loopback(), 0});
+    auto config = Configuration(primary);
+    config.fallback_servers.push_back({"127.0.0.1", std::to_string(fallback.local_endpoint().port())});
+    asio::cancellation_signal stop;
+    auto result = asio::co_spawn(io, ircbot::Run(config),
+                                 asio::bind_cancellation_slot(stop.slot(), asio::use_future));
+    auto exercise = [&]() -> asio::awaitable<void> {
+        {
+            auto peer = co_await primary.async_accept(use_awaitable);
+            std::string input;
+            co_await Register(peer, input);
+        }
+        auto peer = co_await fallback.async_accept(use_awaitable);
+        std::string input;
+        co_await Register(peer, input);
+        stop.emit(asio::cancellation_type::terminal);
+        EXPECT_EQ(co_await Read(peer, input), "QUIT :Shutting down");
+    };
+    Exercise(exercise());
+    io.run();
+    EXPECT_TRUE(result.get());
+}
+
 TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     auto config = Configuration(listener);

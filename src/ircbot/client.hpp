@@ -41,6 +41,11 @@ struct Timeouts {
     std::chrono::milliseconds reconnect_max = std::chrono::seconds(60);
 };
 
+struct ServerAddress {
+    std::string host;
+    std::string port;
+};
+
 struct Config {
     std::string server;
     std::string port;
@@ -60,6 +65,7 @@ struct Config {
     bool reconnect_jitter = true;
     std::optional<std::size_t> max_retries{};
     std::map<std::string, std::string> channel_keys;
+    std::vector<ServerAddress> fallback_servers;
 };
 
 enum class SendError { kClosed, kInvalidMessage, kQueueFull, kCapabilityRequired };
