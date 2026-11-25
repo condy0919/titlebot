@@ -193,6 +193,11 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
     }
 }
 
+bool ValidChannelArgument(std::string_view channel) {
+    return !channel.empty() && !channel.starts_with(':') &&
+           std::ranges::none_of(channel, [](unsigned char ch) { return ch <= 32 || ch == 127 || ch == ','; });
+}
+
 bool PaceCommand(std::string_view command) {
     return !Equals(command, "PONG", CaseMapping::kAscii) &&
            !Equals(command, "CAP", CaseMapping::kAscii) &&
@@ -959,7 +964,7 @@ std::expected<void, SendError> Connection::Notice(std::string_view target, std::
 }
 
 std::expected<void, SendError> Connection::Join(std::string_view channel, std::string_view key) const {
-    if (channel.empty() || channel.find_first_of(" ,:") != channel.npos ||
+    if (!ValidChannelArgument(channel) ||
         key.find_first_of(" ,") != key.npos || key.starts_with(':')) {
         return std::unexpected(SendError::kInvalidMessage);
     }
@@ -986,7 +991,7 @@ std::expected<void, SendError> Connection::Join(std::string_view channel, std::s
 }
 
 std::expected<void, SendError> Connection::Part(std::string_view channel, std::string_view reason) const {
-    if (channel.empty() || channel.find_first_of(" ,:") != channel.npos) {
+    if (!ValidChannelArgument(channel)) {
         return std::unexpected(SendError::kInvalidMessage);
     }
     auto sent = reason.empty() ? Send("PART", {channel}) : Send("PART", {channel, reason});
