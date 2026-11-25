@@ -27,7 +27,7 @@ ctest --test-dir build --output-on-failure
 
 ## 独立使用 IRC 库
 
-`ircbot` 的公开头文件位于 `src/ircbot/`，CMake 目标为 `ircbot::ircbot`。它只依赖 C++23、Boost 头文件、OpenSSL 和线程支持，不依赖标题解析、HTTP 抓取、uchardet、zlib、Boost.URL 或 spdlog。只构建 IRC 库和示例：
+`ircbot` 的公开头文件位于 `include/ircbot/`，CMake 目标为 `ircbot::ircbot`。它只依赖 C++23、Boost 头文件、OpenSSL 和线程支持，不依赖标题解析、HTTP 抓取、uchardet、zlib、Boost.URL 或 spdlog。只构建 IRC 库和示例：
 
 ```sh
 cmake -S . -B build-irc -DTITLEBOT_BUILD_APP=OFF -DTITLEBOT_ENABLE_TESTS=OFF -DIRCBOT_BUILD_EXAMPLES=ON

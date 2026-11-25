@@ -3,11 +3,11 @@
 
 * 范围与依赖
 
-=ircbot= 是可独立使用的 C++23 IRC 客户端库。它管理连接、TLS、注册、
+=ircbot= 是 titlebot 仓库内通用的 C++23 IRC 客户端模块。它管理连接、TLS、注册、
 昵称冲突、心跳、重连、发送队列、IRCv3 能力协商和 SASL，业务由回调实现。
 titlebot 的网页抓取、标题缓存、URL 选择和回复限流均不属于该库。
 
-公开头文件位于 =src/ircbot/=，目标为 =ircbot::ircbot=。直接依赖为
+公开头文件位于 =include/ircbot/=，目标为 =ircbot::ircbot=。直接依赖为
 Boost 头文件、OpenSSL 和线程支持；不依赖 Boost.URL、uchardet、zlib、
 spdlog 或 GoogleTest。测试开启时才获取 GoogleTest。
 
@@ -60,7 +60,8 @@ flowchart LR
 
 =ircbot::Config= 包含服务器、端口、昵称、用户名、真实名称、频道列表、TLS、
 认证和超时设置。端口留空时，TLS 使用 6697，明文使用 6667；用户名留空时使用昵称。
-频道列表为独立字符串，例如 ={ "#one", "#two" }=。
+频道列表为独立字符串，例如 ={ "#one", "#two" }=。带密钥的频道同时配置
+=config.channel_keys["#two"] = "secret"=。运行期成功入队的 =Join= 和 =Part= 会更新下次重连使用的频道列表。
 
 =Run(config, handlers)= 返回
 =boost::asio::awaitable<std::expected<void, ircbot::ClientError>>=。
@@ -116,7 +117,8 @@ if (message && ircbot::IsCommand(*message, "PRIVMSG")) {
 | API | 输入与行为 |
 |-----+------------|
 | =Send(command, params, tags)= | 验证、序列化参数及可选 IRCv3 标签后入队 |
-| =Privmsg(target, text)= | 发送一条 =PRIVMSG= |
+| =Privmsg(target, text)=、=Notice(target, text)= | 发送一条聊天消息或通知 |
+| =Join(channel, key)=、=Part(channel, reason)= | 加入或离开频道，密钥与离开原因可省略 |
 | =SendLine(line)= | 验证已组装且不含 CRLF 的客户端行后入队 |
 
 这些 API 返回 =std::expected<void, SendError>=。成功表示已进入本地发送队列，
@@ -129,7 +131,13 @@ if (!sent) {
 }
 #+end_src
 
-发送队列有界，默认 64 行；控制消息和心跳由框架处理。应用仍需自行实现业务限流。
+连接默认可排队 64 行。=send_interval= 设置普通消息的最小发送间隔，默认零；
+=send_delay= 可为每一行选择间隔。注册、心跳和退出控制消息具有优先级。
+队满时可在会话执行器上等待 =WaitWritable()=，醒来后重新入队。并发发送者可能先占用空位。
+
+=TextBudget(target)= 优先使用观察到的自身前缀计算转发预算，缺少前缀时用昵称与 USERLEN、HOSTLEN 估算；
+已知前缀字节数时可直接调用 =PrivmsgTextBudget=。=SplitText("a猫b", 3)= 返回
+三个视图 ="a"=、="猫"= 和 ="b"=，视图有效期取决于输入字符串。
 发送 IRCv3 标签或 =TAGMSG= 前需要已启用 =message-tags=，否则返回
 =SendError::kCapabilityRequired=。
 
@@ -137,7 +145,16 @@ if (!sent) {
 
 框架发送 =CAP LS 302=，处理多段 =LS=、=ACK=、=NAK=、=LIST=，以及运行中的
 =NEW=、=DEL=。按服务器提供的能力请求配置项，完成注册阶段协商后发送 =CAP END=。
-可通过 =Connection::HasCapability(name)= 查询当前已启用状态。
+可通过 =Connection::HasCapability(name)= 查询当前已启用状态。=capabilities_changed=
+接收 CAP NEW/DEL，=isupport_changed= 接收导致状态变化的 005。=Feature("NETWORK")=
+只复制指定字段，=NickLength()= 直接返回当前限制。
+
+原始 =message= 回调接收所有消息。=middleware= 可依次筛选交给订阅者的消息。=subscriptions= 可按命令注册多个回调，命令名忽略
+ASCII 大小写，空命令匹配全部。=AsPrivmsg=、=AsNotice= 和 =AsMembershipChange= 从
+消息借用字段，=User()=、=Host()=、=RawTags()= 同样返回视图。回调可以捕获只移动的对象。
+
+设置 =sasl_credentials= 后，每次连接尝试从该函数获取 SASL 配置。获取失败会终止连接。
+内置认证机制为 PLAIN 和 EXTERNAL；908 数值消息可用于读取服务器公布的机制列表。
 
 | 能力 | 默认行为 | 框架提供的支持 |
 |------+----------+----------------|
@@ -237,10 +254,9 @@ handlers.message = [executor](ircbot::Connection connection,
 =boost/asio.hpp= 和 =ircbot/client.hpp=。业务后台任务的取消与完成策略由应用负责，
 =Run= 不会自动取消应用自行派生的任务。
 
-=Connection::Identity()= 可用于比较所属会话或建立弱订阅。连接关闭后，底层写入和定时器
-清理可能短暂保留会话对象；需要“disconnected 回调即失效”的业务订阅时，
-可在 =connected= 创建独立共享状态，在 =disconnected= 重置它，并给后台任务保存弱引用。
-titlebot 采用这种方式回收失效的排队请求。
+=Connection::Identity()= 提供会话身份的弱引用。框架在开始关闭时释放身份令牌，
+并通知 =StopToken()= 的订阅者。后台任务可以检查 =stop_requested()= 或注册停止回调。
+会话执行器可通过 =Executor()= 取得。
 
 * 多实例、线程与退出
 
@@ -255,15 +271,23 @@ auto executor = boost::asio::make_strand(io);
 boost::asio::co_spawn(executor, ircbot::Run(config, handlers), completion);
 #+end_src
 
-从外部线程发送消息，应先 =post= 到该实例的 executor；不要同时从多个线程操作同一个
-=Connection=。业务回调捕获的可变应用状态也必须遵守对应执行规则。
+工作线程可调用 =PostPrivmsg= 发送回复，或用 =Post= 将任意发送操作投递到会话执行器。
+句柄已过期时，完成回调可能在调用线程运行。直接读取连接状态和调用同步发送接口需在会话执行器上执行。业务回调捕获的可变应用状态也必须遵守对应执行规则。
 
 终止时向绑定到 =Run= 的 cancellation slot 发出 terminal 取消。已建立的会话会在
 有限时间内尝试发送 =QUIT= 并关闭，=Run= 正常返回成功。完整信号接线见 echo 示例。
 
 默认超时为连接 15 秒、注册 30 秒、无输入 90 秒后探测、探测宽限 30 秒、
 单次写入 10 秒。重连退避从 1 秒增长到最多 60 秒，稳定运行一分钟后重置。
-这些值均可通过 =Config::timeouts= 调整。
+可通过 =Config::timeouts= 调整边界，=reconnect_jitter= 控制区间内的随机抖动。
+=max_retries= 设置连续重试上限，=should_retry= 可根据错误类型和已重试次数决定是否继续。
+=fallback_servers= 按配置顺序轮换。双栈 DNS 结果优先尝试首选地址族，必要时交错启动另一地址族。
+TLS 最低版本为 1.2；=tls_server_name= 覆盖 SNI，证书仍按实际连接主机名验证。
+=peer_certificate_sha256= 可额外校验以 64 个十六进制字符表示的叶证书 SHA-256 指纹。=quit_reason= 指定退出原因，TLS 会话在 QUIT 后尝试有限时长的关闭握手。
+
+离线集成测试可将 =Connector= 作为 =Run= 的第三个参数，返回与客户端使用相同执行器的内存传输。
+设置独立的 =ManualClock=，在同一执行器上调用 =Advance= 后调度就绪事件，就能验证横跨注册期限与重连退避的行为。
+真实 TCP 的 DNS 查询和连接期限使用系统单调时钟。
 
 * 错误结果
 
@@ -276,9 +300,16 @@ boost::asio::co_spawn(executor, ircbot::Run(config, handlers), completion);
 | =kTlsConfiguration= | 检查本地 CA、证书、私钥和 TLS 初始化 |
 | =kAuthentication= | 检查必需 SASL 配置与服务器响应 |
 | =kHandler= | 检查业务生命周期或消息回调抛出的异常 |
+| =kTlsTrust= | 检查服务器身份、颁发者、有效期或配置的证书指纹 |
+| =kInvalidNickname= | 服务器在注册期以 432 拒绝昵称 |
+| =kNetwork= | 重试策略决定终止本次网络错误 |
+| =kRetryLimit= | 重试次数已达到配置上限 |
+| =kReconnectTimer= | 退避定时器异常 |
 
 普通网络断线、连接超时和会话超时由框架诊断并重连，不直接结束 =Run=。
-TLS 对端验证或握手失败发生在连接阶段，也会按连接失败重试。
+证书信任错误默认立即终止。=diagnostic_event= 提供严重级别、分类和可用的底层错误码。
+认证失败可读取注册错误，验证失败可读取 X.509 验证结果，业务回调异常可读取原始
+=exception_ptr=。事件消息视图只在本次回调中有效。
 
 | =SendError= | 含义 |
 |-------------+------|
