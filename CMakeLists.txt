@@ -25,9 +25,10 @@ add_library(ircbot
 add_library(ircbot::ircbot ALIAS ircbot)
 include(GNUInstallDirs)
 target_include_directories(ircbot PUBLIC
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
+target_include_directories(ircbot PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(ircbot PUBLIC cxx_std_23)
 target_compile_definitions(ircbot PUBLIC
   BOOST_ASIO_NO_DEPRECATED
@@ -36,8 +37,8 @@ target_compile_definitions(ircbot PUBLIC
 )
 target_link_libraries(ircbot PUBLIC Boost::headers Threads::Threads PRIVATE OpenSSL::SSL)
 install(TARGETS ircbot)
-install(FILES src/ircbot/client.hpp src/ircbot/features.hpp src/ircbot/message.hpp
-  src/ircbot/registration.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ircbot)
+install(FILES include/ircbot/client.hpp include/ircbot/features.hpp include/ircbot/message.hpp
+  include/ircbot/registration.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ircbot)
 
 if(IRCBOT_BUILD_EXAMPLES)
   add_executable(ircbot_echo examples/echo_bot.cpp)

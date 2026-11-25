@@ -1,4 +1,4 @@
-#include "client.hpp"
+#include "ircbot/client.hpp"
 
 #include <gtest/gtest.h>
 

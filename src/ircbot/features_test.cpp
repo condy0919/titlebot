@@ -1,4 +1,4 @@
-#include "features.hpp"
+#include "ircbot/features.hpp"
 
 #include <gtest/gtest.h>
 

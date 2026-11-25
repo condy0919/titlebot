@@ -1,4 +1,4 @@
-#include "message.hpp"
+#include "ircbot/message.hpp"
 
 #include <algorithm>
 #include <cstddef>

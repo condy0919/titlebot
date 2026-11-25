@@ -1,4 +1,4 @@
-#include "client.hpp"
+#include "ircbot/client.hpp"
 
 #include <algorithm>
 #include <array>

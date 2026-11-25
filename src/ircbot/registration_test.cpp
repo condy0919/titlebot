@@ -1,4 +1,4 @@
-#include "registration.hpp"
+#include "ircbot/registration.hpp"
 
 #include <gtest/gtest.h>
 
