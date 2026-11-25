@@ -239,7 +239,10 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
     if (IsCommand(message, "005")) {
         session->features.Observe(message);
         nicknames.limit = session->features.nick_length;
-    } else if (IsCommand(message, "433") && !session->registered && message.params.size() >= 2) {
+    } else if (!session->registered && message.params.size() >= 2 &&
+               (IsCommand(message, "433") || IsCommand(message, "437")) &&
+               !message.params[1].empty() &&
+               !session->features.channel_types.contains(message.params[1].front())) {
         if (auto nick = nicknames.Retry(config.nick, message.params[1])) {
             SendControl(session, "NICK " + *nick);
         } else {

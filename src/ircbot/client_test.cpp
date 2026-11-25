@@ -326,7 +326,7 @@ TEST_F(Client, AcceptsIpv6ServerLiteralsAndRetriesShortUnicodeNicknames) {
         auto first = co_await Read(peer, input);
         EXPECT_EQ(first.size(), 7u);
         EXPECT_TRUE(first.starts_with("NICK _"));
-        co_await Write(peer, ":s 433 * " + first.substr(5) + " :In use\r\n");
+        co_await Write(peer, ":s 437 * " + first.substr(5) + " :In use\r\n");
         auto second = co_await Read(peer, input);
         EXPECT_EQ(second.size(), 7u);
         EXPECT_TRUE(second.starts_with("NICK _"));

@@ -376,6 +376,7 @@ TEST_F(Server, LogsServerErrorsKicksAndJoinFailures) {
                              "ERROR :Closing link\r\n"
                              "PING :done\r\n";
         co_await asio::async_write(peer, asio::buffer(events), use_awaitable);
+        EXPECT_THAT(co_await ReadLine(peer, input), testing::StartsWith("NICK bot"));
         EXPECT_EQ(co_await ReadLine(peer, input), "PONG :done");
     };
     RunExercise(exercise(), std::chrono::seconds(3));
