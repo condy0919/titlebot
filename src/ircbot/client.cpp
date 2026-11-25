@@ -10,9 +10,9 @@
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 
-#include "detail/any_stream.hpp"
-#include "detail/connect.hpp"
-#include "detail/deadline.hpp"
+#include "common/any_stream.hpp"
+#include "common/connect.hpp"
+#include "common/deadline.hpp"
 
 namespace ircbot {
 namespace asio = boost::asio;
@@ -25,7 +25,7 @@ struct QueuedLine {
 };
 
 struct Session {
-    AnyStream transport;
+    tb::AnyStream transport;
     Handlers handlers;
     Timeouts timeouts;
     std::size_t queue_limit;
@@ -48,7 +48,7 @@ struct Session {
 };
 } // namespace detail
 namespace {
-using detail::Deadline;
+using tb::Deadline;
 using detail::Session;
 
 void Diagnose(const Handlers& handlers, std::string_view text) {
@@ -462,7 +462,7 @@ asio::awaitable<asio::ip::tcp::socket> Connect(const Config& config) {
         },
         asio::detached);
     auto endpoints = co_await resolver->async_resolve(config.server, config.port, use_awaitable);
-    co_await detail::ConnectEndpoints(socket, endpoints, expires);
+    co_await tb::ConnectEndpoints(socket, endpoints, expires);
     co_return std::move(*socket);
 }
 
