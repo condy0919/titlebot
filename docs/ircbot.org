@@ -31,7 +31,7 @@ ctest --test-dir build-irc --output-on-failure
 
 * 模块关系
 
-#+begin_src dot :file modules.svg :results file
+#+begin_src dot :file ircbot-module-dependencies.svg :results file :exports both
 digraph ircbot {
   rankdir=LR;
   node [shape=box];
@@ -53,7 +53,7 @@ digraph ircbot {
 #+end_src
 
 #+RESULTS:
-[[file:modules.svg]]
+[[file:ircbot-module-dependencies.svg]]
 
 协议组件可以独立进行离线解析和测试; 连接层通过事件回调把消息交给业务. 框架测试使用可注入的传输和时钟
 驱动会话; 默认连接器负责 DNS, TCP 和 TLS.
