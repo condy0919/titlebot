@@ -274,6 +274,12 @@ TEST_F(Client, ReturnsHandlerFailureAndClosesConnection) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     ircbot::Handlers handlers;
     bool completed = false;
+    std::exception_ptr original_exception;
+    handlers.diagnostic_event = [&](const ircbot::DiagnosticEvent& event) {
+        if (event.kind == ircbot::DiagnosticKind::kCallback) {
+            original_exception = event.exception;
+        }
+    };
     handlers.diagnostic = [&](std::string_view) { EXPECT_FALSE(completed); };
     handlers.connected = [](auto) { throw std::runtime_error("handler failure"); };
     std::promise<std::expected<void, ircbot::ClientError>> completion;
@@ -297,6 +303,7 @@ TEST_F(Client, ReturnsHandlerFailureAndClosesConnection) {
     io.run_for(100ms);
     ASSERT_EQ(result.wait_for(0s), std::future_status::ready);
     EXPECT_EQ(result.get().error(), ircbot::ClientError::kHandler);
+    EXPECT_TRUE(original_exception);
     completed = true;
     io.restart();
     io.run_for(20ms);

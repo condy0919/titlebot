@@ -257,6 +257,7 @@ struct Nicknames {
 
 struct Fatal {
     ClientError error;
+    std::exception_ptr exception{};
 };
 
 template <class Callback, class... Args>
@@ -265,7 +266,7 @@ void Invoke(const Callback& callback, Args&&... args) {
         try {
             callback(std::forward<Args>(args)...);
         } catch (...) {
-            throw Fatal{ClientError::kHandler};
+            throw Fatal{ClientError::kHandler, std::current_exception()};
         }
     }
 }
@@ -374,7 +375,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
     });
     auto executor = session->transport.get_executor();
     auto idle = std::make_shared<asio::steady_timer>(executor);
-    std::optional<ClientError> fatal;
+    std::optional<Fatal> fatal;
     bool connected = false;
     try {
         if (config.tls) {
@@ -453,14 +454,14 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
             }
         }
     } catch (const Fatal& error) {
-        fatal = error.error;
+        fatal = error;
     } catch (const boost::system::system_error& error) {
         if (error.code() != asio::error::operation_aborted && session->transport.IsOpen()) {
             Diagnose(session->handlers, "IRC connection lost", DiagnosticKind::kTransport,
                      Severity::kWarning, error.code());
         }
     } catch (...) {
-        fatal = ClientError::kHandler;
+        fatal = Fatal{ClientError::kHandler, std::current_exception()};
     }
     idle->cancel();
     session->closing = true;
@@ -508,7 +509,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
     }
     session->handlers = {};
     if (fatal) {
-        throw Fatal{*fatal};
+        throw *fatal;
     }
     if (stopping) {
         co_return std::nullopt;
@@ -847,6 +848,10 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
                 delay = config.timeouts.reconnect_initial;
             }
         } catch (const Fatal& error) {
+            if (error.exception) {
+                Diagnose(handlers, "IRC application callback failed", DiagnosticKind::kCallback,
+                         Severity::kError, {}, {}, error.exception);
+            }
             co_return std::unexpected(error.error);
         } catch (const boost::system::system_error& error) {
             if (cancellation.cancelled() != asio::cancellation_type::none) {
