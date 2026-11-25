@@ -442,6 +442,7 @@ TEST_F(Client, CompletesExternalAuthenticationOverVerifiedMutualTls) {
     auto config = Configuration(listener);
     config.server = "localhost";
     config.tls = true;
+    config.channel_keys["#room"] = "secret";
     config.ca_file = certificate;
     config.certificate_file = certificate;
     config.private_key_file = certificate;
@@ -467,7 +468,7 @@ TEST_F(Client, CompletesExternalAuthenticationOverVerifiedMutualTls) {
         co_await Write(peer, ":s 903 bot :Success\r\n");
         EXPECT_EQ(co_await Read(peer, input), "CAP END");
         co_await Write(peer, ":s 001 bot :Welcome\r\n");
-        EXPECT_EQ(co_await Read(peer, input), "JOIN #room");
+        EXPECT_EQ(co_await Read(peer, input), "JOIN #room secret");
         stop.emit(asio::cancellation_type::terminal);
         EXPECT_EQ(co_await Read(peer, input), "QUIT :Shutting down");
     };

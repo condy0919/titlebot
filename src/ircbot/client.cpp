@@ -323,7 +323,9 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
         session->registered_at = Clock::now();
         session->nick = message.params.front();
         for (const auto& channel : config.channels) {
-            SendControl(session, "JOIN " + channel);
+            const auto key = config.channel_keys.find(channel);
+            SendControl(session, key == config.channel_keys.end() ? "JOIN " + channel
+                                                                  : "JOIN " + channel + " " + key->second);
         }
         Invoke(session->handlers.ready, Connection(session));
     } else if (IsCommand(message, "NICK") && !message.params.empty() &&
@@ -560,6 +562,13 @@ bool ValidConfig(const Config& config) {
     }
     for (const auto& channel : config.channels) {
         if (!token(channel) || channel.size() > 505) {
+            return false;
+        }
+    }
+    for (const auto& [channel, key] : config.channel_keys) {
+        if (std::ranges::find(config.channels, channel) == config.channels.end() ||
+            channel.contains(',') || !token(key) || key.contains(',') ||
+            key.size() > 504 - std::min<std::size_t>(504, channel.size())) {
             return false;
         }
     }

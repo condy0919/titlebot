@@ -7,6 +7,7 @@
 #include <expected>
 #include <functional>
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -58,6 +59,7 @@ struct Config {
     std::chrono::milliseconds send_interval{0};
     bool reconnect_jitter = true;
     std::optional<std::size_t> max_retries{};
+    std::map<std::string, std::string> channel_keys;
 };
 
 enum class SendError { kClosed, kInvalidMessage, kQueueFull, kCapabilityRequired };
