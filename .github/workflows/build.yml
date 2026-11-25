@@ -16,7 +16,7 @@ jobs:
         with:
           lfs: true
       - name: 检查项目源码格式
-        run: find src -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-19 --dry-run --Werror {} +
+        run: find src examples -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-19 --dry-run --Werror {} +
       - name: 构建并运行测试
         env:
           CXX: g++-14
@@ -26,6 +26,12 @@ jobs:
           if [ "${{ matrix.sanitizer }}" = "true" ]; then
             export CXXFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
           fi
-          cmake -S . -B build -DTITLEBOT_ENABLE_TESTS=ON
+          cmake -S . -B build -DTITLEBOT_ENABLE_TESTS=ON -DIRCBOT_BUILD_EXAMPLES=ON
           cmake --build build --parallel 2
           ctest --test-dir build --output-on-failure --no-tests=error
+      - name: 验证 IRC 框架独立构建
+        env:
+          CXX: g++-14
+        run: |
+          cmake -S . -B build-irc -DTITLEBOT_BUILD_APP=OFF -DTITLEBOT_ENABLE_TESTS=OFF -DIRCBOT_BUILD_EXAMPLES=ON
+          cmake --build build-irc --parallel 2

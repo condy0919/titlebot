@@ -10,6 +10,7 @@ include(CTest)
 include(FetchContent)
 option(TITLEBOT_ENABLE_TESTS "Enable tests" ON)
 option(TITLEBOT_BUILD_APP "Build the titlebot library and executable" ON)
+option(IRCBOT_BUILD_EXAMPLES "Build the standalone IRC bot example" OFF)
 
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -30,6 +31,11 @@ target_compile_definitions(ircbot PUBLIC
   BOOST_ASIO_NO_DYNAMIC_BUFFER_V1
 )
 target_link_libraries(ircbot PUBLIC Boost::headers OpenSSL::SSL Threads::Threads)
+
+if(IRCBOT_BUILD_EXAMPLES)
+  add_executable(ircbot_echo examples/echo_bot.cpp)
+  target_link_libraries(ircbot_echo PRIVATE ircbot::ircbot)
+endif()
 
 if(TITLEBOT_BUILD_APP)
   find_package(PkgConfig REQUIRED)
@@ -73,10 +79,12 @@ if(TITLEBOT_ENABLE_TESTS)
   include(GoogleTest)
 
   add_executable(ircbot_tests
+    src/ircbot/client_test.cpp
     src/ircbot/features_test.cpp
     src/ircbot/message_test.cpp
     src/ircbot/registration_test.cpp
   )
+  target_compile_definitions(ircbot_tests PRIVATE IRCBOT_TEST_ROOT="${PROJECT_SOURCE_DIR}")
   target_link_libraries(ircbot_tests PRIVATE ircbot::ircbot GTest::gtest_main)
   gtest_discover_tests(ircbot_tests)
 
@@ -105,7 +113,7 @@ if(TITLEBOT_ENABLE_TESTS)
   endif()
 endif()
 
-foreach(target IN ITEMS ircbot ircbot_tests titlebot titlebot_cli
+foreach(target IN ITEMS ircbot ircbot_echo ircbot_tests titlebot titlebot_cli
     titlebot_unittests titlebot_server_tests)
   if(TARGET ${target} AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(${target} PRIVATE -Wall -Wextra)
