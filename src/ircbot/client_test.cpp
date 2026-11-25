@@ -106,6 +106,8 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
         auto peer = co_await listener.async_accept(use_awaitable);
         std::string input;
         co_await Register(peer, input);
+        co_await Write(peer, std::string(18000, 'x') + "\r\nPING :after-long-line\r\n");
+        EXPECT_EQ(co_await Read(peer, input), "PONG :after-long-line");
         co_await Write(peer, ":s 005 bot CASEMAPPING=ascii :supported\r\n"
                              ":bot!u@h NICK :bot[\r\n"
                              "@label=hello\\sworld :bot{!u@h pRiVmSg #room :hello\r\n");

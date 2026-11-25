@@ -1,6 +1,7 @@
 #include "client.hpp"
 
 #include <algorithm>
+#include <array>
 #include <deque>
 #include <exception>
 #include <optional>
@@ -382,24 +383,44 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
             CloseOnTimeout(registration.Wait(), session,
                            "IRC registration timed out before welcome; closing connection"),
             asio::detached);
-        std::string input;
+        // Include CRLF in the IRCv3 wire limit. Compact only after consuming a read batch.
+        std::array<char, 8703> input;
+        std::size_t used = 0;
+        bool discarding = false;
         while (true) {
-            // IRCv3 allows 8191 bytes of tags in addition to a 512-byte ordinary line.
-            auto count = co_await asio::async_read_until(
-                session->transport, asio::dynamic_buffer(input, 8703), "\r\n", use_awaitable);
-            auto parsed = ParseMessage(std::string_view(input).substr(0, count - 2));
-            if (!parsed) {
-                Diagnose(session, "Ignoring malformed IRC message");
-                input.erase(0, count);
-                continue;
+            const auto count = co_await session->transport.async_read_some(
+                asio::buffer(input.data() + used, input.size() - used), use_awaitable);
+            const std::string_view batch(input.data(), used + count);
+            std::size_t begin = 0;
+            auto end = batch.find("\r\n", used == 0 ? 0 : used - 1);
+            while (end != batch.npos) {
+                if (discarding) {
+                    discarding = false;
+                } else if (auto parsed = ParseMessage(batch.substr(begin, end - begin))) {
+                    const bool registered = session->registered;
+                    session->last_input = Clock::now();
+                    session->probe_sent = false;
+                    Handle(session, *parsed, config, nicknames, registration);
+                    if (!registered && session->registered) {
+                        asio::co_spawn(executor, WatchIdle(session, idle), asio::detached);
+                    }
+                } else {
+                    Diagnose(session, "Ignoring malformed IRC message");
+                }
+                begin = end + 2;
+                end = batch.find("\r\n", begin);
             }
-            const bool registered = session->registered;
-            session->last_input = Clock::now();
-            session->probe_sent = false;
-            Handle(session, *parsed, config, nicknames, registration);
-            input.erase(0, count);
-            if (!registered && session->registered) {
-                asio::co_spawn(executor, WatchIdle(session, idle), asio::detached);
+            used = batch.size() - begin;
+            if (used == input.size() || discarding) {
+                if (!discarding) {
+                    Diagnose(session, "Ignoring oversized IRC line");
+                    discarding = true;
+                }
+                used = batch.ends_with('\r') ? 1 : 0;
+                begin = batch.size() - used;
+            }
+            if (begin && used) {
+                std::char_traits<char>::move(input.data(), input.data() + begin, used);
             }
         }
     } catch (const Fatal& error) {
