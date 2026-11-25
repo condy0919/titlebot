@@ -389,7 +389,7 @@ SerializeMessage(std::string_view command, std::span<const std::string_view> par
         }
     }
     std::string result;
-    result.reserve(body_size + (tags.empty() ? 0 : tag_size + 2));
+    result.reserve(body_size + 2 + (tags.empty() ? 0 : tag_size + 2));
     if (!tags.empty()) {
         result += '@';
         for (std::size_t i = 0; i < tags.size(); ++i) {

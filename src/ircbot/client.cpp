@@ -140,10 +140,15 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
             if (session->queue.front().paced && (session->send_interval.count() > 0 || session->send_delay)) {
                 const auto now = detail::Now(session->clock);
                 if (now < session->next_send) {
-                    session->pacing.emplace(session->executor, session->clock, session->next_send);
+                    if (!session->pacing) {
+                        session->pacing.emplace(session->executor, session->clock);
+                    }
+                    session->pacing->expires_at(session->next_send);
                     boost::system::error_code ec;
                     co_await session->pacing->async_wait(asio::redirect_error(use_awaitable, ec));
-                    session->pacing.reset();
+                    if (ec && ec != asio::error::operation_aborted) {
+                        throw boost::system::system_error(ec);
+                    }
                     continue;
                 }
                 auto interval = session->send_interval;
