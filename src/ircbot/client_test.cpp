@@ -91,6 +91,8 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
         }
         EXPECT_EQ(message.Tag("label"), "hello world");
         EXPECT_EQ(connection.casemapping(), ircbot::CaseMapping::kAscii);
+        EXPECT_EQ(connection.Feature("CASEMAPPING"), "ascii");
+        EXPECT_EQ(connection.NickLength(), 9u);
         EXPECT_FALSE(connection.IsSelf("bot{"));
         EXPECT_TRUE(connection.Privmsg(message.params[0], message.params[1]));
         EXPECT_EQ(connection.SendLine("@x=a; PRIVMSG #room :empty-tag").error(),

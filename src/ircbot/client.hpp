@@ -7,6 +7,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -85,6 +86,9 @@ public:
     std::string Nick() const;
     CaseMapping casemapping() const;
     ServerFeatures Features() const;
+    /// For example, Feature("NETWORK") returns the current 005 value when advertised.
+    std::optional<std::string> Feature(std::string_view name) const;
+    std::size_t NickLength() const;
     bool HasCapability(std::string_view name) const;
     /// For example, IsSelf("BOT") is true when the current nickname is "bot".
     bool IsSelf(std::string_view nick) const;

@@ -2,6 +2,7 @@
 #define IRCBOT_FEATURES_HPP_
 
 #include <cstddef>
+#include <functional>
 #include <map>
 #include <string>
 #include <string_view>
@@ -25,7 +26,7 @@ struct ServerFeatures {
     std::size_t nick_length = 9;
     std::string channel_types = "#&";
     std::string status_prefixes;
-    std::map<std::string, std::string> values;
+    std::map<std::string, std::string, std::less<>> values;
 
     /// Apply 005 tokens across messages, preserving unknown advertised values within the entry
     /// and key/value byte budgets above. Updates and recognized fields may evict unknown entries;

@@ -677,6 +677,21 @@ ServerFeatures Connection::Features() const {
     return session ? session->features : ServerFeatures{};
 }
 
+std::optional<std::string> Connection::Feature(std::string_view name) const {
+    if (auto session = session_.lock()) {
+        const auto& values = session->features.values;
+        if (auto it = values.find(name); it != values.end()) {
+            return it->second;
+        }
+    }
+    return {};
+}
+
+std::size_t Connection::NickLength() const {
+    auto session = session_.lock();
+    return session ? session->features.nick_length : ServerFeatures{}.nick_length;
+}
+
 bool Connection::HasCapability(std::string_view name) const {
     auto session = session_.lock();
     return session && session->registration.enabled().contains(name);
