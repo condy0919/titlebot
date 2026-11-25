@@ -174,6 +174,68 @@ TEST_F(SchedulerTest, ReusesRecentTitlesAndFailures) {
     EXPECT_EQ(delivered, (std::vector<std::string>{"#room found", "#other found"}));
     EXPECT_EQ(scheduler->stats().completed, 2u);
 }
+
+TEST_F(SchedulerTest, RemovesExpiredWaitingSubscribersBeforeApplyingCapacity) {
+    scheduler = std::make_shared<tb::FetchScheduler>(
+        io.get_executor(),
+        [this](tb::PrivMsg message) -> asio::awaitable<tb::FetchResult> {
+            started.push_back(message.url);
+            boost::system::error_code ignored;
+            co_await release.async_wait(asio::redirect_error(asio::use_awaitable, ignored));
+            co_return message.url;
+        },
+        tb::SchedulerLimits{.active = 1, .per_host = 1, .queued = 2});
+    auto old_session = std::make_shared<int>(1);
+    for (auto url : {"old/1", "old/2", "old/3"}) {
+        scheduler->Submit({.who = "alice", .channel = "#r", .protocol = "https", .url = url},
+                          [](const std::string&) { ADD_FAILURE() << "Expired subscriber called"; },
+                          {old_session, "#old"});
+    }
+    io.poll();
+    old_session.reset();
+    Submit("new/");
+    while (release.cancel()) {
+        io.poll();
+    }
+    EXPECT_EQ(started, (std::vector<std::string>{"old/1", "new/"}));
+    EXPECT_EQ(delivered, (std::vector<std::string>{"#room new/"}));
+    EXPECT_EQ(scheduler->stats().queue_drops, 0u);
+}
+
+TEST_F(SchedulerTest, KeepsSharedWaitingJobsWithLiveOrUnboundSubscribers) {
+    auto expired = std::make_shared<int>(1);
+    auto live = std::make_shared<int>(2);
+    for (auto url : {"same/1", "same/2", "same/shared"}) {
+        scheduler->Submit({.who = "alice", .channel = "#r", .protocol = "https", .url = url},
+                          [](const std::string&) { ADD_FAILURE() << "Expired subscriber called"; },
+                          {expired, "#old"});
+    }
+    scheduler->Submit({.who = "alice", .channel = "#r", .protocol = "https", .url = "same/shared"},
+                      [this](const std::string& title) { delivered.push_back("live " + title); },
+                      {live, "#new"});
+    Submit("same/shared");
+    io.poll();
+    expired.reset();
+    while (release.cancel()) {
+        io.poll();
+    }
+    EXPECT_EQ(started, (std::vector<std::string>{"same/1", "same/2", "same/shared"}));
+    EXPECT_EQ(delivered, (std::vector<std::string>{"live same/shared", "#room same/shared"}));
+}
+
+TEST_F(SchedulerTest, DeduplicatesTargetsUsingTheConnectionsCaseMapping) {
+    auto session = std::make_shared<int>(1);
+    for (auto target : {"#room[", "#room{", "#ROOM["}) {
+        scheduler->Submit({.who = "alice", .channel = "#r", .protocol = "https", .url = "same/"},
+                          [this, target](const std::string&) { delivered.push_back(target); },
+                          {session, target, ircbot::CaseMapping::kAscii});
+    }
+    io.poll();
+    release.cancel();
+    io.run();
+    EXPECT_EQ(delivered, (std::vector<std::string>{"#room[", "#room{"}));
+    EXPECT_EQ(scheduler->stats().duplicates, 1u);
+}
 TEST_F(SchedulerTest, AppliesCustomReplyQuotas) {
     tb::IrcReplyPolicy limiter({.per_target = 1, .targets = 1});
     tb::Clock::time_point start{};

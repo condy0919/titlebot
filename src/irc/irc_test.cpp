@@ -139,4 +139,25 @@ TEST_F(Irc, KeepsInternalUrlPunctuation) {
     ASSERT_TRUE(msg);
     EXPECT_EQ(msg->url, "example.org/@a,b;c");
 }
+
+TEST_F(Irc, ParsesTaggedAndMixedCasePrivmsg) {
+    const auto message =
+        ircbot::ParseMessage("@time=2026-11-25T00:00:00Z;label=a\\sb :alice!u@h pRiVmSg #room "
+                             ":https://first.example/ https://second.example/");
+    ASSERT_TRUE(message);
+    auto parsed = tb::parse_privmsg(*message);
+    ASSERT_TRUE(parsed);
+    EXPECT_EQ(parsed->who, "alice");
+    EXPECT_EQ(parsed->channel, "#room");
+    EXPECT_EQ(parsed->url, "first.example/");
+    EXPECT_FALSE(tb::parse_privmsg("@label=a :alice!u@h notice #room :https://example.org/"));
+}
+
+TEST_F(Irc, RejectsTruncatedAndExtraCommandParameters) {
+    for (auto input : {"", ":", ":a!b", ":a!b PRIV", ":a!b PRIVMSG", ":a!b PRIVMSG #r",
+                       ":a!b PRIVMSG #r extra :https://example.org/", "@label=x",
+                       ":server PRIVMSG #r :https://example.org/"}) {
+        EXPECT_FALSE(tb::parse_privmsg(input)) << input;
+    }
+}
 } // namespace

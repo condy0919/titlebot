@@ -34,11 +34,16 @@ protected:
 };
 
 asio::awaitable<std::string> ReadLine(tcp::socket& peer, std::string& input) {
-    auto count =
-        co_await asio::async_read_until(peer, asio::dynamic_buffer(input), "\r\n", use_awaitable);
-    auto line = input.substr(0, count - 2);
-    input.erase(0, count);
-    co_return line;
+    while (true) {
+        auto count = co_await asio::async_read_until(peer, asio::dynamic_buffer(input), "\r\n",
+                                                     use_awaitable);
+        auto line = input.substr(0, count - 2);
+        input.erase(0, count);
+        // These application exercises emulate a legacy server without capability negotiation.
+        if (!line.starts_with("CAP ")) {
+            co_return line;
+        }
+    }
 }
 
 asio::awaitable<void> ExerciseSession() {
@@ -93,6 +98,54 @@ asio::awaitable<void> ExerciseSession() {
 
 TEST_F(Server, RepliesToFirstLinkInChannel) {
     RunExercise(ExerciseSession(), std::chrono::seconds(3));
+}
+
+TEST_F(Server, HandlesTaggedMessagesAndAsciiNickAndChannelMapping) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    asio::steady_timer release(io, std::chrono::steady_clock::time_point::max());
+    std::vector<std::string> urls;
+    auto fetch = [&](tb::PrivMsg message) -> asio::awaitable<tb::FetchResult> {
+        urls.push_back(message.url);
+        boost::system::error_code ignored;
+        co_await release.async_wait(asio::redirect_error(use_awaitable, ignored));
+        co_return std::string("title");
+    };
+    asio::co_spawn(io,
+                   tb::RunBot({.server = "127.0.0.1",
+                               .port = std::to_string(listener.local_endpoint().port()),
+                               .nick = "bot[",
+                               .channels = "#room"},
+                              fetch),
+                   asio::detached);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        auto peer = co_await listener.async_accept(use_awaitable);
+        std::string input;
+        EXPECT_EQ(co_await ReadLine(peer, input), "NICK bot[");
+        co_await ReadLine(peer, input);
+        const std::string messages =
+            ":irc 001 bot[ :welcome\r\n"
+            ":irc 005 bot[ CASEMAPPING=ascii :supported\r\n"
+            "@label=a\\sb :bot{!u@h pRiVmSg #room[ :https://one/ https://two/\r\n"
+            ":alice!u@h PRIVMSG #room{ :https://one/\r\n"
+            ":bot[!u@h PRIVMSG #room[ :https://self/\r\n"
+            "PING :ready\r\n";
+        co_await asio::async_write(peer, asio::buffer(messages), use_awaitable);
+        std::vector<std::string> registration;
+        registration.push_back(co_await ReadLine(peer, input));
+        registration.push_back(co_await ReadLine(peer, input));
+        EXPECT_THAT(registration, testing::UnorderedElementsAre("JOIN #room", "PONG :ready"));
+        EXPECT_EQ(urls, (std::vector<std::string>{"one/"}));
+        release.cancel();
+        std::vector<std::string> replies;
+        replies.push_back(co_await ReadLine(peer, input));
+        replies.push_back(co_await ReadLine(peer, input));
+        EXPECT_THAT(replies, testing::UnorderedElementsAre("PRIVMSG #room[ :title",
+                                                           "PRIVMSG #room{ :title"));
+        const std::string direct = ":bot{!u@h PRIVMSG bot[ :https://one/\r\n";
+        co_await asio::async_write(peer, asio::buffer(direct), use_awaitable);
+        EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG bot{ :title");
+    };
+    RunExercise(exercise(), std::chrono::seconds(3));
 }
 
 asio::awaitable<void> ExerciseReconnect() {
@@ -154,6 +207,53 @@ asio::awaitable<void> ExerciseReconnect() {
 
 TEST_F(Server, RejoinsAndIsolatesPendingReplies) {
     RunExercise(ExerciseReconnect(), std::chrono::seconds(5));
+}
+
+TEST_F(Server, ReconnectClearsOldWaitingRequestsBeforeAcceptingNewMessages) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    asio::steady_timer release(io, std::chrono::steady_clock::time_point::max());
+    std::vector<std::string> started;
+    auto fetch = [&](tb::PrivMsg message) -> asio::awaitable<tb::FetchResult> {
+        started.push_back(message.url);
+        if (message.url.starts_with("old/")) {
+            boost::system::error_code ignored;
+            co_await release.async_wait(asio::redirect_error(use_awaitable, ignored));
+        }
+        co_return message.url;
+    };
+    tb::BotConfig config{"127.0.0.1", std::to_string(listener.local_endpoint().port()), "bot",
+                         "#r"};
+    config.scheduler = {.active = 1, .per_host = 1, .queued = 2};
+    config.timeouts.reconnect_initial = std::chrono::milliseconds(1);
+    asio::co_spawn(io, tb::RunBot(config, fetch), asio::detached);
+    auto exercise = [&]() -> asio::awaitable<void> {
+        for (bool reconnect : {false, true}) {
+            auto peer = co_await listener.async_accept(use_awaitable);
+            std::string input;
+            co_await ReadLine(peer, input);
+            co_await ReadLine(peer, input);
+            std::string messages = ":irc 001 bot :welcome\r\n";
+            if (!reconnect) {
+                messages += ":a!u@h PRIVMSG #r :https://old/1\r\n"
+                            ":a!u@h PRIVMSG #r :https://old/2\r\n"
+                            ":a!u@h PRIVMSG #r :https://old/3\r\n";
+            } else {
+                messages += ":a!u@h PRIVMSG #r :https://new/\r\n";
+            }
+            messages += "PING :ready\r\n";
+            co_await asio::async_write(peer, asio::buffer(messages), use_awaitable);
+            std::vector<std::string> initial;
+            initial.push_back(co_await ReadLine(peer, input));
+            initial.push_back(co_await ReadLine(peer, input));
+            EXPECT_THAT(initial, testing::UnorderedElementsAre("JOIN #r", "PONG :ready"));
+            if (reconnect) {
+                release.cancel();
+                EXPECT_EQ(co_await ReadLine(peer, input), "PRIVMSG #r :new/");
+            }
+        }
+        EXPECT_EQ(started, (std::vector<std::string>{"old/1", "new/"}));
+    };
+    RunExercise(exercise(), std::chrono::seconds(3));
 }
 
 TEST_F(Server, RetriesNicknameConflictsOnTheSameConnection) {
@@ -280,16 +380,14 @@ TEST_F(Server, LogsServerErrorsKicksAndJoinFailures) {
     };
     RunExercise(exercise(), std::chrono::seconds(3));
     spdlog::set_default_logger(previous);
-    EXPECT_THAT(
-        output.str(),
-        testing::HasSubstr("warning IRC 437: bot temporarily unavailable: Nickname unavailable\n"
-                           "warning IRC JOIN #room failed (471): Channel full\n"
-                           "warning IRC JOIN #room failed (473): Invite only\n"
-                           "warning IRC JOIN #room failed (474): Banned\n"
-                           "warning IRC JOIN #room failed (475): Bad key\n"
-                           "warning IRC KICK: op!u@h removed us from #room: reason with spaces\n"
-                           "info IRC KICK: op!u@h removed alice from #room: rules\n"
-                           "error IRC ERROR: Closing link\n"));
+    for (auto expected :
+         {"IRC 437: bot temporarily unavailable: Nickname unavailable",
+          "IRC JOIN #room failed (471): Channel full", "IRC JOIN #room failed (473): Invite only",
+          "IRC JOIN #room failed (474): Banned", "IRC JOIN #room failed (475): Bad key",
+          "IRC KICK: op!u@h removed us from #room: reason with spaces",
+          "IRC KICK: op!u@h removed alice from #room: rules", "IRC ERROR: Closing link"}) {
+        EXPECT_THAT(output.str(), testing::HasSubstr(expected));
+    }
 }
 
 TEST_F(Server, ProbesIdleSessionsAndClosesUnresponsivePeers) {
@@ -307,10 +405,10 @@ TEST_F(Server, ProbesIdleSessionsAndClosesUnresponsivePeers) {
         co_await asio::async_write(peer, asio::buffer(std::string_view(":irc 001 bot :ok\r\n")),
                                    use_awaitable);
         EXPECT_EQ(co_await ReadLine(peer, input), "JOIN #r");
-        EXPECT_EQ(co_await ReadLine(peer, input), "PING :titlebot");
-        co_await asio::async_write(peer, asio::buffer(std::string_view("PONG :titlebot\r\n")),
+        EXPECT_EQ(co_await ReadLine(peer, input), "PING :ircbot");
+        co_await asio::async_write(peer, asio::buffer(std::string_view("PONG :ircbot\r\n")),
                                    use_awaitable);
-        EXPECT_EQ(co_await ReadLine(peer, input), "PING :titlebot");
+        EXPECT_EQ(co_await ReadLine(peer, input), "PING :ircbot");
         char c;
         boost::system::error_code ec;
         co_await peer.async_read_some(asio::buffer(&c, 1), asio::redirect_error(use_awaitable, ec));

@@ -5,6 +5,8 @@
 #include <string>
 #include <string_view>
 
+#include "ircbot/message.hpp"
+
 namespace tb {
 struct PrivMsg {
     std::string who;
@@ -32,6 +34,10 @@ std::string normalize(std::string_view s);
 /// unhandled line. For example, parse_privmsg(":a!u@h PRIVMSG #r :https://one/ http://two/")
 /// returns a PrivMsg with who="a", channel="#r", protocol="https", and url="one/".
 std::optional<PrivMsg> parse_privmsg(std::string_view s);
+
+/// Reuse an already parsed message. A tagged lowercase PRIVMSG containing https://one/
+/// yields the same first URL as the corresponding untagged uppercase command.
+std::optional<PrivMsg> parse_privmsg(const ircbot::MessageView& message);
 } // namespace tb
 
 #endif // TITLEBOT_IRC_HPP_

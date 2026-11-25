@@ -13,14 +13,16 @@ TEST_F(IrcPolicy, LimitsSessionAndTargetSeparately) {
 TEST_F(IrcPolicy, KeepsCompleteUtf8AndSanitizesControls) {
     EXPECT_EQ(tb::FormatReplyLine("#a", "a\n中", 15), "PRIVMSG #a :a ");
 }
-TEST_F(IrcPolicy, KeepsSuffixWithinAdvertisedLimit) {
-    tb::NicknameNegotiator names;
-    names.Observe("bot NICKLEN=2 :supported");
-    auto first = names.Retry("中文", "中文");
-    auto second = names.Retry("中文", "中文");
-    ASSERT_TRUE(first && second);
-    EXPECT_EQ(first->size(), 2u);
-    EXPECT_EQ(first->front(), '_');
-    EXPECT_NE(first, second);
+TEST_F(IrcPolicy, UsesAdvertisedCaseMappingForTargetLimits) {
+    tb::IrcReplyPolicy ascii({.per_target = 1});
+    EXPECT_TRUE(ascii.Allow("#room[", {}, ircbot::CaseMapping::kAscii));
+    EXPECT_TRUE(ascii.Allow("#room{", {}, ircbot::CaseMapping::kAscii));
+    EXPECT_FALSE(ascii.Allow("#ROOM[", {}, ircbot::CaseMapping::kAscii));
+
+    tb::IrcReplyPolicy strict({.per_target = 1});
+    EXPECT_TRUE(strict.Allow("#room^", {}, ircbot::CaseMapping::kStrictRfc1459));
+    EXPECT_TRUE(strict.Allow("#room~", {}, ircbot::CaseMapping::kStrictRfc1459));
+    EXPECT_TRUE(strict.Allow("#room[", {}, ircbot::CaseMapping::kStrictRfc1459));
+    EXPECT_FALSE(strict.Allow("#room{", {}, ircbot::CaseMapping::kStrictRfc1459));
 }
 } // namespace

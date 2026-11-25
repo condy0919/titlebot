@@ -31,7 +31,12 @@ constexpr std::pair<FetchError, const char*> kErrorNames[] = {
 FetchScheduler::FetchScheduler(asio::any_io_executor executor, Fetch fetch, SchedulerLimits limits)
     : executor_(std::move(executor)), fetch_(std::move(fetch)), limits_(limits), cache_(limits) {}
 
+void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
+    Submit(std::move(message), std::move(deliver), Destination{});
+}
+
 void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destination) {
+    PruneExpiredSubscribers();
     if (auto cached = cache_.Find(message.protocol + "://" + message.url, Clock::now())) {
         ++stats_.cache_hits;
         ScheduleReport();
@@ -55,8 +60,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
                 std::ranges::any_of(job.destinations, [&](const Destination& existing) {
                     return !existing.session.owner_before(destination.session) &&
                            !destination.session.owner_before(existing.session) &&
-                           std::ranges::equal(existing.target, destination.target, {}, FoldIrcCase,
-                                              FoldIrcCase);
+                           ircbot::Equals(existing.target, destination.target, destination.mapping);
                 })) {
                 ++stats_.duplicates;
                 return;
@@ -104,6 +108,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
 }
 
 void FetchScheduler::Pump() {
+    PruneExpiredSubscribers();
     for (auto job = jobs_.begin(); job != jobs_.end() && active_ < limits_.active; ++job) {
         if (job->running || host_active_[job->host] >= limits_.per_host) {
             continue;
@@ -138,8 +143,30 @@ void FetchScheduler::Pump() {
     }
 }
 
+void FetchScheduler::PruneExpiredSubscribers() {
+    const std::weak_ptr<void> unbound;
+    for (auto job = jobs_.begin(); job != jobs_.end();) {
+        for (std::size_t i = job->destinations.size(); i > 0; --i) {
+            const auto& session = job->destinations[i - 1].session;
+            // An empty identity means an unbound caller, which remains a valid subscriber.
+            const bool bound = session.owner_before(unbound) || unbound.owner_before(session);
+            if (bound && session.expired()) {
+                job->destinations.erase(job->destinations.begin() + (i - 1));
+                job->replies.erase(job->replies.begin() + (i - 1));
+                --subscribers_;
+            }
+        }
+        if (!job->running && job->replies.empty()) {
+            job = jobs_.erase(job);
+        } else {
+            ++job;
+        }
+    }
+}
+
 void FetchScheduler::Complete(std::list<Job>::iterator job, Clock::time_point start,
                               const FetchResult& result) {
+    PruneExpiredSubscribers();
     ++stats_.completed;
     stats_.elapsed += std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start);
     if (!result) {

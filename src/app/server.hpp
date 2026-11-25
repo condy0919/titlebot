@@ -9,15 +9,10 @@
 
 #include "common/runtime_limits.hpp"
 #include "http/fetcher.hpp"
+#include "ircbot/client.hpp"
 
 namespace tb {
-struct SessionTimeouts {
-    std::chrono::milliseconds registration_timeout = std::chrono::seconds(30);
-    std::chrono::milliseconds connect_timeout = std::chrono::seconds(15);
-    std::chrono::milliseconds idle_timeout = std::chrono::seconds(90);
-    std::chrono::milliseconds ping_timeout = std::chrono::seconds(30);
-    std::chrono::milliseconds stable_session = std::chrono::minutes(1);
-};
+using SessionTimeouts = ircbot::Timeouts;
 
 struct BotConfig {
     std::string server;
@@ -29,6 +24,11 @@ struct BotConfig {
     SchedulerLimits scheduler{};
     ReplyLimits replies{};
     SessionTimeouts timeouts{};
+    ircbot::RegistrationConfig registration{};
+    std::string server_password{};
+    std::string ca_file{};
+    std::string certificate_file{};
+    std::string private_key_file{};
 };
 
 /// Connect, register, and reconnect with backoff after a disconnect or registration timeout.

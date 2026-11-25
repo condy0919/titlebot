@@ -18,6 +18,7 @@
 #include "common/runtime_limits.hpp"
 #include "http/fetcher.hpp"
 #include "irc/irc.hpp"
+#include "ircbot/features.hpp"
 #include "title_cache.hpp"
 
 namespace tb {
@@ -36,10 +37,12 @@ public:
     struct Destination {
         std::weak_ptr<void> session;
         std::string target;
+        ircbot::CaseMapping mapping = ircbot::CaseMapping::kRfc1459;
     };
     /// Fetch a title once for pending requests for the same link.
     /// For example, simultaneous submissions from #a and #b deliver once to each channel.
-    void Submit(PrivMsg message, Deliver deliver, Destination destination = {});
+    void Submit(PrivMsg message, Deliver deliver, Destination destination);
+    void Submit(PrivMsg message, Deliver deliver);
 
     /// Count a dropped outgoing reply. RecordReplyDrop() increments stats().reply_drops by one.
     void RecordReplyDrop();
@@ -78,6 +81,7 @@ private:
     };
 
     void Pump();
+    void PruneExpiredSubscribers();
     void Complete(std::list<Job>::iterator job, Clock::time_point start, const FetchResult& result);
     void ScheduleReport();
 

@@ -4,7 +4,8 @@
 #include <cctype>
 
 #include <boost/beast/core/string.hpp>
-#include <boost/url/grammar/ci_string.hpp>
+
+#include "ircbot/features.hpp"
 
 namespace {
 // HTTP chars that need quoting.
@@ -32,19 +33,7 @@ constexpr bool is_tspecial(char c) {
 
 namespace tb {
 char FoldIrcCase(char c) {
-    // IRC nicknames also treat these punctuation pairs as equivalent.
-    switch (c) {
-    case '[':
-        return '{';
-    case ']':
-        return '}';
-    case '\\':
-        return '|';
-    case '^':
-        return '~';
-    default:
-        return boost::urls::grammar::to_lower(c);
-    }
+    return ircbot::FoldCase(c, ircbot::CaseMapping::kRfc1459);
 }
 
 std::string_view TakeIrcToken(std::string_view& rest) {
@@ -102,26 +91,26 @@ std::string normalize(std::string_view s) {
 // schema: http
 // url: www.baidu.com
 std::optional<PrivMsg> parse_privmsg(std::string_view s) {
-    if (s.empty() || s.front() != ':') {
+    auto message = ircbot::ParseMessage(s);
+    if (!message) {
         return std::nullopt;
     }
+    return parse_privmsg(*message);
+}
 
-    std::string_view rest(s);
-    auto prefix = TakeIrcToken(rest).substr(1);
+std::optional<PrivMsg> parse_privmsg(const ircbot::MessageView& message) {
+    auto prefix = message.prefix;
     auto bang = prefix.find('!');
-    if (bang == prefix.npos || !bang || TakeIrcToken(rest) != "PRIVMSG") {
+    if (bang == prefix.npos || !bang || !ircbot::IsCommand(message, "PRIVMSG") ||
+        message.params.size() != 2) {
         return std::nullopt;
     }
-    auto who = prefix.substr(0, bang);
-    auto target = TakeIrcToken(rest);
+    auto who = message.Nick();
+    auto target = message.params[0];
+    auto rest = message.params[1];
     auto control = [](unsigned char c) { return c < 32 || c == 127; };
     if (target.empty() || target.starts_with(':') || std::ranges::any_of(prefix, control) ||
         std::ranges::any_of(target, control) || rest.empty()) {
-        return std::nullopt;
-    }
-    if (rest.starts_with(':')) {
-        rest.remove_prefix(1);
-    } else if (rest.find(' ') != rest.npos) {
         return std::nullopt;
     }
     std::string normalized;
