@@ -18,6 +18,7 @@
 #include "common/runtime_limits.hpp"
 #include "http/fetcher.hpp"
 #include "irc/irc.hpp"
+#include "title_cache.hpp"
 
 namespace tb {
 using Clock = std::chrono::steady_clock;
@@ -68,13 +69,6 @@ public:
     }
 
 private:
-    struct Cached {
-        std::string protocol;
-        std::string url;
-        FetchResult result;
-        Clock::time_point expires;
-    };
-    std::list<Cached> cache_;
     struct Job {
         PrivMsg message;
         std::string host;
@@ -90,6 +84,7 @@ private:
     boost::asio::any_io_executor executor_;
     Fetch fetch_;
     SchedulerLimits limits_;
+    TitleCache cache_;
     std::optional<boost::asio::steady_timer> report_timer_;
     bool report_pending_ = false;
     std::list<Job> jobs_;

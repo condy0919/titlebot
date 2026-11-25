@@ -18,28 +18,6 @@ namespace asio = boost::asio;
 using asio::use_awaitable;
 using asio::ip::tcp;
 
-// Each test owns its mock through its io_context, including during reconnects.
-struct MockFetch : asio::execution_context::service {
-    static inline asio::execution_context::id id; // NOLINT
-    explicit MockFetch(asio::execution_context& context) : service(context) {}
-    static MockFetch& For(const asio::any_io_executor& executor) {
-        return asio::use_service<MockFetch>(asio::query(executor, asio::execution::context));
-    }
-
-    MOCK_METHOD(asio::awaitable<tb::FetchResult>, Fetch, (tb::PrivMsg));
-
-    void shutdown() override {}
-};
-} // namespace
-
-namespace tb {
-asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context&, FetchLimits) {
-    auto executor = co_await asio::this_coro::executor;
-    co_return co_await MockFetch::For(executor).Fetch(std::move(msg));
-}
-} // namespace tb
-
-namespace {
 class Server : public testing::Test {
 protected:
     void RunExercise(asio::awaitable<void> exercise, std::chrono::seconds timeout) {
@@ -77,16 +55,15 @@ asio::awaitable<void> ExerciseSession() {
         }
         co_return std::string("测试标题");
     };
-    EXPECT_CALL(MockFetch::For(executor), Fetch).Times(2).WillRepeatedly([&fetch](tb::PrivMsg msg) {
-        return fetch(std::move(msg));
-    });
     asio::co_spawn(executor,
-                   tb::RunBot({
-                       .server = "127.0.0.1",
-                       .port = std::to_string(listener.local_endpoint().port()),
-                       .nick = "title[bot]",
-                       .channels = "#room",
-                   }),
+                   tb::RunBot(
+                       {
+                           .server = "127.0.0.1",
+                           .port = std::to_string(listener.local_endpoint().port()),
+                           .nick = "title[bot]",
+                           .channels = "#room",
+                       },
+                       fetch),
                    asio::detached);
     auto peer = co_await listener.async_accept(use_awaitable);
     std::string input;
@@ -127,16 +104,15 @@ asio::awaitable<void> ExerciseReconnect() {
         co_await release.async_wait(asio::redirect_error(use_awaitable, ignored));
         co_return msg.url + "\n" + std::string(413, 'x') + "中";
     };
-    EXPECT_CALL(MockFetch::For(executor), Fetch).Times(3).WillRepeatedly([&fetch](tb::PrivMsg msg) {
-        return fetch(std::move(msg));
-    });
     asio::co_spawn(executor,
-                   tb::RunBot({
-                       .server = "127.0.0.1",
-                       .port = std::to_string(listener.local_endpoint().port()),
-                       .nick = "bot",
-                       .channels = "#r",
-                   }),
+                   tb::RunBot(
+                       {
+                           .server = "127.0.0.1",
+                           .port = std::to_string(listener.local_endpoint().port()),
+                           .nick = "bot",
+                           .channels = "#r",
+                       },
+                       fetch),
                    asio::detached);
     std::chrono::steady_clock::time_point disconnected;
     for (int generation = 0; generation < 2; ++generation) {

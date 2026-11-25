@@ -29,23 +29,16 @@ constexpr std::pair<FetchError, const char*> kErrorNames[] = {
 } // namespace
 
 FetchScheduler::FetchScheduler(asio::any_io_executor executor, Fetch fetch, SchedulerLimits limits)
-    : executor_(std::move(executor)), fetch_(std::move(fetch)), limits_(limits) {}
+    : executor_(std::move(executor)), fetch_(std::move(fetch)), limits_(limits), cache_(limits) {}
 
 void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destination) {
-    auto cached = std::ranges::find_if(cache_, [&](const Cached& entry) {
-        return entry.protocol == message.protocol && entry.url == message.url;
-    });
-    if (cached != cache_.end()) {
-        if (Clock::now() < cached->expires) {
-            ++stats_.cache_hits;
-            ScheduleReport();
-            cache_.splice(cache_.begin(), cache_, cached);
-            if (cached->result && *cached->result) {
-                deliver(**cached->result);
-            }
-            return;
+    if (auto cached = cache_.Find(message.protocol + "://" + message.url, Clock::now())) {
+        ++stats_.cache_hits;
+        ScheduleReport();
+        if (*cached && **cached) {
+            deliver(***cached);
         }
-        cache_.erase(cached);
+        return;
     }
     ScheduleReport();
     // Bound pending replies even when many requests share a single download.
@@ -156,13 +149,7 @@ void FetchScheduler::Complete(std::list<Job>::iterator job, Clock::time_point st
     } else {
         ++stats_.no_title;
     }
-    const auto ttl = result && *result ? limits_.title_ttl : limits_.negative_ttl;
-    if (limits_.cache_entries && ttl > std::chrono::milliseconds::zero()) {
-        cache_.push_front({job->message.protocol, job->message.url, result, Clock::now() + ttl});
-        if (cache_.size() > limits_.cache_entries) {
-            cache_.pop_back();
-        }
-    }
+    cache_.Store(job->message.protocol + "://" + job->message.url, result, Clock::now());
     auto replies = std::move(job->replies);
     auto host = host_active_.find(job->host);
     if (--host->second == 0) {

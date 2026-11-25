@@ -341,15 +341,19 @@ asio::awaitable<asio::ip::tcp::socket> Connect(const BotConfig& config) {
 } // namespace
 
 asio::awaitable<void> RunBot(BotConfig config) {
+    return RunBot(std::move(config), {});
+}
+
+asio::awaitable<void> RunBot(BotConfig config, TitleFetcher fetch) {
     auto tls = std::make_shared<asio::ssl::context>(asio::ssl::context::tls_client);
     tls->set_default_verify_paths();
     auto executor = co_await asio::this_coro::executor;
-    auto scheduler = std::make_shared<FetchScheduler>(
-        executor,
-        [tls, limits = config.fetch](PrivMsg msg) {
+    if (!fetch) {
+        fetch = [tls, limits = config.fetch](PrivMsg msg) {
             return FetchTitle(std::move(msg), *tls, limits);
-        },
-        config.scheduler);
+        };
+    }
+    auto scheduler = std::make_shared<FetchScheduler>(executor, std::move(fetch), config.scheduler);
     scheduler->EnableReports();
     NicknameNegotiator nickname;
     const auto cancellation = co_await asio::this_coro::cancellation_state;

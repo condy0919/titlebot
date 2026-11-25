@@ -2,11 +2,13 @@
 #define TITLEBOT_SERVER_HPP_
 
 #include <chrono>
+#include <functional>
 #include <string>
 
 #include <boost/asio/awaitable.hpp>
 
 #include "common/runtime_limits.hpp"
+#include "http/fetcher.hpp"
 
 namespace tb {
 struct SessionTimeouts {
@@ -33,6 +35,10 @@ struct BotConfig {
 /// For example, RunBot({"irc.example.org", "6667", "bot", "#a,#b"}) joins both channels
 /// after the server welcomes "bot".
 boost::asio::awaitable<void> RunBot(BotConfig config);
+
+using TitleFetcher = std::function<boost::asio::awaitable<FetchResult>(PrivMsg)>;
+/// Use fetch for each scheduled URL. For example, an offline fetcher may return a fixture title.
+boost::asio::awaitable<void> RunBot(BotConfig config, TitleFetcher fetch);
 
 } // namespace tb
 
