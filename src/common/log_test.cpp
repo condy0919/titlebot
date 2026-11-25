@@ -1,6 +1,7 @@
 #include "log.hpp"
 
 #include <gtest/gtest.h>
+#include <spdlog/sinks/ostream_sink.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -8,8 +9,6 @@
 #include <ostream>
 #include <sstream>
 #include <string>
-
-#include <spdlog/sinks/ostream_sink.h>
 
 namespace {
 class LogTest : public testing::Test {

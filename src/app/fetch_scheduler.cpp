@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <exception>
-#include <sstream>
 #include <iterator>
+#include <sstream>
 #include <utility>
 
 #include <boost/asio/co_spawn.hpp>
@@ -58,13 +58,13 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
     // A queued or running job can deliver the same title to several callers.
     for (auto& job : jobs_) {
         if (job.message.protocol == message.protocol && job.message.url == message.url) {
-            if (!destination.session.expired() && std::ranges::any_of(
-                    job.destinations, [&](const Destination& existing) {
-                        return !existing.session.owner_before(destination.session) &&
-                               !destination.session.owner_before(existing.session) &&
-                               std::ranges::equal(existing.target, destination.target, {},
-                                                  FoldIrcCase, FoldIrcCase);
-                    })) {
+            if (!destination.session.expired() &&
+                std::ranges::any_of(job.destinations, [&](const Destination& existing) {
+                    return !existing.session.owner_before(destination.session) &&
+                           !destination.session.owner_before(existing.session) &&
+                           std::ranges::equal(existing.target, destination.target, {}, FoldIrcCase,
+                                              FoldIrcCase);
+                })) {
                 ++stats_.duplicates;
                 return;
             }
@@ -86,7 +86,8 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
     if (host.ends_with('.')) {
         host.pop_back();
     }
-    if (host.empty() || host.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789.-") != host.npos ||
+    if (host.empty() ||
+        host.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789.-") != host.npos ||
         message.url.substr(0, message.url.find_first_of("/?#")).contains("@")) {
         host = "<invalid-host>";
     }
@@ -203,11 +204,11 @@ void FetchScheduler::ScheduleReport() {
 void FetchScheduler::Report() const {
     std::ostringstream summary;
     summary << "fetch active=" << active_ << " queued=" << jobs_.size() - active_
-              << " peak_queue=" << stats_.peak_queue << " completed=" << stats_.completed
-              << " cache_hits=" << stats_.cache_hits << " duplicate_replies=" << stats_.duplicates
-              << " elapsed_ms_total=" << stats_.elapsed.count() << " titles=" << stats_.titles
-              << " no_title=" << stats_.no_title << " merged=" << stats_.merged
-              << " queue_drops=" << stats_.queue_drops << " reply_drops=" << stats_.reply_drops;
+            << " peak_queue=" << stats_.peak_queue << " completed=" << stats_.completed
+            << " cache_hits=" << stats_.cache_hits << " duplicate_replies=" << stats_.duplicates
+            << " elapsed_ms_total=" << stats_.elapsed.count() << " titles=" << stats_.titles
+            << " no_title=" << stats_.no_title << " merged=" << stats_.merged
+            << " queue_drops=" << stats_.queue_drops << " reply_drops=" << stats_.reply_drops;
     for (auto [error, name] : kErrorNames) {
         auto it = stats_.failures.find(error);
         summary << ' ' << name << '=' << (it == stats_.failures.end() ? 0 : it->second);

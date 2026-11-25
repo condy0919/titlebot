@@ -37,11 +37,6 @@ target_compile_features(titlebot_session
     cxx_std_23
 )
 
-# Common GCC/Clang options
-foreach(target IN ITEMS titlebot titlebot_session)
-  target_compile_options(${target} PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>)
-endforeach()
-
 ### Libraries
 find_package(PkgConfig REQUIRED)
 
@@ -136,3 +131,9 @@ if(TITLEBOT_ENABLE_TESTS)
   gtest_discover_tests(titlebot_server_tests)
   gtest_discover_tests(titlebot_unittests)
 endif()
+
+foreach(target IN ITEMS titlebot titlebot_session titlebot_cli titlebot_unittests titlebot_server_tests)
+  if(TARGET ${target} AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${target} PRIVATE -Wall -Wextra)
+  endif()
+endforeach()

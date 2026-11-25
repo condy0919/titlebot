@@ -2,22 +2,30 @@ name: Debian 兼容性验证
 on: [push, pull_request]
 jobs:
   build:
+    strategy:
+      matrix:
+        sanitizer: [false, true]
     runs-on: ubuntu-latest
     container: debian:trixie
     steps:
       - name: 安装构建依赖
         run: |
           apt-get update
-          apt-get install -y ca-certificates git git-lfs cmake make g++-14 pkg-config libboost-url-dev libuchardet-dev zlib1g-dev libssl-dev
+          apt-get install -y ca-certificates git git-lfs cmake make clang-format-19 g++-14 pkg-config libboost-url-dev libuchardet-dev zlib1g-dev libssl-dev
       - uses: actions/checkout@v4
         with:
           lfs: true
+      - name: 检查项目源码格式
+        run: find src -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-19 --dry-run --Werror {} +
       - name: 构建并运行测试
         env:
           CXX: g++-14
         run: |
           g++-14 --version
-          test "$(g++-14 -dumpfullversion)" = 14.2.0
+          test "$(g++-14 -dumpversion)" = 14
+          if [ "${{ matrix.sanitizer }}" = "true" ]; then
+            export CXXFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+          fi
           cmake -S . -B build -DTITLEBOT_ENABLE_TESTS=ON
           cmake --build build --parallel 2
           ctest --test-dir build --output-on-failure --no-tests=error

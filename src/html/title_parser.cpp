@@ -130,12 +130,14 @@ std::optional<std::string> TitleParser::consume(char ch) {
         } else if (ch == '>' && title_tag_ != title_.npos) {
             auto tag = std::string_view(title_).substr(title_tag_ + 1);
             if (tag.starts_with('/') &&
-                boost::beast::iequals(tag.substr(1, tag.find_first_of(" /\t\r\n\f", 1) - 1), "title")) {
+                boost::beast::iequals(tag.substr(1, tag.find_first_of(" /\t\r\n\f", 1) - 1),
+                                      "title")) {
                 title_.resize(title_tag_);
                 state_ = State::kText;
                 title_tag_ = title_.npos;
                 auto title = std::exchange(title_, {});
-                if (std::ranges::all_of(title, [](unsigned char c) { return c <= 32 || c == 127; })) {
+                if (std::ranges::all_of(title,
+                                        [](unsigned char c) { return c <= 32 || c == 127; })) {
                     return {};
                 }
                 return title;
@@ -235,7 +237,8 @@ void TitleParser::HandleCompleteTag() {
     } else if (!closing &&
                (boost::beast::iequals(name, "script") || boost::beast::iequals(name, "style") ||
                 boost::beast::iequals(name, "textarea") || boost::beast::iequals(name, "xmp") ||
-                boost::beast::iequals(name, "noframes") || boost::beast::iequals(name, "noembed"))) {
+                boost::beast::iequals(name, "noframes") ||
+                boost::beast::iequals(name, "noembed"))) {
         raw_element_ = name;
     } else if (!svg_depth_ && boost::beast::iequals(name, "template")) {
         if (!closing) {

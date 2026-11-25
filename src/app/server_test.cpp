@@ -383,12 +383,14 @@ TEST_F(Server, ReconnectsAfterRegistrationDeadline) {
 TEST_F(Server, SendsQuitAndCompletesOnCancellation) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     asio::cancellation_signal stop;
-    auto finished = asio::co_spawn(io, tb::RunBot({
-        .server = "127.0.0.1",
-        .port = std::to_string(listener.local_endpoint().port()),
-        .nick = "bot",
-        .channels = "#room",
-    }), asio::bind_cancellation_slot(stop.slot(), asio::use_future));
+    auto finished = asio::co_spawn(io,
+                                   tb::RunBot({
+                                       .server = "127.0.0.1",
+                                       .port = std::to_string(listener.local_endpoint().port()),
+                                       .nick = "bot",
+                                       .channels = "#room",
+                                   }),
+                                   asio::bind_cancellation_slot(stop.slot(), asio::use_future));
     auto exercise = [&]() -> asio::awaitable<void> {
         auto peer = co_await listener.async_accept(use_awaitable);
         std::string input;

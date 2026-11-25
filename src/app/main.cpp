@@ -1,4 +1,5 @@
 #include <argp.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <csignal>
 #include <exception>
@@ -6,8 +7,6 @@
 #include <utility>
 
 #include <boost/asio.hpp>
-
-#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "common/log.hpp"
 #include "server.hpp"

@@ -108,7 +108,8 @@ asio::awaitable<void> ReadResponsePart(Stream& stream, std::string& pending,
         const auto count = co_await stream.async_read_some(buffer.data(offset, space),
                                                            asio::redirect_error(use_awaitable, ec));
         buffer.shrink(space - count);
-        if ((ec == asio::error::eof || ec == asio::ssl::error::stream_truncated) && parser.got_some()) {
+        if ((ec == asio::error::eof || ec == asio::ssl::error::stream_truncated) &&
+            parser.got_some()) {
             parser.put_eof(ec);
             if (!ec) {
                 co_return;
@@ -208,7 +209,8 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
         const auto count = capacity - body.size;
         const auto used = std::min(count, remaining);
         remaining -= used;
-        auto title = decoder.Consume(parser, {block.data(), used}, response.is_done() && used == count);
+        auto title =
+            decoder.Consume(parser, {block.data(), used}, response.is_done() && used == count);
         if (!title) {
             co_return std::unexpected(title.error() == DecodeError::kLimit
                                           ? FetchError::kResponseLimit
@@ -217,7 +219,8 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
         if (*title) {
             auto result = FormatTitle(**title, charset, parser);
             if (!result) {
-                TB_LOG_WARN("Title decoding failed for {} (declared charset {:.64})", authority, charset);
+                TB_LOG_WARN("Title decoding failed for {} (declared charset {:.64})", authority,
+                            charset);
             }
             co_return result;
         }
@@ -283,13 +286,17 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
             }
             stream->next_layer().close();
             const auto now = Clock::now();
-            Deadline attempt(executor, now + (expires - now) / static_cast<long>(remaining_endpoints--));
-            asio::co_spawn(executor, [stream, wait = attempt.Wait()]() mutable -> asio::awaitable<void> {
-                if (co_await std::move(wait)) {
-                    boost::system::error_code ignored;
-                    stream->next_layer().cancel(ignored);
-                }
-            }, asio::detached);
+            Deadline attempt(executor,
+                             now + (expires - now) / static_cast<long>(remaining_endpoints--));
+            asio::co_spawn(
+                executor,
+                [stream, wait = attempt.Wait()]() mutable -> asio::awaitable<void> {
+                    if (co_await std::move(wait)) {
+                        boost::system::error_code ignored;
+                        stream->next_layer().cancel(ignored);
+                    }
+                },
+                asio::detached);
             co_await stream->next_layer().async_connect(answer.endpoint(),
                                                         asio::redirect_error(use_awaitable, ec));
             if (!ec) {
@@ -319,7 +326,8 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         if (secure) {
             co_return co_await ReadTitle(*stream, authority, path, location, policy.body_bytes);
         }
-        co_return co_await ReadTitle(stream->next_layer(), authority, path, location, policy.body_bytes);
+        co_return co_await ReadTitle(stream->next_layer(), authority, path, location,
+                                     policy.body_bytes);
     } catch (const boost::system::system_error& error) {
         TB_LOG_WARN("Fetch from {} failed: {}", host, error.what());
         if (Clock::now() >= expires) {
@@ -335,17 +343,15 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
 } // namespace
 
 bool detail::IsPublicAddress(asio::ip::address addr) {
-if (addr.is_v4()) {
-                                       return IsPublicV4(addr.to_v4());
-                                   }
-                                   auto b = addr.to_v6().to_bytes();
-                                   // Allow only global unicast. Exclude protocol assignments,
-                                   // documentation and IPv4 tunnel prefixes.
-                                   return (b[0] & 0xe0) == 0x20 &&
-                                          !(b[0] == 0x20 && b[1] == 1 &&
-                                            (b[2] < 2 || (b[2] == 0xd && b[3] == 0xb8))) &&
-                                          !(b[0] == 0x20 && b[1] == 2) &&
-                                          !(b[0] == 0x3f && b[1] == 0xff && (b[2] & 0xf0) == 0);
+    if (addr.is_v4()) {
+        return IsPublicV4(addr.to_v4());
+    }
+    auto b = addr.to_v6().to_bytes();
+    // Allow only global unicast. Exclude protocol assignments,
+    // documentation and IPv4 tunnel prefixes.
+    return (b[0] & 0xe0) == 0x20 &&
+           !(b[0] == 0x20 && b[1] == 1 && (b[2] < 2 || (b[2] == 0xd && b[3] == 0xb8))) &&
+           !(b[0] == 0x20 && b[1] == 2) && !(b[0] == 0x3f && b[1] == 0xff && (b[2] & 0xf0) == 0);
 }
 
 asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::context& tls,
@@ -377,8 +383,9 @@ asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::con
 }
 
 asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context& tls, FetchLimits limits) {
-    detail::FetchPolicy policy{[](tcp::endpoint ep) { return detail::IsPublicAddress(ep.address()); },
-                               limits.total_timeout, limits.connect_timeout, limits.body_bytes};
+    detail::FetchPolicy policy{
+        [](tcp::endpoint ep) { return detail::IsPublicAddress(ep.address()); },
+        limits.total_timeout, limits.connect_timeout, limits.body_bytes};
     return detail::FetchWithPolicy(std::move(msg), tls, std::move(policy));
 }
 } // namespace tb

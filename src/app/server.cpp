@@ -62,7 +62,8 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
             if (session->secure) {
                 co_await asio::async_write(session->transport, asio::buffer(line), use_awaitable);
             } else {
-                co_await asio::async_write(session->transport.next_layer(), asio::buffer(line), use_awaitable);
+                co_await asio::async_write(session->transport.next_layer(), asio::buffer(line),
+                                           use_awaitable);
             }
         }
         session->writing = false;
@@ -109,7 +110,8 @@ void Send(const std::shared_ptr<Session>& session, std::string line, bool priori
 
     if (!session->writing) {
         session->writing = true;
-        asio::co_spawn(session->transport.next_layer().get_executor(), Drain(session), asio::detached);
+        asio::co_spawn(session->transport.next_layer().get_executor(), Drain(session),
+                       asio::detached);
     }
 }
 
@@ -279,7 +281,8 @@ void HandlePrivMsg(const std::shared_ptr<Session>& session, std::string_view lin
             if (auto owner = weak.lock()) {
                 Reply(owner, target, title);
             }
-        }, std::move(destination));
+        },
+        std::move(destination));
 }
 
 std::string_view TrailingText(std::string_view params) {
@@ -341,9 +344,11 @@ void HandleLine(const std::shared_ptr<Session>& session, std::string_view line, 
     }
 }
 
-asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, const BotConfig& config,
-                                   std::shared_ptr<FetchScheduler> scheduler,
-                                   std::size_t& nick_limit, asio::ssl::context& tls) {
+asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket,
+                                                  const BotConfig& config,
+                                                  std::shared_ptr<FetchScheduler> scheduler,
+                                                  std::size_t& nick_limit,
+                                                  asio::ssl::context& tls) {
     auto session = std::make_shared<Session>(Session{
         .transport = {std::move(socket), tls},
         .secure = config.tls,
@@ -360,7 +365,8 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, 
 
     if (session->secure) {
         Deadline handshake(executor, Clock::now() + config.connect_timeout);
-        asio::co_spawn(executor, CloseOnRegistrationTimeout(handshake.Wait(), session), asio::detached);
+        asio::co_spawn(executor, CloseOnRegistrationTimeout(handshake.Wait(), session),
+                       asio::detached);
         session->transport.set_verify_mode(asio::ssl::verify_peer);
         session->transport.set_verify_callback(asio::ssl::host_name_verification(config.server));
         if (!SSL_set_tlsext_host_name(session->transport.native_handle(), config.server.c_str())) {
@@ -380,7 +386,8 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, 
     try {
         while (true) {
             auto read = [&](auto& stream) {
-                return asio::async_read_until(stream, asio::dynamic_buffer(input, 8192), "\r\n", use_awaitable);
+                return asio::async_read_until(stream, asio::dynamic_buffer(input, 8192), "\r\n",
+                                              use_awaitable);
             };
             std::size_t count;
             if (session->secure) {
@@ -403,7 +410,8 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, 
             }
         }
     } catch (const boost::system::system_error& ex) {
-        if (ex.code() != asio::error::operation_aborted && session->transport.next_layer().is_open()) {
+        if (ex.code() != asio::error::operation_aborted &&
+            session->transport.next_layer().is_open()) {
             TB_LOG_WARN("IRC read failed: {}", ex.what());
         }
     }
@@ -413,7 +421,8 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, 
     if (cancellation.cancelled() != asio::cancellation_type::none &&
         session->transport.next_layer().is_open()) {
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
-        session->quit_timer = std::make_shared<asio::steady_timer>(executor, std::chrono::seconds(1));
+        session->quit_timer =
+            std::make_shared<asio::steady_timer>(executor, std::chrono::seconds(1));
         session->queue.clear();
         Send(session, "QUIT :Shutting down", true);
         boost::system::error_code ignored;
@@ -426,7 +435,7 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, 
     session->transport.next_layer().close(ignored);
     scheduler->Report();
     const auto duration = Clock::now() - session->registered_at;
-    co_return session->registered && duration >= config.stable_session;
+    co_return session->registered&& duration >= config.stable_session;
 }
 
 asio::awaitable<asio::ip::tcp::socket> Connect(const BotConfig& config) {
@@ -462,7 +471,11 @@ asio::awaitable<void> RunBot(BotConfig config) {
     tls->set_default_verify_paths();
     auto executor = co_await asio::this_coro::executor;
     auto scheduler = std::make_shared<FetchScheduler>(
-        executor, [tls, limits = config.fetch](PrivMsg msg) { return FetchTitle(std::move(msg), *tls, limits); }, config.scheduler);
+        executor,
+        [tls, limits = config.fetch](PrivMsg msg) {
+            return FetchTitle(std::move(msg), *tls, limits);
+        },
+        config.scheduler);
     scheduler->EnableReports();
     std::size_t nick_limit = kDefaultNickLength;
     const auto cancellation = co_await asio::this_coro::cancellation_state;
@@ -470,7 +483,8 @@ asio::awaitable<void> RunBot(BotConfig config) {
     while (true) {
         try {
             auto socket = co_await Connect(config);
-            auto stable = co_await ServeSession(std::move(socket), config, scheduler, nick_limit, *tls);
+            auto stable =
+                co_await ServeSession(std::move(socket), config, scheduler, nick_limit, *tls);
             if (!stable) {
                 co_return;
             }
@@ -478,7 +492,8 @@ asio::awaitable<void> RunBot(BotConfig config) {
                 delay = 1;
             }
         } catch (const boost::system::system_error& ex) {
-            if (ex.code() == asio::error::operation_aborted && cancellation.cancelled() != asio::cancellation_type::none) {
+            if (ex.code() == asio::error::operation_aborted &&
+                cancellation.cancelled() != asio::cancellation_type::none) {
                 co_return;
             }
             TB_LOG_WARN("IRC connection failed: {}. Retrying in {}s", ex.what(), delay);

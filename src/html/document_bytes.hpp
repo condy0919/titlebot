@@ -55,9 +55,15 @@ public:
         return {bytes_.data(), static_cast<std::size_t>(out - bytes_.data())};
     }
 
-    std::string_view sample() const { return sample_; }
-    bool has_bom() const { return utf16_ || sample_.starts_with("\xef\xbb\xbf"); }
-    bool can_skip_bytes() const { return !utf16_ && sample_.size() == 1024; }
+    std::string_view sample() const {
+        return sample_;
+    }
+    bool has_bom() const {
+        return utf16_ || sample_.starts_with("\xef\xbb\xbf");
+    }
+    bool can_skip_bytes() const {
+        return !utf16_ && sample_.size() == 1024;
+    }
 
 private:
     std::string sample_;

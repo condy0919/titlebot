@@ -25,7 +25,8 @@ TEST_F(Decoder, ReadsGzipTitle) {
     std::ifstream ifs(path, std::ios_base::in | std::ios_base::binary);
     ASSERT_TRUE(ifs.is_open());
     while (ifs.read(buf, sizeof(buf)) || ifs.gcount()) {
-        auto result = decoder.Consume(parser, {buf, static_cast<std::size_t>(ifs.gcount())}, ifs.eof());
+        auto result =
+            decoder.Consume(parser, {buf, static_cast<std::size_t>(ifs.gcount())}, ifs.eof());
         ASSERT_TRUE(result);
         if (*result) {
             found = *result;
