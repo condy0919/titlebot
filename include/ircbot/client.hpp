@@ -127,6 +127,8 @@ public:
     /// thread and invokes callback with the enqueue result. Closed handles may complete inline.
     void PostPrivmsg(std::string target, std::string text,
                      std::move_only_function<void(std::expected<void, SendError>)> completion) const;
+    /// For example, RequestReconnect() closes this session and lets Run apply its retry policy.
+    std::expected<void, SendError> RequestReconnect() const;
     bool IsOpen() const;
     std::string Nick() const;
     /// For example, TextBudget("#room") reserves the server-advertised user/host limits

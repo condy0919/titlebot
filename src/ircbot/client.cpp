@@ -115,6 +115,12 @@ void Diagnose(const std::shared_ptr<Session>& session, std::string_view text,
     }
 }
 
+void BeginClosing(const std::shared_ptr<Session>& session) {
+    session->closing = true;
+    session->identity.reset();
+    session->stop.request_stop();
+}
+
 void Close(const std::shared_ptr<Session>& session) {
     session->transport->Close();
     if (session->writable) {
@@ -573,7 +579,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         std::array<char, 8703> input;
         std::size_t used = 0;
         bool discarding = false;
-        while (true) {
+        while (session->transport->IsOpen()) {
             const auto count = co_await session->transport->Read(
                 asio::buffer(input.data() + used, input.size() - used));
             if (!count) { throw boost::system::system_error(count.error()); }
@@ -582,7 +588,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
             const std::string_view batch(input.data(), used + *count);
             std::size_t begin = 0;
             auto end = batch.find("\r\n", used == 0 ? 0 : used - 1);
-            while (end != batch.npos) {
+            while (end != batch.npos && !session->closing && session->transport->IsOpen()) {
                 if (discarding) {
                     discarding = false;
                 } else if (auto parsed = ParseMessage(batch.substr(begin, end - begin))) {
@@ -623,9 +629,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         fatal = Fatal{ClientError::kHandler, std::current_exception()};
     }
     idle->cancel();
-    session->closing = true;
-    session->identity.reset();
-    session->stop.request_stop();
+    BeginClosing(session);
     const auto cancellation = co_await asio::this_coro::cancellation_state;
     bool stopping = cancellation.cancelled() != asio::cancellation_type::none;
     if (stopping && connected && session->transport->IsOpen()) {
@@ -1031,6 +1035,16 @@ void Connection::PostPrivmsg(std::string target, std::string text,
             completion(result);
         }
     });
+}
+
+std::expected<void, SendError> Connection::RequestReconnect() const {
+    auto session = session_.lock();
+    if (!session || session->closing || !session->transport->IsOpen()) {
+        return std::unexpected(SendError::kClosed);
+    }
+    BeginClosing(session);
+    Close(session);
+    return {};
 }
 
 bool Connection::IsOpen() const {

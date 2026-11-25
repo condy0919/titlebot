@@ -195,6 +195,13 @@ TEST_F(Client, OldConnectionCannotSendAfterReconnect) {
             auto peer = co_await listener.async_accept(use_awaitable);
             std::string input;
             co_await Register(peer, input);
+            if (!generation) {
+                auto old_identity = connections.front().Identity();
+                auto old_stop = connections.front().StopToken();
+                EXPECT_TRUE(connections.front().RequestReconnect());
+                EXPECT_TRUE(old_identity.expired());
+                EXPECT_TRUE(old_stop.stop_requested());
+            }
             if (generation) {
                 EXPECT_EQ(connections.size(), 2u);
                 EXPECT_EQ(connections[0].Privmsg("#room", "stale").error(),
