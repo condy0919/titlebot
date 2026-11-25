@@ -3,8 +3,10 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -44,6 +46,14 @@ std::expected<void, RegistrationError> ValidateRegistration(const RegistrationCo
 /// "CAP * LS :server-time" produces "CAP REQ :server-time". Output excludes CRLF.
 /// The caller supplies NICK/USER, enforces deadlines and requires TLS for SASL PLAIN.
 class Registration {
+    struct TextHash {
+        using is_transparent = void;
+        std::size_t operator()(std::string_view text) const noexcept {
+            return std::hash<std::string_view>{}(text);
+        }
+    };
+    using CapabilitySet = std::unordered_set<std::string, TextHash, std::equal_to<>>;
+
 public:
     explicit Registration(RegistrationConfig config = {});
 
@@ -61,7 +71,7 @@ public:
     bool authenticated() const {
         return authenticated_;
     }
-    const std::unordered_set<std::string>& enabled() const {
+    const CapabilitySet& enabled() const {
         return enabled_;
     }
 
@@ -79,10 +89,10 @@ private:
 
     RegistrationConfig config_;
     std::unordered_map<std::string, std::string> available_;
-    std::unordered_set<std::string> enabled_;
+    CapabilitySet enabled_;
     std::unordered_set<std::string> pending_;
     std::unordered_set<std::string> rejected_;
-    std::unordered_set<std::string> listing_;
+    CapabilitySet listing_;
     std::vector<std::string> acknowledging_;
     std::optional<RegistrationError> error_;
     SaslState sasl_state_ = SaslState::kIdle;

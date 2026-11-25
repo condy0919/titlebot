@@ -611,7 +611,7 @@ ServerFeatures Connection::Features() const {
 
 bool Connection::HasCapability(std::string_view name) const {
     auto session = session_.lock();
-    return session && session->registration.enabled().contains(std::string(name));
+    return session && session->registration.enabled().contains(name);
 }
 
 bool Connection::IsSelf(std::string_view nick) const {
