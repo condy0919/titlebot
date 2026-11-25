@@ -15,6 +15,14 @@ TEST(IrcMessage, ReservesRelayPrefixBeforeComputingTextBudget) {
     EXPECT_EQ(ircbot::PrivmsgTextBudget("#r", std::string_view::npos), 0u);
 }
 
+TEST(IrcMessage, SplitsAtUtf8Boundaries) {
+    const auto parts = ircbot::SplitText("a猫b", 3);
+    ASSERT_TRUE(parts);
+    EXPECT_EQ(*parts, (std::vector<std::string_view>{"a", "猫", "b"}));
+    EXPECT_FALSE(ircbot::SplitText("猫", 2));
+    EXPECT_FALSE(ircbot::SplitText("a", 0));
+}
+
 TEST(MessagePrefix, ExtractsUserAndHost) {
     auto message = ircbot::ParseMessage(":nick!alice@host NOTICE bot :hello");
     ASSERT_TRUE(message);

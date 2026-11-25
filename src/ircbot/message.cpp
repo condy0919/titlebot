@@ -242,6 +242,27 @@ std::size_t PrivmsgTextBudget(std::string_view target, std::size_t prefix_bytes)
     return available - target.size() - prefix_bytes;
 }
 
+std::expected<std::vector<std::string_view>, SerializeError>
+SplitText(std::string_view text, std::size_t budget) {
+    if (HasLineBreakOrNul(text) || !ValidUtf8(text)) {
+        return std::unexpected(SerializeError::kInvalidParameter);
+    }
+    std::vector<std::string_view> parts;
+    while (text.size() > budget) {
+        auto count = budget;
+        while (count && (static_cast<unsigned char>(text[count]) & 0xc0) == 0x80) {
+            --count;
+        }
+        if (!count) {
+            return std::unexpected(SerializeError::kLineTooLong);
+        }
+        parts.push_back(text.substr(0, count));
+        text.remove_prefix(count);
+    }
+    parts.push_back(text);
+    return parts;
+}
+
 bool IsCommand(const MessageView& message, std::string_view command) {
     return std::ranges::equal(message.command, command, {}, Lower, Lower);
 }

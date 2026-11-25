@@ -1,11 +1,13 @@
 #ifndef IRCBOT_MESSAGE_HPP_
 #define IRCBOT_MESSAGE_HPP_
 
+#include <cstddef>
 #include <expected>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <boost/container/small_vector.hpp>
 
@@ -62,6 +64,11 @@ enum class SerializeError {
     kTooManyParameters,
     kLineTooLong,
 };
+
+/// Split valid UTF-8 without copying bytes. For example, ("a猫b", 3) yields {"a", "猫", "b"}.
+/// The input must outlive all returned views.
+std::expected<std::vector<std::string_view>, SerializeError>
+SplitText(std::string_view text, std::size_t budget);
 
 /// Serialize a client message without CRLF. For example, ("PRIVMSG", {"#r", "hello world"})
 /// yields "PRIVMSG #r :hello world". Reject invalid fields and separately bound tags and body.
