@@ -662,8 +662,9 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
     if (stopping) {
         co_return std::nullopt;
     }
-    co_return session->registered&& detail::Now(session->clock) - session -> registered_at >=
-        config.timeouts.stable_session;
+    const bool stable = session->registered &&
+                        detail::Now(session->clock) - session->registered_at >= config.timeouts.stable_session;
+    co_return stable;
 }
 
 std::string_view InvalidConfigField(const Config& config) {

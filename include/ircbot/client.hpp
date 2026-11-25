@@ -69,19 +69,19 @@ struct Config {
     std::size_t queued_lines = 64;
     std::chrono::milliseconds send_interval{0};
     // Return the minimum interval before the next ordinary line. Protocol control bypasses pacing.
-    std::function<std::chrono::milliseconds(std::string_view)> send_delay;
+    std::function<std::chrono::milliseconds(std::string_view)> send_delay{};
     bool reclaim_nickname = false;
     bool reconnect_jitter = true;
     std::optional<std::size_t> max_retries{};
     // For example, return false for kTlsTrust to stop after a failed verification.
-    std::function<bool(ClientError, std::size_t)> should_retry;
-    std::map<std::string, std::string> channel_keys;
-    std::vector<ServerAddress> fallback_servers;
-    std::string tls_server_name;
-    std::string peer_certificate_sha256;
-    std::shared_ptr<ManualClock> clock;
+    std::function<bool(ClientError, std::size_t)> should_retry{};
+    std::map<std::string, std::string> channel_keys{};
+    std::vector<ServerAddress> fallback_servers{};
+    std::string tls_server_name{};
+    std::string peer_certificate_sha256{};
+    std::shared_ptr<ManualClock> clock{};
     // Obtain fresh SASL credentials on the session executor before each connection attempt.
-    std::function<std::optional<SaslConfig>()> sasl_credentials;
+    std::function<std::optional<SaslConfig>()> sasl_credentials{};
     std::string quit_reason = "Shutting down";
 };
 
@@ -143,6 +143,8 @@ public:
     bool HasCapability(std::string_view name) const;
     /// For example, IsSelf("BOT") is true when the current nickname is "bot".
     bool IsSelf(std::string_view nick) const;
+    /// For example, keep Identity() as a weak reference in a reply queue. The session
+    /// releases its strong reference before disconnected handlers run.
     std::weak_ptr<void> Identity() const;
 
 private:

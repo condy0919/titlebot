@@ -105,7 +105,8 @@ SplitText(std::string_view text, std::size_t budget);
 std::expected<void, SerializeError> ValidateClientTags(const MessageView& message);
 
 /// Serialize a client message without CRLF. For example, ("PRIVMSG", {"#r", "hello world"})
-/// yields "PRIVMSG #r :hello world". Reject invalid fields and separately bound tags and body.
+/// yields "PRIVMSG #r :hello world". Set force_trailing to retain the colon for single words
+/// as in "PRIVMSG #r :hello". Reject invalid fields and separately bound tags and body.
 std::expected<std::string, SerializeError>
 SerializeMessage(std::string_view command, std::span<const std::string_view> params,
                  std::span<const Tag> tags = {}, bool force_trailing = false);

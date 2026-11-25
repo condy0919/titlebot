@@ -1,6 +1,7 @@
 #ifndef IRCBOT_REGISTRATION_HPP_
 #define IRCBOT_REGISTRATION_HPP_
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <functional>
