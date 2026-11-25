@@ -13,6 +13,9 @@
 
 namespace tb {
 namespace detail {
+/// 判断解析得到的地址是否可用于公网抓取，例如 127.0.0.1 返回 false。
+bool IsPublicAddress(boost::asio::ip::address address);
+
 struct FetchPolicy {
     std::function<bool(boost::asio::ip::tcp::endpoint)> allow;
     std::chrono::milliseconds total_timeout;

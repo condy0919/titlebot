@@ -26,7 +26,7 @@ namespace http = boost::beast::http;
 using asio::use_awaitable;
 using asio::ip::tcp;
 
-bool IsPublic(asio::ip::address_v4 address) {
+bool IsPublicV4(asio::ip::address_v4 address) {
     auto b = address.to_bytes();
     return b[0] != 0 && b[0] != 10 && b[0] != 127 && b[0] < 224 &&
            !(b[0] == 100 && (b[1] & 192) == 64) && !(b[0] == 169 && b[1] == 254) &&
@@ -331,6 +331,20 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
 }
 } // namespace
 
+bool detail::IsPublicAddress(asio::ip::address addr) {
+if (addr.is_v4()) {
+                                       return IsPublicV4(addr.to_v4());
+                                   }
+                                   auto b = addr.to_v6().to_bytes();
+                                   // Allow only global unicast. Exclude protocol assignments,
+                                   // documentation and IPv4 tunnel prefixes.
+                                   return (b[0] & 0xe0) == 0x20 &&
+                                          !(b[0] == 0x20 && b[1] == 1 &&
+                                            (b[2] < 2 || (b[2] == 0xd && b[3] == 0xb8))) &&
+                                          !(b[0] == 0x20 && b[1] == 2) &&
+                                          !(b[0] == 0x3f && b[1] == 0xff && (b[2] & 0xf0) == 0);
+}
+
 asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::context& tls,
                                                      FetchPolicy policy) {
     // parse_uri returns a view. Keep the source string alive until the URL has been copied.
@@ -360,20 +374,7 @@ asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::con
 }
 
 asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context& tls, FetchLimits limits) {
-    detail::FetchPolicy policy{[](tcp::endpoint ep) {
-                                   auto addr = ep.address();
-                                   if (addr.is_v4()) {
-                                       return IsPublic(addr.to_v4());
-                                   }
-                                   auto b = addr.to_v6().to_bytes();
-                                   // Allow only global unicast. Exclude protocol assignments,
-                                   // documentation and IPv4 tunnel prefixes.
-                                   return (b[0] & 0xe0) == 0x20 &&
-                                          !(b[0] == 0x20 && b[1] == 1 &&
-                                            (b[2] < 2 || (b[2] == 0xd && b[3] == 0xb8))) &&
-                                          !(b[0] == 0x20 && b[1] == 2) &&
-                                          !(b[0] == 0x3f && b[1] == 0xff && (b[2] & 0xf0) == 0);
-                               },
+    detail::FetchPolicy policy{[](tcp::endpoint ep) { return detail::IsPublicAddress(ep.address()); },
                                limits.total_timeout, limits.connect_timeout, limits.body_bytes};
     return detail::FetchWithPolicy(std::move(msg), tls, std::move(policy));
 }

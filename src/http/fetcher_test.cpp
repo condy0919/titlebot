@@ -283,4 +283,15 @@ TEST_F(FetcherLoopback, AppliesConfiguredWireAndDecodedBodyBudgets) {
     EXPECT_EQ(Run({HtmlResponse(Deflate(std::string(65, 'x')), "Content-Encoding: deflate\r\n")}),
               std::unexpected(tb::FetchError::kResponseLimit));
 }
+TEST_F(Fetcher, ClassifiesPublicAddressBoundaries) {
+    for (auto text : {"100.63.255.255", "100.128.0.0", "172.15.255.255", "172.32.0.0",
+                      "8.8.8.8", "2606:4700:4700::1111"}) {
+        EXPECT_TRUE(tb::detail::IsPublicAddress(asio::ip::make_address(text))) << text;
+    }
+    for (auto text : {"100.64.0.0", "100.127.255.255", "172.16.0.0", "172.31.255.255",
+                      "198.51.100.42", "224.0.0.1", "::", "::1", "fc00::1", "fe80::1",
+                      "ff02::1", "::ffff:127.0.0.1", "2001:db8::1", "2002::1", "3fff::1"}) {
+        EXPECT_FALSE(tb::detail::IsPublicAddress(asio::ip::make_address(text))) << text;
+    }
+}
 } // namespace
