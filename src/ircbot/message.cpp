@@ -125,6 +125,20 @@ std::string_view MessageView::Nick() const {
     return prefix.substr(0, prefix.find_first_of("!@"));
 }
 
+std::string_view MessageView::User() const {
+    const auto separator = prefix.find_first_of("!@");
+    if (separator == prefix.npos || prefix[separator] != '!') {
+        return {};
+    }
+    const auto rest = prefix.substr(separator + 1);
+    return rest.substr(0, rest.find('@'));
+}
+
+std::string_view MessageView::Host() const {
+    const auto at = prefix.find('@');
+    return at == prefix.npos ? std::string_view{} : prefix.substr(at + 1);
+}
+
 std::optional<std::string> MessageView::Tag(std::string_view key) const {
     std::optional<std::string_view> value;
     auto remaining = tags;

@@ -10,6 +10,17 @@ namespace {
 using ircbot::ParseMessage;
 using ircbot::SerializeMessage;
 
+TEST(MessagePrefix, ExtractsUserAndHost) {
+    auto message = ircbot::ParseMessage(":nick!alice@host NOTICE bot :hello");
+    ASSERT_TRUE(message);
+    EXPECT_EQ(message->User(), "alice");
+    EXPECT_EQ(message->Host(), "host");
+    message = ircbot::ParseMessage(":nick@host NOTICE bot :hello");
+    ASSERT_TRUE(message);
+    EXPECT_TRUE(message->User().empty());
+    EXPECT_EQ(message->Host(), "host");
+}
+
 TEST(IrcMessage, ParsesTagsPrefixAndParametersAsViews) {
     constexpr std::string_view line =
         "@label=hello\\sworld :alice!u@h pRiVmSg  #room  :hello : world ";

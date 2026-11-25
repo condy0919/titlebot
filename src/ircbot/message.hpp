@@ -28,6 +28,10 @@ struct MessageView {
 
     /// For prefix "alice!user@host", return "alice"; a missing prefix yields an empty view.
     std::string_view Nick() const;
+    /// For "nick!alice@host", User() returns "alice".
+    std::string_view User() const;
+    /// For "nick@irc.example", Host() returns "irc.example".
+    std::string_view Host() const;
     /// Decode the last matching tag. For tags "label=one;label=two\\swords", Tag("label")
     /// returns "two words". Missing tags and values containing invalid UTF-8 yield nullopt.
     std::optional<std::string> Tag(std::string_view key) const;
