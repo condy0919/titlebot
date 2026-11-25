@@ -14,9 +14,6 @@ constexpr bool is_tspecial(char c) {
     case ')':
     case '<':
     case '>':
-    case '@':
-    case ',':
-    case ';':
     case '\\':
     case '\"':
     case '[':
@@ -155,6 +152,10 @@ std::optional<PrivMsg> parse_privmsg(const std::string& s) {
         }
         if (depth) {
             end = opening;
+        }
+        constexpr std::string_view trailing = ".,;:!?'";
+        while (end != tail.begin() && trailing.find(end[-1]) != trailing.npos) {
+            --end;
         }
         return PrivMsg{
             .who = std::string(who),

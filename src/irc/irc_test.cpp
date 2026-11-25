@@ -134,4 +134,9 @@ TEST_F(Irc, KeepsBalancedPathParentheses) {
     EXPECT_EQ(msg->url, "example.org/wiki/Go_(game)");
     EXPECT_FALSE(tb::parse_privmsg(":alice!u@h NOTICE" + body));
 }
+TEST_F(Irc, KeepsInternalUrlPunctuation) {
+    auto msg = tb::parse_privmsg(":a!b PRIVMSG #room :see 'https://example.org/@a,b;c.'");
+    ASSERT_TRUE(msg);
+    EXPECT_EQ(msg->url, "example.org/@a,b;c");
+}
 } // namespace
