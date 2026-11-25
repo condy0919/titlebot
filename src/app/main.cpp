@@ -15,6 +15,7 @@ namespace asio = boost::asio;
 
 namespace {
 struct Arguments {
+    bool verbose = false;
     const char* server = nullptr;
     const char* port = nullptr;
     const char* nick = nullptr;
@@ -40,12 +41,17 @@ constexpr argp_option kOptions[] = {
         .arg = "NICK",
         .doc = "Bot nickname (required)",
     },
+    {.name = "verbose", .key = 'v', .doc = "Enable debug logging"},
     {},
 };
 
 error_t ParseArgument(int key, char* arg, argp_state* state) {
     auto& args = *static_cast<Arguments*>(state->input);
     switch (key) {
+    case 'v':
+        args.verbose = true;
+        return 0;
+
     case 's':
         args.server = arg;
         break;
@@ -104,6 +110,10 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    if (args.verbose) {
+        spdlog::set_level(spdlog::level::debug);
+        TB_LOG_DEBUG("Debug logging enabled");
+    }
     try {
         asio::io_context io;
         tb::BotConfig config{

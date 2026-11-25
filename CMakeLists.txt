@@ -80,6 +80,7 @@ target_link_libraries(titlebot PRIVATE spdlog::spdlog)
 find_package(Boost 1.81 CONFIG REQUIRED COMPONENTS url)
 # No old APIs compatible.
 target_compile_definitions(titlebot_session PUBLIC
+  SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
   BOOST_ASIO_NO_DEPRECATED
   BOOST_ASIO_NO_TS_EXECUTORS
   BOOST_ASIO_NO_DYNAMIC_BUFFER_V1
@@ -112,9 +113,6 @@ if(TITLEBOT_ENABLE_TESTS)
     src/irc/irc_test.cpp
     src/html/title_parser_test.cpp
   )
-
-  set_source_files_properties(src/common/log_test.cpp PROPERTIES
-    COMPILE_DEFINITIONS SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 
   target_compile_definitions(titlebot_unittests
     PUBLIC
