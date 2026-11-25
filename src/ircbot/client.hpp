@@ -152,6 +152,12 @@ private:
     std::shared_ptr<std::move_only_function<void(Args...)>> function_;
 };
 
+struct MessageSubscription {
+    // An empty command receives all messages. The view lasts for the callback invocation.
+    std::string command;
+    Callback<Connection, const MessageView&> handle;
+};
+
 struct Handlers {
     // Callbacks run on Run's executor and must not block. Message views last only for the call;
     // copy fields needed by a co_spawn task, and retain Connection to isolate late replies.
@@ -163,6 +169,7 @@ struct Handlers {
     Callback<const DiagnosticEvent&> diagnostic_event;
     Callback<Connection, const MessageView&> capabilities_changed;
     Callback<Connection, const MessageView&> isupport_changed;
+    std::vector<MessageSubscription> subscriptions;
 };
 
 /// Run one independent client on a single-threaded executor (or a strand).

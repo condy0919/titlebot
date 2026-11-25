@@ -103,6 +103,8 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
         EXPECT_EQ(connection.SendLine("PRIVMSG #room :injection\r\nQUIT").error(),
                   ircbot::SendError::kInvalidMessage);
     };
+    unsigned routed = 0;
+    handlers.subscriptions.push_back({"pRiVmSg", [&](auto, const auto&) { ++routed; }});
     auto finished = asio::co_spawn(io, ircbot::Run(config, handlers),
                                    asio::bind_cancellation_slot(stop.slot(), asio::use_future));
     auto exercise = [&]() -> asio::awaitable<void> {
@@ -127,6 +129,7 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
     ASSERT_EQ(finished.wait_for(0s), std::future_status::ready);
     EXPECT_TRUE(finished.get());
     EXPECT_EQ(ready, 1u);
+    EXPECT_EQ(routed, 1u);
     EXPECT_EQ(disconnected, 1u);
     EXPECT_FALSE(saved.IsOpen());
 }

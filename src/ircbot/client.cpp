@@ -359,6 +359,11 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
                                     "): " + reason);
     }
     Invoke(session->handlers.message, Connection(session), message);
+    for (const auto& route : session->handlers.subscriptions) {
+        if (route.command.empty() || IsCommand(message, route.command)) {
+            Invoke(route.handle, Connection(session), message);
+        }
+    }
 }
 
 asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const Config& config,
