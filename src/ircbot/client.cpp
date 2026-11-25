@@ -107,9 +107,11 @@ void Diagnose(const Handlers& handlers, std::string_view text,
     }
 }
 
-void Diagnose(const std::shared_ptr<Session>& session, std::string_view text) {
+void Diagnose(const std::shared_ptr<Session>& session, std::string_view text,
+              DiagnosticKind kind = DiagnosticKind::kProtocol, Severity level = Severity::kWarning,
+              boost::system::error_code code = {}) {
     if (!session->closing) {
-        Diagnose(session->handlers, text);
+        Diagnose(session->handlers, text, kind, level, code);
     }
 }
 
@@ -124,9 +126,10 @@ void Close(const std::shared_ptr<Session>& session) {
 }
 
 asio::awaitable<void> CloseOnTimeout(asio::awaitable<bool> expired,
-                                     std::shared_ptr<Session> session, std::string_view reason) {
+                                     std::shared_ptr<Session> session, std::string_view reason,
+                                     DiagnosticKind kind = DiagnosticKind::kTransport) {
     if (co_await std::move(expired)) {
-        Diagnose(session, reason);
+        Diagnose(session, reason, kind, Severity::kWarning, asio::error::timed_out);
         Close(session);
     }
 }
@@ -164,7 +167,7 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
             session->write_timer->expires_after(session->timeouts.write_timeout);
             session->write_timer->async_wait([session, generation](boost::system::error_code ec) {
                 if (!ec && session->write_generation == generation) {
-                    Diagnose(session, "IRC write timed out");
+                    Diagnose(session, "IRC write timed out", DiagnosticKind::kTransport, Severity::kWarning, asio::error::timed_out);
                     Close(session);
                 }
             });
@@ -178,7 +181,7 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
         if (session->write_timer) {
             session->write_timer->cancel();
         }
-        Diagnose(session, "IRC write failed");
+        Diagnose(session, "IRC write failed", DiagnosticKind::kTransport);
         Close(session);
     }
     session->writing = false;
@@ -253,7 +256,7 @@ asio::awaitable<void> WatchIdle(std::shared_ptr<Session> session,
             continue;
         }
         if (session->probe_sent) {
-            Diagnose(session, "IRC idle probe timed out");
+            Diagnose(session, "IRC idle probe timed out", DiagnosticKind::kTransport, Severity::kWarning, asio::error::timed_out);
             Close(session);
             co_return;
         }
@@ -356,7 +359,7 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
             Invoke(session->handlers.isupport_changed, Connection(session), message);
         }
     } else if (!session->registered && IsCommand(message, "432") && message.params.size() >= 2) {
-        Diagnose(session, "IRC server rejected nickname: " + std::string(message.params[1]));
+        Diagnose(session, "IRC server rejected nickname: " + std::string(message.params[1]), DiagnosticKind::kRegistration, Severity::kError);
         throw Fatal{ClientError::kInvalidNickname};
     } else if (!session->registered && message.params.size() >= 2 &&
                (IsCommand(message, "433") || IsCommand(message, "437")) &&
@@ -365,7 +368,7 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
         if (auto nick = nicknames.Retry(config.nick, message.params[1])) {
             SendControl(session, "NICK " + *nick);
         } else {
-            Diagnose(session, "Nickname retries exhausted");
+            Diagnose(session, "Nickname retries exhausted", DiagnosticKind::kRegistration);
         }
     } else if (IsCommand(message, "001") && !message.params.empty() && !session->registered) {
         if (session->require_auth && !session->registration.Authenticated()) {
@@ -545,7 +548,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         asio::co_spawn(
             executor,
             CloseOnTimeout(registration.Wait(), session,
-                           "IRC registration timed out before welcome; closing connection"),
+                           "IRC registration timed out before welcome; closing connection", DiagnosticKind::kRegistration),
             asio::detached);
         // Include CRLF in the IRCv3 wire limit. Compact only after consuming a read batch.
         std::array<char, 8703> input;
@@ -1112,7 +1115,9 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
                 co_return std::unexpected(ClientError::kTlsConfiguration);
             }
         }
-    } catch (const boost::system::system_error&) {
+    } catch (const boost::system::system_error& error) {
+        Diagnose(handlers, "IRC TLS configuration failed", DiagnosticKind::kConfiguration,
+                 Severity::kError, error.code());
         co_return std::unexpected(ClientError::kTlsConfiguration);
     }
     auto channels = std::make_shared<detail::Channels>();
@@ -1229,6 +1234,8 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
             co_return std::expected<void, ClientError>{};
         }
         if (ec) {
+            Diagnose(handlers, "IRC reconnect timer failed", DiagnosticKind::kTransport,
+                     Severity::kError, ec);
             co_return std::unexpected(ClientError::kReconnectTimer);
         }
         delay = delay + std::min(delay, config.timeouts.reconnect_max - delay);
