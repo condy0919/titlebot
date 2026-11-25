@@ -84,6 +84,9 @@ public:
     std::expected<boost::asio::any_io_executor, SendError> Executor() const;
     bool IsOpen() const;
     std::string Nick() const;
+    /// For example, TextBudget("#room") reserves the server-advertised user/host limits
+    /// and the current nickname when computing a forwarded PRIVMSG budget.
+    std::size_t TextBudget(std::string_view target) const;
     CaseMapping casemapping() const;
     ServerFeatures Features() const;
     /// For example, Feature("NETWORK") returns the current 005 value when advertised.

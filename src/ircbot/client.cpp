@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <deque>
 #include <exception>
 #include <optional>
@@ -675,6 +676,28 @@ std::string Connection::Nick() const {
 CaseMapping Connection::casemapping() const {
     auto session = session_.lock();
     return session ? session->features.casemapping : CaseMapping::kRfc1459;
+}
+
+std::size_t Connection::TextBudget(std::string_view target) const {
+    auto session = session_.lock();
+    if (!session || session->closing) {
+        return 0;
+    }
+    const auto bound = [&](std::string_view key, std::size_t fallback) {
+        const auto& values = session->features.values;
+        if (const auto found = values.find(key); found != values.end()) {
+            const auto& text = found->second;
+            std::size_t value = 0;
+            const auto end = text.data() + text.size();
+            const auto parsed = std::from_chars(text.data(), end, value);
+            if (parsed.ec == std::errc{} && parsed.ptr == end && value) {
+                return std::min<std::size_t>(value, 510);
+            }
+        }
+        return fallback;
+    };
+    const auto prefix = session->nick.size() + 2 + bound("USERLEN", 32) + bound("HOSTLEN", 255);
+    return PrivmsgTextBudget(target, prefix);
 }
 
 ServerFeatures Connection::Features() const {
