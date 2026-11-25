@@ -1,6 +1,13 @@
 #ifndef TITLEBOT_ANY_STREAM_HPP_
 #define TITLEBOT_ANY_STREAM_HPP_
+#include <openssl/evp.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+
+#include <array>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -25,6 +32,32 @@ public:
     }
     executor_type get_executor() {
         return socket().get_executor();
+    }
+    /// Compare a leaf certificate with an expected 64-digit SHA-256 fingerprint after verification.
+    bool MatchesPeerCertificate(std::string_view hex) {
+        auto* tls = std::get_if<Tls>(&stream_);
+        if (!tls || hex.size() != 64) {
+            return false;
+        }
+        std::unique_ptr<X509, decltype(&X509_free)> cert(
+            SSL_get_peer_certificate(tls->native_handle()), &X509_free);
+        std::array<unsigned char, EVP_MAX_MD_SIZE> digest;
+        unsigned int size = 0;
+        if (!cert || !X509_digest(cert.get(), EVP_sha256(), digest.data(), &size) || size != 32) {
+            return false;
+        }
+        auto nibble = [](char c) {
+            if (c >= '0' && c <= '9') { return c - '0'; }
+            if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+            if (c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+            return -1;
+        };
+        for (std::size_t i = 0; i < size; ++i) {
+            if (nibble(hex[2*i]) != digest[i] / 16 || nibble(hex[2*i + 1]) != digest[i] % 16) {
+                return false;
+            }
+        }
+        return true;
     }
     /// After a failed TLS handshake, report the OpenSSL peer verification result.
     /// For example, a self-signed peer may yield X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT.

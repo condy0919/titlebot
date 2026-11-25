@@ -730,6 +730,7 @@ TEST_F(Client, CompletesExternalAuthenticationOverVerifiedMutualTls) {
     config.server = "localhost";
     config.tls = true;
     config.channel_keys["#room"] = "secret";
+    config.peer_certificate_sha256 = "8f7731281683aa1d3383adbceef2aac2e78c9488edddd50c0167386d6968e9cf";
     config.ca_file = certificate;
     config.certificate_file = certificate;
     config.private_key_file = certificate;

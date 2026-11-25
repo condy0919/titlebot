@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <expected>
 #include <string>
+#include <string_view>
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/awaitable.hpp>
@@ -22,6 +23,8 @@ public:
     virtual void Close() = 0;
     virtual boost::asio::awaitable<IoResult<void>> Handshake(const std::string& host,
                                                   const std::string& server_name) = 0;
+    // A custom transport must explicitly support pinning when the configuration requests it.
+    virtual bool MatchesPeerCertificate(std::string_view) { return false; }
     virtual long PeerVerificationResult() = 0;
     virtual boost::asio::awaitable<IoResult<std::size_t>> Read(boost::asio::mutable_buffer buffer) = 0;
     virtual boost::asio::awaitable<IoResult<void>> Write(boost::asio::const_buffer buffer) = 0;

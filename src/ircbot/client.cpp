@@ -428,6 +428,9 @@ public:
             co_return std::unexpected(error.code());
         }
     }
+    bool MatchesPeerCertificate(std::string_view hex) override {
+        return stream_.MatchesPeerCertificate(hex);
+    }
     long PeerVerificationResult() override { return stream_.PeerVerificationResult(); }
     asio::awaitable<IoResult<std::size_t>> Read(asio::mutable_buffer buffer) override {
         boost::system::error_code ec;
@@ -504,6 +507,12 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
                 }
                 throw;
             }
+        }
+        if (!config.peer_certificate_sha256.empty() &&
+            !session->transport->MatchesPeerCertificate(config.peer_certificate_sha256)) {
+            Diagnose(session->handlers, "IRC TLS certificate fingerprint mismatch",
+                     DiagnosticKind::kTransport, Severity::kError);
+            throw Fatal{ClientError::kTlsTrust};
         }
         connected = true;
         for (auto& line : session->registration.Start()) {
@@ -732,6 +741,11 @@ std::string_view InvalidConfigField(const Config& config) {
     }
     if (!valid_server) {
         return "server";
+    }
+    const auto& pin = config.peer_certificate_sha256;
+    if (!pin.empty() && (!config.tls || pin.size() != 64 ||
+                         pin.find_first_not_of("0123456789abcdefABCDEF") != pin.npos)) {
+        return "peer_certificate_sha256";
     }
     if (!config.tls_server_name.empty() && !token(config.tls_server_name)) {
         return "tls_server_name";
