@@ -607,6 +607,9 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
     auto executor = co_await asio::this_coro::executor;
     asio::ssl::context tls(asio::ssl::context::tls_client);
     try {
+        if (!SSL_CTX_set_min_proto_version(tls.native_handle(), TLS1_2_VERSION)) {
+            co_return std::unexpected(ClientError::kTlsConfiguration);
+        }
         tls.set_default_verify_paths();
         if (!config.ca_file.empty()) {
             tls.load_verify_file(config.ca_file);
