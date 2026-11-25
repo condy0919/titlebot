@@ -65,17 +65,25 @@ public:
     std::expected<std::vector<std::string>, RegistrationError> Handle(const MessageView& message);
 
     // Negotiation completion is separate from receiving the server's 001 welcome.
-    bool done() const {
+    bool Done() const {
         return done_;
     }
     /// For example, numeric 908 with "PLAIN,EXTERNAL" records that list for diagnostics.
-    std::string_view sasl_mechanisms() const { return sasl_mechanisms_; }
-    bool authenticated() const {
+    std::string_view SaslMechanisms() const { return sasl_mechanisms_; }
+    bool Authenticated() const {
         return authenticated_;
     }
-    const CapabilitySet& enabled() const {
+    const CapabilitySet& Enabled() const {
         return enabled_;
     }
+
+    bool done() const { return Done(); }
+
+    bool authenticated() const { return Authenticated(); }
+
+    std::string_view sasl_mechanisms() const { return SaslMechanisms(); }
+
+    const CapabilitySet& enabled() const { return Enabled(); }
 
 private:
     enum class SaslState : std::uint8_t { kIdle, kChallenge, kResult, kFinished };

@@ -366,7 +366,7 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
         }
     } else if (IsCommand(message, "001") && !message.params.empty() && !session->registered) {
         if (config.registration.sasl && config.registration.sasl->required &&
-            !session->registration.authenticated()) {
+            !session->registration.Authenticated()) {
             throw Fatal{ClientError::kAuthentication};
         }
         registration.Cancel();
@@ -817,7 +817,7 @@ std::expected<void, SendError> Connection::Send(std::string_view command,
         return std::unexpected(SendError::kClosed);
     }
     if ((!tags.empty() || Equals(command, "TAGMSG", CaseMapping::kAscii)) &&
-        !session->registration.enabled().contains("message-tags")) {
+        !session->registration.Enabled().contains("message-tags")) {
         return std::unexpected(SendError::kCapabilityRequired);
     }
     return Queue(session, std::move(*line), false, PaceCommand(command));
@@ -837,7 +837,7 @@ std::expected<void, SendError> Connection::SendLine(std::string line) const {
         return std::unexpected(SendError::kInvalidMessage);
     }
     if ((line.starts_with('@') || IsCommand(*parsed, "TAGMSG")) &&
-        !session->registration.enabled().contains("message-tags")) {
+        !session->registration.Enabled().contains("message-tags")) {
         return std::unexpected(SendError::kCapabilityRequired);
     }
     const bool paced = PaceCommand(parsed->command);
@@ -1025,7 +1025,7 @@ std::size_t Connection::NickLength() const {
 
 bool Connection::HasCapability(std::string_view name) const {
     auto session = session_.lock();
-    return session && session->registration.enabled().contains(name);
+    return session && session->registration.Enabled().contains(name);
 }
 
 bool Connection::IsSelf(std::string_view nick) const {
