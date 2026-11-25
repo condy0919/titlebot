@@ -62,6 +62,13 @@ public:
     }
 
 private:
+    struct Cached {
+        std::string protocol;
+        std::string url;
+        FetchResult result;
+        Clock::time_point expires;
+    };
+    std::list<Cached> cache_;
     struct Job {
         PrivMsg message;
         std::string host;

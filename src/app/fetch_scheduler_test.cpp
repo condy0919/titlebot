@@ -159,4 +159,16 @@ TEST_F(SchedulerTest, BoundsSubscribersForOneDownload) {
     EXPECT_FALSE(limiter.Allow("#ONE", now + std::chrono::milliseconds(1999)));
     EXPECT_TRUE(limiter.Allow("#one", now + std::chrono::seconds(2)));
 }
+TEST_F(SchedulerTest, ReusesRecentTitlesAndFailures) {
+    Submit("found");
+    Submit("timeout");
+    io.poll();
+    release.cancel();
+    io.run();
+    Submit("found", "#other");
+    Submit("timeout");
+    EXPECT_EQ(started.size(), 2u);
+    EXPECT_EQ(delivered, (std::vector<std::string>{"#room found", "#other found"}));
+    EXPECT_EQ(scheduler->stats().completed, 2u);
+}
 } // namespace

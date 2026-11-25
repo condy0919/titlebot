@@ -36,6 +36,19 @@ FetchScheduler::FetchScheduler(asio::any_io_executor executor, Fetch fetch)
 
 void FetchScheduler::Submit(PrivMsg message, Deliver deliver) {
     ScheduleReport();
+    auto cached = std::ranges::find_if(cache_, [&](const Cached& entry) {
+        return entry.protocol == message.protocol && entry.url == message.url;
+    });
+    if (cached != cache_.end()) {
+        if (Clock::now() < cached->expires) {
+            cache_.splice(cache_.begin(), cache_, cached);
+            if (cached->result && *cached->result) {
+                deliver(**cached->result);
+            }
+            return;
+        }
+        cache_.erase(cached);
+    }
     // Bound pending replies even when many requests share a single download.
     if (subscribers_ >= kMaxActive + kQueue) {
         TB_LOG_WARN("Dropping fetch request: subscriber limit reached ({})", subscribers_);
@@ -126,6 +139,11 @@ void FetchScheduler::Complete(std::list<Job>::iterator job, Clock::time_point st
         ++stats_.titles;
     } else {
         ++stats_.no_title;
+    }
+    const auto ttl = result && *result ? std::chrono::minutes(4) : std::chrono::seconds(30);
+    cache_.push_front({job->message.protocol, job->message.url, result, Clock::now() + ttl});
+    if (cache_.size() > 256) {
+        cache_.pop_back();
     }
     auto replies = std::move(job->replies);
     auto host = host_active_.find(job->host);
