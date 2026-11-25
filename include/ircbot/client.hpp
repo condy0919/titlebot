@@ -160,20 +160,25 @@ struct DiagnosticEvent {
     std::optional<long> certificate_error;
 };
 
-template <class... Args>
-class Callback {
+template <class Signature> class SharedCallback;
+
+template <class Result, class... Args>
+class SharedCallback<Result(Args...)> {
+    using Function = std::move_only_function<Result(Args...)>;
 public:
-    Callback() = default;
+    SharedCallback() = default;
     template <class Fn>
-        requires (!std::same_as<std::remove_cvref_t<Fn>, Callback> &&
-                  std::constructible_from<std::move_only_function<void(Args...)>, Fn>)
-    Callback(Fn&& fn)
-        : function_(std::make_shared<std::move_only_function<void(Args...)>>(std::forward<Fn>(fn))) {}
+        requires (!std::same_as<std::remove_cvref_t<Fn>, SharedCallback> &&
+                  std::constructible_from<Function, Fn>)
+    SharedCallback(Fn&& fn) : function_(std::make_shared<Function>(std::forward<Fn>(fn))) {}
     explicit operator bool() const { return function_ && static_cast<bool>(*function_); }
-    void operator()(Args... args) const { (*function_)(std::forward<Args>(args)...); }
+    Result operator()(Args... args) const { return (*function_)(std::forward<Args>(args)...); }
 private:
-    std::shared_ptr<std::move_only_function<void(Args...)>> function_;
+    std::shared_ptr<Function> function_;
 };
+
+template <class... Args> using Callback = SharedCallback<void(Args...)>;
+enum class MessageFlow { kContinue, kStop };
 
 struct MessageSubscription {
     // An empty command receives all messages. The view lasts for the callback invocation.
@@ -193,6 +198,7 @@ struct Handlers {
     Callback<Connection, const MessageView&> capabilities_changed;
     Callback<Connection, const MessageView&> isupport_changed;
     std::vector<MessageSubscription> subscriptions;
+    std::vector<SharedCallback<MessageFlow(Connection, const MessageView&)>> middleware;
 };
 
 // A connector supplies a connected transport on Run's executor and observes config.timeouts.

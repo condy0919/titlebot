@@ -421,6 +421,15 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
                                     "): " + reason);
     }
     Invoke(session->handlers.message, Connection(session), message);
+    for (const auto& filter : session->handlers.middleware) {
+        try {
+            if (filter && filter(Connection(session), message) == MessageFlow::kStop) {
+                return;
+            }
+        } catch (...) {
+            throw Fatal{ClientError::kHandler, std::current_exception()};
+        }
+    }
     for (const auto& route : session->handlers.subscriptions) {
         if (route.command.empty() || IsCommand(message, route.command)) {
             Invoke(route.handle, Connection(session), message);

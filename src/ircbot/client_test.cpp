@@ -107,7 +107,12 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
     };
     unsigned isupport_changes = 0;
     handlers.isupport_changed = [&](auto, const auto&) { ++isupport_changes; };
+    handlers.middleware.emplace_back([](auto, const auto& message) {
+        return ircbot::IsCommand(message, "PING") ? ircbot::MessageFlow::kStop
+                                                  : ircbot::MessageFlow::kContinue;
+    });
     unsigned routed = 0;
+    handlers.subscriptions.push_back({"PING", [](auto, const auto&) { ADD_FAILURE(); }});
     handlers.subscriptions.push_back({"pRiVmSg", [&](auto, const auto&) { ++routed; }});
     auto finished = asio::co_spawn(io, ircbot::Run(config, handlers),
                                    asio::bind_cancellation_slot(stop.slot(), asio::use_future));
