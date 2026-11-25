@@ -72,6 +72,16 @@ FetchContent_MakeAvailable(spdlog)
 target_link_libraries(titlebot PRIVATE spdlog::spdlog)
 
 find_package(Boost 1.81 CONFIG REQUIRED COMPONENTS url)
+
+add_library(ircbot
+  src/ircbot/message.cpp
+  src/ircbot/features.cpp
+)
+add_library(ircbot::ircbot ALIAS ircbot)
+target_include_directories(ircbot PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ircbot PUBLIC cxx_std_23)
+target_link_libraries(ircbot PUBLIC Boost::headers)
+
 # No old APIs compatible.
 target_compile_definitions(titlebot PUBLIC
   SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
@@ -94,6 +104,12 @@ if(TITLEBOT_ENABLE_TESTS)
     GIT_SHALLOW TRUE
   )
   FetchContent_MakeAvailable(googletest)
+
+  add_executable(ircbot_tests
+    src/ircbot/message_test.cpp
+    src/ircbot/features_test.cpp
+  )
+  target_link_libraries(ircbot_tests PRIVATE ircbot::ircbot GTest::gtest_main)
 
   add_executable(titlebot_unittests
     src/app/title_cache_test.cpp
@@ -127,11 +143,12 @@ if(TITLEBOT_ENABLE_TESTS)
     spdlog::spdlog Threads::Threads GTest::gmock_main)
 
   include(GoogleTest)
+  gtest_discover_tests(ircbot_tests)
   gtest_discover_tests(titlebot_server_tests)
   gtest_discover_tests(titlebot_unittests)
 endif()
 
-foreach(target IN ITEMS titlebot titlebot_cli titlebot_unittests titlebot_server_tests)
+foreach(target IN ITEMS ircbot ircbot_tests titlebot titlebot_cli titlebot_unittests titlebot_server_tests)
   if(TARGET ${target} AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(${target} PRIVATE -Wall -Wextra)
   endif()
