@@ -106,7 +106,7 @@ asio::awaitable<void> ReadResponsePart(Stream& stream, std::string& pending,
         const auto count = co_await stream.async_read_some(buffer.data(offset, space),
                                                            asio::redirect_error(use_awaitable, ec));
         buffer.shrink(space - count);
-        if (ec == asio::error::eof && parser.got_some()) {
+        if ((ec == asio::error::eof || ec == asio::ssl::error::stream_truncated) && parser.got_some()) {
             parser.put_eof(ec);
             if (!ec) {
                 co_return;
