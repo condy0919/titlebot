@@ -280,6 +280,29 @@ SplitText(std::string_view text, std::size_t budget) {
     return parts;
 }
 
+std::optional<MembershipView> AsMembershipChange(const MessageView& message) {
+    const auto& params = message.params;
+    if (params.empty() || params.front().empty()) {
+        return {};
+    }
+    const auto actor = message.Nick();
+    if (IsCommand(message, "JOIN")) {
+        return MembershipView{MembershipChange::kJoin, actor, params.front(), actor, {}};
+    }
+    if (IsCommand(message, "PART")) {
+        return MembershipView{MembershipChange::kPart, actor, params.front(), actor,
+                              params.size() > 1 ? params[1] : std::string_view{}};
+    }
+    if (IsCommand(message, "KICK") && params.size() > 1) {
+        return MembershipView{MembershipChange::kKick, actor, params.front(), params[1],
+                              params.size() > 2 ? params[2] : std::string_view{}};
+    }
+    if (IsCommand(message, "NICK")) {
+        return MembershipView{MembershipChange::kNick, actor, {}, params.front(), {}};
+    }
+    return {};
+}
+
 bool IsCommand(const MessageView& message, std::string_view command) {
     return std::ranges::equal(message.command, command, {}, Lower, Lower);
 }

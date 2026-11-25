@@ -23,6 +23,21 @@ TEST(IrcMessage, SplitsAtUtf8Boundaries) {
     EXPECT_FALSE(ircbot::SplitText("a", 0));
 }
 
+TEST(IrcMessage, ExposesKickAndRejectsIncompleteMembershipChanges) {
+    const auto kick = ircbot::ParseMessage(":op!u@h KICK #room bot :bye");
+    ASSERT_TRUE(kick);
+    const auto change = ircbot::AsMembershipChange(*kick);
+    ASSERT_TRUE(change);
+    EXPECT_EQ(change->change, ircbot::MembershipChange::kKick);
+    EXPECT_EQ(change->actor, "op");
+    EXPECT_EQ(change->channel, "#room");
+    EXPECT_EQ(change->nick, "bot");
+    EXPECT_EQ(change->reason, "bye");
+    const auto incomplete = ircbot::ParseMessage("KICK #room");
+    ASSERT_TRUE(incomplete);
+    EXPECT_FALSE(ircbot::AsMembershipChange(*incomplete));
+}
+
 TEST(MessagePrefix, ExtractsUserAndHost) {
     auto message = ircbot::ParseMessage(":nick!alice@host NOTICE bot :hello");
     ASSERT_TRUE(message);

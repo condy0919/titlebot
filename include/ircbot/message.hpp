@@ -62,6 +62,18 @@ std::optional<TextMessageView> AsPrivmsg(const MessageView& message);
 /// For example, ":server NOTICE bot :welcome" yields {"server", "bot", "welcome"}.
 std::optional<TextMessageView> AsNotice(const MessageView& message);
 
+enum class MembershipChange { kJoin, kPart, kKick, kNick };
+struct MembershipView {
+    MembershipChange change;
+    std::string_view actor;
+    std::string_view channel;
+    std::string_view nick;
+    std::string_view reason;
+};
+
+/// For example, ":op!u@h KICK #room bot :bye" yields {kKick, "op", "#room", "bot", "bye"}.
+std::optional<MembershipView> AsMembershipChange(const MessageView& message);
+
 /// Compare command names using ASCII case folding, e.g. IsCommand(parsed_ping, "PING") is true
 /// when parsed_ping.command is "pInG". Numeric commands compare byte for byte.
 bool IsCommand(const MessageView& message, std::string_view command);
