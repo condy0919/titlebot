@@ -580,6 +580,37 @@ TEST_F(Client, ExercisesRegistrationWithoutSockets) {
     EXPECT_NE(transcript.find("NICK bot\r\n"), transcript.npos);
 }
 
+TEST_F(Client, RestoresDynamicKeyedChannelAfterReconnect) {
+    tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
+    auto config = Configuration(listener);
+    ircbot::Connection connection;
+    ircbot::Handlers handlers;
+    handlers.ready = [&](auto handle) { connection = handle; };
+    asio::cancellation_signal stop;
+    auto result = asio::co_spawn(io, ircbot::Run(config, handlers),
+                                 asio::bind_cancellation_slot(stop.slot(), asio::use_future));
+    auto exercise = [&]() -> asio::awaitable<void> {
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            auto peer = co_await listener.async_accept(use_awaitable);
+            std::string input;
+            co_await Register(peer, input);
+            if (attempt == 0) {
+                EXPECT_TRUE(connection.Join("#private", "secret"));
+            }
+            EXPECT_EQ(co_await Read(peer, input), "JOIN #private secret");
+            if (attempt == 1) {
+                EXPECT_TRUE(connection.Part("#private"));
+                EXPECT_EQ(co_await Read(peer, input), "PART #private");
+                stop.emit(asio::cancellation_type::terminal);
+                EXPECT_EQ(co_await Read(peer, input), "QUIT :Shutting down");
+            }
+        }
+    };
+    Exercise(exercise());
+    io.run();
+    EXPECT_TRUE(result.get());
+}
+
 TEST_F(Client, ZeroRetryBudgetEndsAfterFirstDisconnect) {
     tcp::acceptor listener(io, {asio::ip::address_v4::loopback(), 0});
     auto config = Configuration(listener);

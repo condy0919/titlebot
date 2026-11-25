@@ -43,6 +43,12 @@ struct QueuedLine {
     bool paced;
 };
 
+struct DesiredChannel {
+    std::string name;
+    std::string key;
+};
+using Channels = std::vector<DesiredChannel>;
+
 struct Session {
     std::unique_ptr<Transport> transport;
     asio::any_io_executor executor;
@@ -51,6 +57,7 @@ struct Session {
     std::shared_ptr<ManualClock> clock;
     std::size_t queue_limit;
     ServerFeatures features;
+    std::shared_ptr<Channels> channels;
     Registration registration;
     std::string nick;
     std::deque<QueuedLine> queue;
@@ -366,10 +373,9 @@ void Handle(const std::shared_ptr<Session>& session, const MessageView& message,
         session->registered = true;
         session->registered_at = detail::Now(session->clock);
         session->nick = message.params.front();
-        for (const auto& channel : config.channels) {
-            const auto key = config.channel_keys.find(channel);
-            SendControl(session, key == config.channel_keys.end() ? "JOIN " + channel
-                                                                  : "JOIN " + channel + " " + key->second);
+        for (const auto& channel : *session->channels) {
+            SendControl(session, channel.key.empty() ? "JOIN " + channel.name
+                                                     : "JOIN " + channel.name + " " + channel.key);
         }
         Invoke(session->handlers.ready, Connection(session));
     } else if (IsCommand(message, "NICK") && !message.params.empty() &&
@@ -448,7 +454,8 @@ private:
 };
 
 asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport, const Config& config,
-                                           const Handlers& handlers, Nicknames& nicknames) {
+                                           const Handlers& handlers, Nicknames& nicknames,
+                                           const std::shared_ptr<detail::Channels>& channels) {
     const auto session_executor = transport->Executor();
     auto session = std::make_shared<Session>(Session{
         .transport = std::move(transport),
@@ -458,6 +465,7 @@ asio::awaitable<std::optional<bool>> Serve(std::unique_ptr<Transport> transport,
         .clock = config.clock,
         .queue_limit = config.queued_lines,
         .features = {},
+        .channels = channels,
         .registration = Registration(config.registration),
         .nick = config.nick,
         .queue = {},
@@ -904,14 +912,40 @@ std::expected<void, SendError> Connection::Join(std::string_view channel, std::s
         key.find_first_of(" ,") != key.npos || key.starts_with(':')) {
         return std::unexpected(SendError::kInvalidMessage);
     }
-    return key.empty() ? Send("JOIN", {channel}) : Send("JOIN", {channel, key});
+    auto session = session_.lock();
+    if (!session || session->closing) {
+        return std::unexpected(SendError::kClosed);
+    }
+    auto& desired = *session->channels;
+    const auto existing = std::ranges::find_if(desired, [&](const auto& entry) {
+        return Equals(entry.name, channel, session->features.casemapping);
+    });
+    if (existing == desired.end() && desired.size() >= session->queue_limit - 1) {
+        return std::unexpected(SendError::kQueueFull);
+    }
+    auto sent = key.empty() ? Send("JOIN", {channel}) : Send("JOIN", {channel, key});
+    if (sent) {
+        if (existing == desired.end()) {
+            desired.push_back({std::string(channel), std::string(key)});
+        } else {
+            existing->key = key;
+        }
+    }
+    return sent;
 }
 
 std::expected<void, SendError> Connection::Part(std::string_view channel, std::string_view reason) const {
     if (channel.empty() || channel.find_first_of(" ,:") != channel.npos) {
         return std::unexpected(SendError::kInvalidMessage);
     }
-    return reason.empty() ? Send("PART", {channel}) : Send("PART", {channel, reason});
+    auto sent = reason.empty() ? Send("PART", {channel}) : Send("PART", {channel, reason});
+    if (sent) {
+        auto session = session_.lock();
+        std::erase_if(*session->channels, [&](const auto& entry) {
+            return Equals(entry.name, channel, session->features.casemapping);
+        });
+    }
+    return sent;
 }
 
 void Connection::PostPrivmsg(std::string target, std::string text,
@@ -1036,6 +1070,11 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
     } catch (const boost::system::system_error&) {
         co_return std::unexpected(ClientError::kTlsConfiguration);
     }
+    auto channels = std::make_shared<detail::Channels>();
+    for (const auto& channel : config.channels) {
+        const auto key = config.channel_keys.find(channel);
+        channels->push_back({channel, key == config.channel_keys.end() ? std::string{} : key->second});
+    }
     Nicknames nicknames;
     const auto cancellation = co_await asio::this_coro::cancellation_state;
     const auto initial = std::min(config.timeouts.reconnect_initial, config.timeouts.reconnect_max);
@@ -1064,7 +1103,7 @@ asio::awaitable<std::expected<void, ClientError>> Run(Config config, Handlers ha
                 transport = std::make_unique<SocketTransport>(std::move(socket), config.tls ? &tls : nullptr);
             }
             nicknames.Begin();
-            auto stable = co_await Serve(std::move(transport), config, handlers, nicknames);
+            auto stable = co_await Serve(std::move(transport), config, handlers, nicknames, channels);
             if (!stable) {
                 co_return std::expected<void, ClientError>{};
             }
