@@ -17,6 +17,7 @@ struct FetchPolicy {
     std::function<bool(boost::asio::ip::tcp::endpoint)> allow;
     std::chrono::milliseconds total_timeout;
     std::chrono::milliseconds connect_timeout;
+    std::size_t body_bytes = FetchLimits{}.body_bytes;
 };
 
 /// Check each resolved endpoint against policy.allow, including after redirects. The total

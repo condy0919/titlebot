@@ -275,4 +275,12 @@ TEST_F(FetcherLoopback, LimitsInformationalResponses) {
     EXPECT_EQ(Run({hints + hints + hints + hints + hints + ok}),
               std::unexpected(tb::FetchError::kResponseLimit));
 }
+TEST_F(FetcherLoopback, AppliesConfiguredWireAndDecodedBodyBudgets) {
+    policy.body_bytes = 16;
+    EXPECT_EQ(Run({HtmlResponse("<title>x</title>", "")}), tb::FetchResult(std::string("x")));
+    EXPECT_EQ(Run({HtmlResponse(std::string(17, 'x'), "")}), std::unexpected(tb::FetchError::kResponseLimit));
+    policy.body_bytes = 64;
+    EXPECT_EQ(Run({HtmlResponse(Deflate(std::string(65, 'x')), "Content-Encoding: deflate\r\n")}),
+              std::unexpected(tb::FetchError::kResponseLimit));
+}
 } // namespace

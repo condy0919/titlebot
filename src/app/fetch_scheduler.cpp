@@ -18,9 +18,6 @@
 namespace tb {
 namespace asio = boost::asio;
 namespace {
-constexpr std::size_t kMaxActive = 8;
-constexpr std::size_t kPerHost = 2;
-constexpr std::size_t kQueue = 64;
 constexpr std::pair<FetchError, const char*> kErrorNames[] = {
     {FetchError::kInvalidUrl, "invalid_url"},
     {FetchError::kNetwork, "network"},
@@ -31,8 +28,8 @@ constexpr std::pair<FetchError, const char*> kErrorNames[] = {
     {FetchError::kRedirectLimit, "redirect_limit"}};
 } // namespace
 
-FetchScheduler::FetchScheduler(asio::any_io_executor executor, Fetch fetch)
-    : executor_(std::move(executor)), fetch_(std::move(fetch)) {}
+FetchScheduler::FetchScheduler(asio::any_io_executor executor, Fetch fetch, SchedulerLimits limits)
+    : executor_(std::move(executor)), fetch_(std::move(fetch)), limits_(limits) {}
 
 void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destination) {
     ScheduleReport();
@@ -50,7 +47,7 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
         cache_.erase(cached);
     }
     // Bound pending replies even when many requests share a single download.
-    if (subscribers_ >= kMaxActive + kQueue) {
+    if (!limits_.per_host || !limits_.active || subscribers_ >= limits_.active + limits_.queued) {
         TB_LOG_WARN("Dropping fetch request: subscriber limit reached ({})", subscribers_);
         ++stats_.queue_drops;
         return;
@@ -96,8 +93,8 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
     // Give the new job a chance to start before applying the waiting-queue limit.
     // If the queue still overflows, discard the new arrival and keep the older jobs.
     Pump();
-    if (jobs_.size() - active_ > kQueue) {
-        TB_LOG_WARN("Dropping new fetch job: waiting queue is full ({} jobs)", kQueue);
+    if (jobs_.size() - active_ > limits_.queued) {
+        TB_LOG_WARN("Dropping new fetch job: waiting queue is full ({} jobs)", limits_.queued);
         jobs_.pop_back();
         --subscribers_;
         ++stats_.queue_drops;
@@ -106,8 +103,8 @@ void FetchScheduler::Submit(PrivMsg message, Deliver deliver, Destination destin
 }
 
 void FetchScheduler::Pump() {
-    for (auto job = jobs_.begin(); job != jobs_.end() && active_ < kMaxActive; ++job) {
-        if (job->running || host_active_[job->host] >= kPerHost) {
+    for (auto job = jobs_.begin(); job != jobs_.end() && active_ < limits_.active; ++job) {
+        if (job->running || host_active_[job->host] >= limits_.per_host) {
             continue;
         }
         job->running = true;
@@ -219,19 +216,19 @@ bool ReplyLimiter::Allow(std::string target, Clock::time_point now) {
     }
     for (auto& window : windows_) {
         if (window.target == target) {
-            if (window.sent >= 2) {
+            if (window.sent >= limits_.per_target) {
                 return false;
             }
             ++window.sent;
             return true;
         }
     }
-    if (windows_.size() >= 256) {
+    if (!limits_.per_target || windows_.size() >= limits_.targets) {
         return false;
     }
     windows_.push_back({
         .target = std::move(target),
-        .expires = now + std::chrono::seconds(2),
+        .expires = now + limits_.window,
         .sent = 1,
     });
     return true;

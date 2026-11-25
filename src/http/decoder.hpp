@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 
+#include "common/runtime_limits.hpp"
 #include "html/title_parser.hpp"
 
 namespace tb {
@@ -27,7 +28,8 @@ enum class DecodeError : std::uint8_t {
 class ContentDecoder {
 public:
     /// Select the body encoding for one response. A default-constructed decoder reads plain HTML.
-    explicit ContentDecoder(ContentEncoding encoding = ContentEncoding::kIdentity);
+    explicit ContentDecoder(ContentEncoding encoding = ContentEncoding::kIdentity,
+                            std::size_t limit = FetchLimits{}.body_bytes);
 
     virtual ~ContentDecoder();
 
@@ -53,7 +55,7 @@ private:
 
     ContentEncoding encoding_;
     std::unique_ptr<InflateState> inflater_;
-    std::size_t remaining_ = 512UL * 1024;
+    std::size_t remaining_;
 };
 
 class GzipDecoder : public ContentDecoder {

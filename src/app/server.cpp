@@ -45,6 +45,7 @@ struct Session {
     std::shared_ptr<FetchScheduler> scheduler;
     // The limiter counts title replies per target. The burst counter covers all targets
     // on this connection and resets when the two-second window expires at burst_until.
+    ReplyLimits limits;
     ReplyLimiter limiter;
     Clock::time_point burst_until;
     unsigned burst = 0;
@@ -88,9 +89,9 @@ void Send(const std::shared_ptr<Session>& session, std::string line, bool priori
         return;
     }
 
-    if (session->queue.size() >= 64) {
+    if (session->queue.size() >= session->limits.queued) {
         session->scheduler->RecordReplyDrop();
-        if (!priority) {
+        if (!priority || session->queue.empty()) {
             TB_LOG_WARN("Dropping new outgoing IRC line: IRC send queue is full ({} lines)",
                         session->queue.size());
             return;
@@ -115,7 +116,7 @@ void Send(const std::shared_ptr<Session>& session, std::string line, bool priori
 void Reply(const std::shared_ptr<Session>& session, const std::string& target,
            std::string_view title) {
     // Limit the entire PRIVMSG line in bytes before Drain appends CRLF.
-    constexpr std::size_t kMaxReplyLineBytes = 430;
+    const auto line_bytes = session->limits.line_bytes;
 
     if (session->quit_timer || !session->transport.next_layer().is_open()) {
         TB_LOG_DEBUG("Discarding title reply: IRC session is closed");
@@ -126,15 +127,15 @@ void Reply(const std::shared_ptr<Session>& session, const std::string& target,
     if (title.empty()) {
         return;
     }
-    if (prefix.size() >= kMaxReplyLineBytes) {
+    if (prefix.size() >= line_bytes) {
         TB_LOG_WARN("Dropping title reply: {}-byte prefix exhausts the {}-byte IRC reply limit",
-                    prefix.size(), kMaxReplyLineBytes);
+                    prefix.size(), line_bytes);
         return;
     }
 
     // If the first excluded byte is a UTF-8 continuation byte (10xxxxxx), the cut
     // splits a code point. Move the cut back to its leading byte so it is omitted in full.
-    auto limit = kMaxReplyLineBytes - prefix.size();
+    auto limit = line_bytes - prefix.size();
     if (title.size() > limit) {
         while (limit && (static_cast<unsigned char>(title[limit]) & 192) == 128) {
             --limit;
@@ -149,12 +150,12 @@ void Reply(const std::shared_ptr<Session>& session, const std::string& target,
 
     auto now = Clock::now();
     if (now >= session->burst_until) {
-        session->burst_until = now + std::chrono::seconds(2);
+        session->burst_until = now + session->limits.window;
         session->burst = 0;
     }
-    if (session->burst >= 8 || !session->limiter.Allow(target, now)) {
+    if (session->burst >= session->limits.per_session || !session->limiter.Allow(target, now)) {
         TB_LOG_WARN("Dropping IRC title reply: {} rate limit reached",
-                    session->burst >= 8 ? "session" : "per-target");
+                    session->burst >= session->limits.per_session ? "session" : "per-target");
         session->scheduler->RecordReplyDrop();
         return;
     }
@@ -351,7 +352,8 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, 
         .retry_nick = {},
         .queue = {},
         .scheduler = scheduler,
-        .limiter = {},
+        .limits = config.replies,
+        .limiter = {config.replies},
         .burst_until = {},
     });
     auto executor = session->transport.next_layer().get_executor();
@@ -423,8 +425,8 @@ asio::awaitable<std::optional<bool>> ServeSession(asio::ip::tcp::socket socket, 
     boost::system::error_code ignored;
     session->transport.next_layer().close(ignored);
     scheduler->Report();
-    co_return session->registered&& Clock::now() - session -> registered_at >=
-        config.stable_session;
+    const auto duration = Clock::now() - session->registered_at;
+    co_return session->registered && duration >= config.stable_session;
 }
 
 asio::awaitable<asio::ip::tcp::socket> Connect(const BotConfig& config) {
@@ -460,7 +462,7 @@ asio::awaitable<void> RunBot(BotConfig config) {
     tls->set_default_verify_paths();
     auto executor = co_await asio::this_coro::executor;
     auto scheduler = std::make_shared<FetchScheduler>(
-        executor, [tls](PrivMsg msg) { return FetchTitle(std::move(msg), *tls); });
+        executor, [tls, limits = config.fetch](PrivMsg msg) { return FetchTitle(std::move(msg), *tls, limits); }, config.scheduler);
     scheduler->EnableReports();
     std::size_t nick_limit = kDefaultNickLength;
     const auto cancellation = co_await asio::this_coro::cancellation_state;

@@ -6,6 +6,8 @@
 
 #include <boost/asio/awaitable.hpp>
 
+#include "common/runtime_limits.hpp"
+
 namespace tb {
 struct BotConfig {
     std::string server;
@@ -13,6 +15,9 @@ struct BotConfig {
     std::string nick;
     std::string channels;
     bool tls = false;
+    FetchLimits fetch{};
+    SchedulerLimits scheduler{};
+    ReplyLimits replies{};
     std::chrono::milliseconds registration_timeout = std::chrono::seconds(30);
     std::chrono::milliseconds connect_timeout = std::chrono::seconds(15);
     std::chrono::milliseconds idle_timeout = std::chrono::seconds(90);

@@ -77,14 +77,14 @@ FetchResult FormatTitle(const std::string& title, const std::string& charset,
 }
 
 using ResponseParser = http::response_parser<http::buffer_body>;
-constexpr std::size_t kBodyLimit = 512 * 1024;
+constexpr std::size_t kReadBufferLimit = 16 * 1024;
 
 // Keep unconsumed bytes across parser steps and informational responses. For example,
 // a read containing both a 103 header and a 200 header leaves the latter for the next parser.
 template <class Stream>
 asio::awaitable<void> ReadResponsePart(Stream& stream, std::string& pending,
                                        ResponseParser& parser) {
-    auto buffer = asio::dynamic_buffer(pending, kBodyLimit);
+    auto buffer = asio::dynamic_buffer(pending, kReadBufferLimit);
     boost::system::error_code ec;
     for (;;) {
         if (buffer.size()) {
@@ -121,7 +121,7 @@ asio::awaitable<void> ReadResponsePart(Stream& stream, std::string& pending,
 
 template <class Stream>
 asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, std::string path,
-                                       std::string& location) {
+                                       std::string& location, std::size_t body_limit) {
     http::request<http::empty_body> request(http::verb::get, path, 11);
     request.set(http::field::host, authority);
     request.set(http::field::user_agent, "titlebot/0.1");
@@ -192,14 +192,14 @@ asio::awaitable<FetchResult> ReadTitle(Stream& stream, std::string authority, st
     } else if (!coding.empty() && !boost::beast::iequals(coding, "identity")) {
         co_return std::unexpected(FetchError::kDecode);
     }
-    ContentDecoder decoder(encoding);
+    ContentDecoder decoder(encoding, body_limit);
     TitleParser parser;
     std::array<char, 4096> block;
-    std::size_t remaining = kBodyLimit;
+    std::size_t remaining = body_limit;
     do {
         auto& body = response.get().body();
         body.data = block.data();
-        const auto capacity = std::min(block.size(), remaining + 1);
+        const auto capacity = remaining < block.size() ? remaining + 1 : block.size();
         body.size = capacity;
         if (!response.is_done()) {
             co_await ReadResponsePart(stream, pending, response);
@@ -312,9 +312,9 @@ asio::awaitable<FetchResult> FetchHop(const boost::urls::url& url, asio::ssl::co
         asio::co_spawn(executor, CancelOnTimeout(read_timeout.Wait(), resolver, stream),
                        asio::detached);
         if (secure) {
-            co_return co_await ReadTitle(*stream, authority, path, location);
+            co_return co_await ReadTitle(*stream, authority, path, location, policy.body_bytes);
         }
-        co_return co_await ReadTitle(stream->next_layer(), authority, path, location);
+        co_return co_await ReadTitle(stream->next_layer(), authority, path, location, policy.body_bytes);
     } catch (const boost::system::system_error& error) {
         TB_LOG_WARN("Fetch from {} failed: {}", host, error.what());
         if (Clock::now() >= expires) {
@@ -357,7 +357,7 @@ asio::awaitable<FetchResult> detail::FetchWithPolicy(PrivMsg msg, asio::ssl::con
     }
 }
 
-asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context& tls) {
+asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context& tls, FetchLimits limits) {
     detail::FetchPolicy policy{[](tcp::endpoint ep) {
                                    auto addr = ep.address();
                                    if (addr.is_v4()) {
@@ -372,7 +372,7 @@ asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context& tls) {
                                           !(b[0] == 0x20 && b[1] == 2) &&
                                           !(b[0] == 0x3f && b[1] == 0xff && (b[2] & 0xf0) == 0);
                                },
-                               std::chrono::seconds(10), std::chrono::seconds(3)};
+                               limits.total_timeout, limits.connect_timeout, limits.body_bytes};
     return detail::FetchWithPolicy(std::move(msg), tls, std::move(policy));
 }
 } // namespace tb

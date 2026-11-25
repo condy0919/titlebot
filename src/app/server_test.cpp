@@ -32,7 +32,7 @@ struct MockFetch : asio::execution_context::service {
 } // namespace
 
 namespace tb {
-asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context&) {
+asio::awaitable<FetchResult> FetchTitle(PrivMsg msg, asio::ssl::context&, FetchLimits) {
     auto executor = co_await asio::this_coro::executor;
     co_return co_await MockFetch::For(executor).Fetch(std::move(msg));
 }

@@ -15,6 +15,7 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/steady_timer.hpp>
 
+#include "common/runtime_limits.hpp"
 #include "http/fetcher.hpp"
 #include "irc/irc.hpp"
 
@@ -29,7 +30,7 @@ public:
 
     /// Create with std::make_shared<FetchScheduler>(executor, fetch) so active jobs can keep
     /// the scheduler alive until their coroutines finish delivering results.
-    FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch);
+    FetchScheduler(boost::asio::any_io_executor executor, Fetch fetch, SchedulerLimits limits = {});
 
     /// Queue a fetch and call deliver if it yields a title. For example, two accepted
     /// Submit(msg, deliver) calls for the same pending URL fetch it once and deliver twice.
@@ -87,6 +88,7 @@ private:
 
     boost::asio::any_io_executor executor_;
     Fetch fetch_;
+    SchedulerLimits limits_;
     std::optional<boost::asio::steady_timer> report_timer_;
     bool report_pending_ = false;
     std::list<Job> jobs_;
@@ -99,6 +101,8 @@ private:
 /// Track a fixed window for each IRC target and discard expired entries.
 class ReplyLimiter {
 public:
+    ReplyLimiter(ReplyLimits limits = {}) : limits_(limits) {}
+
     /// Consume one of two replies allowed per target in a two-second window.
     /// For example, three calls to Allow("#room", now) on a fresh limiter yield true, true, false.
     bool Allow(std::string target, Clock::time_point now);
@@ -110,6 +114,7 @@ private:
         unsigned sent;
     };
 
+    ReplyLimits limits_;
     std::list<Window> windows_;
 };
 } // namespace tb

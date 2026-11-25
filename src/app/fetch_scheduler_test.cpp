@@ -171,4 +171,12 @@ TEST_F(SchedulerTest, ReusesRecentTitlesAndFailures) {
     EXPECT_EQ(delivered, (std::vector<std::string>{"#room found", "#other found"}));
     EXPECT_EQ(scheduler->stats().completed, 2u);
 }
+TEST_F(SchedulerTest, AppliesCustomReplyQuotas) {
+    tb::ReplyLimiter limiter({.per_target = 1, .targets = 1});
+    tb::Clock::time_point start{};
+    EXPECT_TRUE(limiter.Allow("#one", start));
+    EXPECT_FALSE(limiter.Allow("#one", start));
+    EXPECT_FALSE(limiter.Allow("#two", start));
+    EXPECT_TRUE(limiter.Allow("#two", start + std::chrono::seconds(2)));
+}
 } // namespace

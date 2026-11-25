@@ -22,7 +22,7 @@ struct ContentDecoder::InflateState {
     bool ended = false;
 };
 
-ContentDecoder::ContentDecoder(ContentEncoding encoding) : encoding_(encoding) {
+ContentDecoder::ContentDecoder(ContentEncoding encoding, std::size_t limit) : encoding_(encoding), remaining_(limit) {
     if (encoding != ContentEncoding::kIdentity) {
         int bits = encoding == ContentEncoding::kGzip ? MAX_WBITS + 16 : MAX_WBITS;
         if (encoding == ContentEncoding::kRawDeflate) {
