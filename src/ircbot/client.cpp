@@ -772,12 +772,18 @@ std::string_view InvalidConfigField(const Config& config) {
             return "channel_keys";
         }
     }
-    for (auto timeout :
-         {config.timeouts.connect_timeout, config.timeouts.registration_timeout,
-          config.timeouts.idle_timeout, config.timeouts.ping_timeout, config.timeouts.write_timeout,
-          config.timeouts.reconnect_initial, config.timeouts.reconnect_max}) {
+    const std::pair<std::string_view, std::chrono::milliseconds> timeouts[] = {
+        {"timeouts.connect_timeout", config.timeouts.connect_timeout},
+        {"timeouts.registration_timeout", config.timeouts.registration_timeout},
+        {"timeouts.idle_timeout", config.timeouts.idle_timeout},
+        {"timeouts.ping_timeout", config.timeouts.ping_timeout},
+        {"timeouts.write_timeout", config.timeouts.write_timeout},
+        {"timeouts.reconnect_initial", config.timeouts.reconnect_initial},
+        {"timeouts.reconnect_max", config.timeouts.reconnect_max},
+    };
+    for (const auto& [field, timeout] : timeouts) {
         if (timeout <= std::chrono::milliseconds::zero()) {
-            return "timeouts";
+            return field;
         }
     }
     if (!ValidateRegistration(config.registration)) {
