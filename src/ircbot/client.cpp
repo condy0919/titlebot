@@ -142,8 +142,10 @@ asio::awaitable<void> CloseOnTimeout(asio::awaitable<bool> expired,
 asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
     try {
         while (session->transport->IsOpen() && !session->queue.empty()) {
-            if (session->queue.front().paced && (session->send_interval.count() > 0 || session->send_delay)) {
-                const auto now = detail::Now(session->clock);
+            const bool paced = session->queue.front().paced &&
+                               (session->send_interval.count() > 0 || session->send_delay);
+            const auto now = detail::Now(session->clock);
+            if (paced) {
                 if (now < session->next_send) {
                     if (!session->pacing) {
                         session->pacing.emplace(session->executor, session->clock);
@@ -156,10 +158,14 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                     }
                     continue;
                 }
+            }
+            auto line = std::move(session->queue.front().text);
+            session->queue.pop_front();
+            if (paced) {
                 auto interval = session->send_interval;
                 if (session->send_delay) {
                     try {
-                        interval = std::clamp(session->send_delay(session->queue.front().text),
+                        interval = std::clamp(session->send_delay(line),
                                               std::chrono::milliseconds::zero(),
                                               std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::hours(24)));
                     } catch (...) {
@@ -170,9 +176,8 @@ asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
                 }
                 session->next_send = now + interval;
             }
-            auto line = std::move(session->queue.front().text);
+            if (!session->transport->IsOpen()) { break; }
             line += "\r\n";
-            session->queue.pop_front();
             if (session->writable) {
                 session->writable->cancel();
             }
@@ -226,12 +231,12 @@ std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, st
     if (!session->transport->IsOpen()) {
         return std::unexpected(SendError::kClosed);
     }
-    if (session->queue.size() >= session->queue_limit) {
+    const bool evict = session->queue.size() >= session->queue_limit;
+    if (evict) {
         if ((!priority && paced) || !session->queue.back().paced) {
             return std::unexpected(SendError::kQueueFull);
         }
         session->queue.pop_back();
-        Diagnose(session, "Evicting outgoing IRC line for priority send");
     }
     if (priority) {
         session->queue.push_front({std::move(line), false});
@@ -247,6 +252,9 @@ std::expected<void, SendError> Queue(const std::shared_ptr<Session>& session, st
     if (!session->writing) {
         session->writing = true;
         asio::co_spawn(session->executor, Drain(session), asio::detached);
+    }
+    if (evict) {
+        Diagnose(session, "Evicting outgoing IRC line for priority send");
     }
     return {};
 }
