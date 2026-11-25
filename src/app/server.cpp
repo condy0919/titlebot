@@ -51,7 +51,7 @@ struct Session {
     unsigned burst = 0;
     // Only one Drain coroutine may write to the socket at a time.
     bool writing = false;
-    std::shared_ptr<asio::steady_timer> quit_timer;
+    std::shared_ptr<asio::steady_timer> quit_timer{};
 };
 
 asio::awaitable<void> Drain(std::shared_ptr<Session> session) {
@@ -494,12 +494,22 @@ asio::awaitable<void> RunBot(BotConfig config) {
         } catch (const boost::system::system_error& ex) {
             if (ex.code() == asio::error::operation_aborted &&
                 cancellation.cancelled() != asio::cancellation_type::none) {
+                scheduler->Report();
                 co_return;
             }
             TB_LOG_WARN("IRC connection failed: {}. Retrying in {}s", ex.what(), delay);
         }
         asio::steady_timer timer(executor, std::chrono::seconds(delay));
-        co_await timer.async_wait(asio::use_awaitable);
+        boost::system::error_code ec;
+        co_await timer.async_wait(asio::redirect_error(asio::use_awaitable, ec));
+        if (ec == asio::error::operation_aborted &&
+            cancellation.cancelled() != asio::cancellation_type::none) {
+            scheduler->Report();
+            co_return;
+        }
+        if (ec) {
+            throw boost::system::system_error(ec);
+        }
         delay = std::min(60u, delay * 2);
     }
 }
