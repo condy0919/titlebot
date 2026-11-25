@@ -1,9 +1,9 @@
 #include "server.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <deque>
 #include <exception>
-#include <locale>
 #include <mutex>
 #include <optional>
 #include <random>
@@ -15,6 +15,7 @@
 #include "common/log.hpp"
 #include "fetch_scheduler.hpp"
 #include "http/fetcher.hpp"
+#include "irc/irc.hpp"
 
 namespace tb {
 namespace {
@@ -158,22 +159,7 @@ unsigned RandomNickSuffix() {
 }
 
 bool SameNick(std::string_view a, std::string_view b) {
-    auto fold = [](char c) {
-        // IRC nicknames also treat these punctuation pairs as equivalent.
-        switch (c) {
-        case '[':
-            return '{';
-        case ']':
-            return '}';
-        case '\\':
-            return '|';
-        case '^':
-            return '~';
-        default:
-            return std::tolower(c, std::locale::classic());
-        }
-    };
-    return std::ranges::equal(a, b, {}, fold, fold);
+    return std::ranges::equal(a, b, {}, FoldIrcCase, FoldIrcCase);
 }
 
 asio::awaitable<void> CloseOnRegistrationTimeout(asio::awaitable<bool> expired,

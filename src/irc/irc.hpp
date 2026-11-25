@@ -13,6 +13,10 @@ struct PrivMsg {
     std::string url;
 };
 
+/// Fold one nickname or channel byte using the RFC 1459 casemapping.
+/// For example, FoldIrcCase('A') returns 'a', and FoldIrcCase('[') returns '{'.
+char FoldIrcCase(char c);
+
 /// Return a view of the field before the first ASCII space in rest. Remove the field and any
 /// following spaces from rest. A leading space yields an empty field. With no space, consume all of
 /// rest.

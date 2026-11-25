@@ -124,6 +124,15 @@ TEST_F(SchedulerTest, BoundsActiveAndWaitingWork) {
     EXPECT_EQ(delivered.size(), 72u);
 }
 
+TEST_F(SchedulerTest, EquivalentIrcTargetsShareReplyQuota) {
+    tb::ReplyLimiter limiter;
+    constexpr tb::Clock::time_point now{};
+    EXPECT_TRUE(limiter.Allow(R"(#A[B]\C^)", now));
+    EXPECT_TRUE(limiter.Allow("#a{b}|c~", now));
+    EXPECT_FALSE(limiter.Allow(R"(#a[b]\c^)", now));
+    EXPECT_TRUE(limiter.Allow("#other", now));
+}
+
 TEST_F(SchedulerTest, BoundsSubscribersForOneDownload) {
     constexpr tb::Clock::time_point now{};
     tb::ReplyLimiter limiter;

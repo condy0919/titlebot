@@ -13,6 +13,7 @@
 #include <boost/asio/use_awaitable.hpp>
 
 #include "common/log.hpp"
+#include "irc/irc.hpp"
 
 namespace tb {
 namespace asio = boost::asio;
@@ -171,7 +172,7 @@ bool ReplyLimiter::Allow(std::string target, Clock::time_point now) {
         windows_.pop_front();
     }
     for (char& ch : target) {
-        ch = std::tolower(ch, std::locale::classic());
+        ch = FoldIrcCase(ch);
     }
     for (auto& window : windows_) {
         if (window.target == target) {

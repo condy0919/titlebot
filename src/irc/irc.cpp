@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <locale>
 
 #include <boost/beast/core/string.hpp>
 
@@ -33,6 +34,22 @@ constexpr bool is_tspecial(char c) {
 } // namespace
 
 namespace tb {
+char FoldIrcCase(char c) {
+    // IRC nicknames also treat these punctuation pairs as equivalent.
+    switch (c) {
+    case '[':
+        return '{';
+    case ']':
+        return '}';
+    case '\\':
+        return '|';
+    case '^':
+        return '~';
+    default:
+        return std::tolower(c, std::locale::classic());
+    }
+}
+
 std::string_view TakeIrcToken(std::string_view& rest) {
     auto end = rest.find(' ');
     auto word = rest.substr(0, end);
