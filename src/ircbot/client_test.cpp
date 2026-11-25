@@ -83,6 +83,7 @@ TEST_F(Client, NegotiatesTagsDispatchesEventsAndCancelsCleanly) {
     handlers.disconnected = [&](ircbot::Connection connection) {
         ++disconnected;
         EXPECT_FALSE(connection.IsOpen());
+        EXPECT_TRUE(connection.StopToken().stop_requested());
     };
     handlers.message = [&](ircbot::Connection connection, const ircbot::MessageView& message) {
         if (!ircbot::IsCommand(message, "PRIVMSG")) {

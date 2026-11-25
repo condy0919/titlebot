@@ -38,6 +38,7 @@ struct Session {
     Clock::time_point next_send{};
     bool writing = false;
     bool closing = false;
+    std::stop_source stop;
     std::shared_ptr<void> identity = std::make_shared<char>();
     bool registered = false;
     bool probe_sent = false;
@@ -332,6 +333,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
         .queue = {},
         .send_interval = config.send_interval,
         .pacing = {},
+        .stop = {},
         .quit_timer = {},
         .drain_timer = {},
     });
@@ -397,6 +399,7 @@ asio::awaitable<std::optional<bool>> Serve(asio::ip::tcp::socket socket, const C
     idle->cancel();
     session->closing = true;
     session->identity.reset();
+    session->stop.request_stop();
     const auto cancellation = co_await asio::this_coro::cancellation_state;
     bool stopping = cancellation.cancelled() != asio::cancellation_type::none;
     if (stopping && connected && session->transport.IsOpen()) {
@@ -590,6 +593,23 @@ std::expected<void, SendError> Connection::Privmsg(std::string_view target,
         return std::unexpected(SendError::kInvalidMessage);
     }
     return SendLine("PRIVMSG " + std::string(target) + " :" + std::string(text));
+}
+
+std::stop_token Connection::StopToken() const {
+    if (auto session = session_.lock()) {
+        return session->stop.get_token();
+    }
+    std::stop_source closed;
+    closed.request_stop();
+    return closed.get_token();
+}
+
+std::expected<asio::any_io_executor, SendError> Connection::Executor() const {
+    auto session = session_.lock();
+    if (!session || session->closing) {
+        return std::unexpected(SendError::kClosed);
+    }
+    return session->transport.get_executor();
 }
 
 bool Connection::IsOpen() const {

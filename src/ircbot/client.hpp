@@ -8,6 +8,7 @@
 #include <initializer_list>
 #include <memory>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -76,6 +77,10 @@ public:
     std::expected<void, SendError> SendLine(std::string line) const;
     /// For example, Privmsg("#room", "hello") queues a single channel message.
     std::expected<void, SendError> Privmsg(std::string_view target, std::string_view text) const;
+    /// For example, save StopToken() in a task and check stop_requested() before replying.
+    std::stop_token StopToken() const;
+    /// For example, post a reply to *Executor() while the session exists.
+    std::expected<boost::asio::any_io_executor, SendError> Executor() const;
     bool IsOpen() const;
     std::string Nick() const;
     CaseMapping casemapping() const;
