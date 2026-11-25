@@ -152,4 +152,8 @@ TEST_F(TitleParser, PrefersDocumentTitleOverOpenGraphFallback) {
     html += "<title>document</title>";
     EXPECT_EQ(document.parse(html.begin(), html.end()), "document");
 }
+TEST_F(TitleParser, AcceptsUnsignedInputBytes) {
+    const unsigned char html[] = "<title>ok</title>";
+    EXPECT_EQ(parser.parse(std::begin(html), std::end(html)), "ok");
+}
 } // namespace

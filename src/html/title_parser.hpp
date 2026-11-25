@@ -1,6 +1,7 @@
 #ifndef TITLEBOT_TITLE_PARSER_HPP_
 #define TITLEBOT_TITLE_PARSER_HPP_
 
+#include <concepts>
 #include <cstdint>
 #include <iterator>
 #include <memory>
@@ -19,7 +20,8 @@ public:
     template <typename Iter>
     std::optional<std::string> parse(Iter begin, Iter end) {
         while (begin != end) {
-            if constexpr (std::contiguous_iterator<Iter>) {
+            if constexpr (std::contiguous_iterator<Iter> &&
+                          std::same_as<std::iter_value_t<Iter>, char>) {
                 if (state_ == State::kText && bytes_.can_skip_bytes()) {
                     std::string_view rest(std::to_address(begin), end - begin);
                     auto next = rest.find('<');
